@@ -59,7 +59,7 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
         configuration.setAllowedOrigins(Arrays.asList(
                 "http://localhost:5173",
-                "https://finance-coach-frontend.vercel.app",
+                "https://finance-coach-frontend-nd0np491g-chibuzo-ufombas-projects.vercel.app",
                 "http://localhost:63342" // if you also use IntelliJ/WebStorm preview
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
