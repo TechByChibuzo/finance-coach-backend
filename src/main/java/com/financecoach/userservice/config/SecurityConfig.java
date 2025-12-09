@@ -36,7 +36,7 @@ public class SecurityConfig {
                         // Public endpoints (no authentication required)
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/users/health").permitAll()
-                        .requestMatchers("/api/plaid/**").permitAll() // Add this for Plaid endpoints
+                        .requestMatchers("/api/plaid/**").permitAll()
 
                         // All other endpoints require authentication
                         .anyRequest().authenticated()
@@ -57,18 +57,25 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         System.out.println("=== CORS Configuration Loading ===");
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(Arrays.asList(
-                "http://localhost:5173",
-                "https://finance-coach-frontend-awvcecp9o-chibuzo-ufombas-projects.vercel.app/",
-                "https://finance-coach-frontend.vercel.app",
-                "http://localhost:63342" // if you also use IntelliJ/WebStorm preview
+
+        // Use allowedOriginPatterns to support wildcards
+        configuration.setAllowedOriginPatterns(Arrays.asList(
+                "http://localhost:*",           // All localhost ports
+                "https://*.vercel.app"          // ALL Vercel URLs (preview + production)
         ));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+
+        configuration.setAllowedMethods(Arrays.asList(
+                "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"
+        ));
+
         configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);  // Cache preflight for 1 hour
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
+
+        System.out.println("CORS configured for: localhost:* and *.vercel.app");
         return source;
     }
 }
