@@ -112,7 +112,6 @@
             <artifactId>anthropic-java</artifactId>
             <version>1.0.0</version>
         </dependency>
-
 	</dependencies>
 
 	<build>

@@ -5,18 +5,26 @@ services:
     buildCommand: ./mvnw clean package -DskipTests
     startCommand: java -jar target/user-service-0.0.1-SNAPSHOT.jar
     envVars:
+      # Correct JDBC URL for Spring Boot
       - key: SPRING_DATASOURCE_URL
-        fromDatabase:
-          name: finance-coach-db
-          property: connectionString
+        value: jdbc:postgresql://${finance-coach-db.HOST}:${finance-coach-db.PORT}/${finance-coach-db.DATABASE}
+
+      # Username from DB
       - key: SPRING_DATASOURCE_USERNAME
         fromDatabase:
           name: finance-coach-db
           property: user
+
+      # Password from DB
       - key: SPRING_DATASOURCE_PASSWORD
         fromDatabase:
           name: finance-coach-db
           property: password
+
+      # REQUIRED: fixes the driver error
+      - key: SPRING_DATASOURCE_DRIVER-CLASS-NAME
+        value: org.postgresql.Driver
+
       - key: JWT_SECRET
         generateValue: true
       - key: PLAID_CLIENT_ID
