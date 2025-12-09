@@ -34,6 +34,7 @@ public class SecurityConfig {
                 // Configure authorization
                 .authorizeHttpRequests(auth -> auth
                         // Public endpoints (no authentication required)
+                        .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/users/health").permitAll()
                         .requestMatchers("/api/plaid/**").permitAll() // Add this for Plaid endpoints
@@ -60,6 +61,7 @@ public class SecurityConfig {
         configuration.setAllowedOrigins(Arrays.asList(
                 "http://localhost:5173",
                 "https://finance-coach-frontend-nd0np491g-chibuzo-ufombas-projects.vercel.app",
+                "https://finance-coach-frontend.vercel.app",
                 "http://localhost:63342" // if you also use IntelliJ/WebStorm preview
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
