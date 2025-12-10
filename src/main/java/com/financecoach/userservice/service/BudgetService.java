@@ -126,6 +126,7 @@ public class BudgetService {
 
         // Save to database
         Budget savedBudget = budgetRepository.save(budget);
+        budgetRepository.flush();
 
         return convertToResponse(savedBudget);
     }
