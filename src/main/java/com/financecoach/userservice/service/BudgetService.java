@@ -99,6 +99,7 @@ public class BudgetService {
         if (budget != null) {
             // Update existing budget
             budget.setAmount(request.getAmount());
+            budget.setIsActive(true);
             if (request.getNotes() != null) {
                 budget.setNotes(request.getNotes());
             }
@@ -108,6 +109,10 @@ public class BudgetService {
         } else {
             // Create new budget
             budget = new Budget(userId, request.getCategory(), month, request.getAmount());
+            budget.setIsActive(true);
+
+            System.out.println("🔍 Creating NEW budget:");
+            System.out.println("   isActive: " + budget.getIsActive());
             if (request.getNotes() != null) {
                 budget.setNotes(request.getNotes());
             }
@@ -127,6 +132,10 @@ public class BudgetService {
         // Save to database
         Budget savedBudget = budgetRepository.save(budget);
         budgetRepository.flush();
+
+        System.out.println("✅ Budget saved:");
+        System.out.println("   ID: " + savedBudget.getId());
+        System.out.println("   isActive: " + savedBudget.getIsActive());
 
         return convertToResponse(savedBudget);
     }
@@ -322,6 +331,12 @@ public class BudgetService {
                     // Check if budget already exists for current month
                     boolean exists = budgetRepository.existsByUserIdAndCategoryAndMonth(
                             userId, prevBudget.getCategory(), currentMonth);
+
+                    System.out.println("OLD BUDGET");
+                    System.out.println(prevBudget.getId());
+                    System.out.println(prevBudget.getAmount());
+                    System.out.println(prevBudget.getCategory());
+                    System.out.println(exists);
 
                     if (!exists) {
                         Budget newBudget = new Budget(
