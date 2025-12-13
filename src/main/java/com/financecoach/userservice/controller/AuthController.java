@@ -4,6 +4,7 @@ package com.financecoach.userservice.controller;
 import com.financecoach.userservice.dto.*;
 import com.financecoach.userservice.model.User;
 import com.financecoach.userservice.security.JwtTokenProvider;
+import com.financecoach.userservice.service.PasswordResetService;
 import com.financecoach.userservice.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -16,11 +17,15 @@ public class AuthController {
 
     private final UserService userService;
     private final JwtTokenProvider jwtTokenProvider;
+    private final PasswordResetService passwordResetService;
+
 
     @Autowired
-    public AuthController(UserService userService, JwtTokenProvider jwtTokenProvider) {
+    public AuthController(UserService userService,
+                          JwtTokenProvider jwtTokenProvider, PasswordResetService passwordResetService) {
         this.userService = userService;
         this.jwtTokenProvider = jwtTokenProvider;
+        this.passwordResetService = passwordResetService;
     }
 
     @PostMapping("/register")
@@ -63,6 +68,41 @@ public class AuthController {
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(new ErrorResponse(e.getMessage()));
+        }
+    }
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<?> forgotPassword(@RequestBody ForgotPasswordRequest request) {
+        try {
+            passwordResetService.initiatePasswordReset(request.getEmail());
+            return ResponseEntity.ok(new MessageResponse(
+                    "If an account exists with that email, you will receive password reset instructions."));
+        } catch (RuntimeException e) {
+            // Don't reveal if rate limit was hit
+            return ResponseEntity.ok(new MessageResponse(
+                    "If an account exists with that email, you will receive password reset instructions."));
+        }
+    }
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody ResetPasswordRequest request) {
+        try {
+            passwordResetService.resetPassword(request.getToken(), request.getNewPassword());
+            return ResponseEntity.ok(new MessageResponse("Password has been reset successfully!"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse(e.getMessage()));
+        }
+    }
+
+    @GetMapping("/validate-reset-token/{token}")
+    public ResponseEntity<?> validateResetToken(@PathVariable String token) {
+        boolean isValid = passwordResetService.validateToken(token);
+        if (isValid) {
+            return ResponseEntity.ok(new MessageResponse("Token is valid"));
+        } else {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(new ErrorResponse("Invalid or expired token"));
         }
     }
 }
