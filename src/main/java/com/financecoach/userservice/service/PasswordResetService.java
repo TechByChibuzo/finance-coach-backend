@@ -23,6 +23,8 @@ public class PasswordResetService {
     private final UserRepository userRepository;
     private final EmailService emailService;
     private final PasswordEncoder passwordEncoder;
+    @Autowired
+    private MetricsService metricsService;
 
     @Autowired
     public PasswordResetService(PasswordResetTokenRepository tokenRepository,
@@ -70,6 +72,9 @@ public class PasswordResetService {
         // Create new token
         PasswordResetToken resetToken = new PasswordResetToken(token, user.getId(), expiryDate);
         tokenRepository.save(resetToken);
+
+        // TRACK METRIC
+        metricsService.recordPasswordReset();
 
         // Send email
         emailService.sendPasswordResetEmail(user.getEmail(), token, user.getFullName());

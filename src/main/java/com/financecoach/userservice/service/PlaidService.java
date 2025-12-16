@@ -21,6 +21,8 @@ public class PlaidService {
 
     private final PlaidApi plaidClient;
     private final BankAccountRepository bankAccountRepository;
+    @Autowired
+    private MetricsService metricsService;
 
     @Autowired
     public PlaidService(PlaidApi plaidClient, BankAccountRepository bankAccountRepository) {
@@ -60,6 +62,8 @@ public class PlaidService {
      * Exchange public token for access token and save account
      */
     public List<BankAccount> exchangePublicToken(UUID userId, String publicToken) throws IOException {
+        long startTime = System.currentTimeMillis(); // Start timing
+
         // Exchange public token for access token
         ItemPublicTokenExchangeRequest exchangeRequest = new ItemPublicTokenExchangeRequest()
                 .publicToken(publicToken);
@@ -147,7 +151,14 @@ public class PlaidService {
             bankAccount.setIsActive(true);
 
             savedAccounts.add(bankAccountRepository.save(bankAccount));
+
+            // TRACK METRIC - Count each bank account connected
+            metricsService.recordBankAccountConnected();
         }
+
+        // TRACK METRIC - API call timing
+        long duration = System.currentTimeMillis() - startTime;
+        metricsService.recordPlaidApiDuration(duration);
 
         return savedAccounts;
     }
