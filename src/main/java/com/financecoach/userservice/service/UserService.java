@@ -19,6 +19,8 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    @Autowired
+    private MetricsService metricsService;
 
     @Autowired
     public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
@@ -50,6 +52,8 @@ public class UserService {
         // Save to database
         User savedUser = userRepository.save(user);
 
+        // TRACK METRIC
+        metricsService.recordUserRegistration();
         return convertToResponse(savedUser);
     }
 
@@ -67,6 +71,8 @@ public class UserService {
         user.setLastLogin(LocalDateTime.now());
         userRepository.save(user);
 
+        // TRACK METRIC
+        metricsService.recordUserLogin();
         return user;
     }
 

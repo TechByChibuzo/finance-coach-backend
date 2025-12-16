@@ -25,6 +25,8 @@ public class TransactionService {
     private final PlaidApi plaidClient;
     private final TransactionRepository transactionRepository;
     private final BankAccountRepository bankAccountRepository;
+    @Autowired
+    private MetricsService metricsService;
 
     @Autowired
     public TransactionService(PlaidApi plaidClient,
@@ -39,6 +41,8 @@ public class TransactionService {
      * Sync transactions for a specific bank account
      */
     public List<Transaction> syncTransactions(UUID accountId, UUID userId) throws IOException {
+
+        long startTime = System.currentTimeMillis(); // Start timing
         // Get bank account
         BankAccount bankAccount = bankAccountRepository.findById(accountId)
                 .orElseThrow(() -> new RuntimeException("Account not found"));
@@ -77,6 +81,11 @@ public class TransactionService {
             Transaction transaction = convertPlaidTransaction(plaidTx, bankAccount);
             savedTransactions.add(transactionRepository.save(transaction));
         }
+
+        // TRACK METRICS
+        metricsService.recordTransactionsSynced(savedTransactions.size());
+        long duration = System.currentTimeMillis() - startTime;
+        metricsService.recordTransactionSyncDuration(duration);
 
         // Update last synced time
         bankAccount.setLastSyncedAt(LocalDateTime.now());

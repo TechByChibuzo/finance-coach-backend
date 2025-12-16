@@ -22,6 +22,8 @@ public class BudgetService {
 
     private final BudgetRepository budgetRepository;
     private final AnalyticsService analyticsService;
+    @Autowired
+    private MetricsService metricsService;
 
     @Autowired
     public BudgetService(BudgetRepository budgetRepository, AnalyticsService analyticsService) {
@@ -111,8 +113,7 @@ public class BudgetService {
             budget = new Budget(userId, request.getCategory(), month, request.getAmount());
             budget.setIsActive(true);
 
-            System.out.println("🔍 Creating NEW budget:");
-            System.out.println("   isActive: " + budget.getIsActive());
+            metricsService.recordBudgetCreated();
             if (request.getNotes() != null) {
                 budget.setNotes(request.getNotes());
             }
@@ -132,10 +133,6 @@ public class BudgetService {
         // Save to database
         Budget savedBudget = budgetRepository.save(budget);
         budgetRepository.flush();
-
-        System.out.println("✅ Budget saved:");
-        System.out.println("   ID: " + savedBudget.getId());
-        System.out.println("   isActive: " + savedBudget.getIsActive());
 
         return convertToResponse(savedBudget);
     }

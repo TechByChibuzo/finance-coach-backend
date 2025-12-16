@@ -18,6 +18,8 @@ public class AICoachService {
     private final ClaudeService claudeService;
     private final TransactionRepository transactionRepository;
     private final AnalyticsService analyticsService;
+    @Autowired
+    private MetricsService metricsService;
 
     @Autowired
     public AICoachService(ClaudeService claudeService,
@@ -32,6 +34,11 @@ public class AICoachService {
      * General financial chat with context
      */
     public String chat(UUID userId, String userMessage) {
+        long startTime = System.currentTimeMillis(); // Start timing
+
+        // TRACK METRIC - Count request
+        metricsService.recordAiCoachRequest();
+
         // Build context about user's finances
         String context = buildUserFinancialContext(userId);
 
@@ -47,7 +54,13 @@ public class AICoachService {
         // Combine context with user message
         String fullMessage = context + "\n\nUser asks: " + userMessage;
 
-        return claudeService.chat(fullMessage, systemPrompt);
+        String response =  claudeService.chat(fullMessage, systemPrompt);
+
+        // TRACK METRIC - Response time
+        long duration = System.currentTimeMillis() - startTime;
+        metricsService.recordAiCoachResponseDuration(duration);
+
+        return response;
     }
 
     /**
