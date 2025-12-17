@@ -235,12 +235,21 @@ public class SubscriptionService {
     }
 
     /**
-     * Get Stripe price ID based on plan and billing cycle
+     * Get Stripe price ID from database
      */
     private String getStripePriceId(SubscriptionPlan plan, BillingCycle cycle) {
-        // In a real app, these would be stored in database or config
-        // For now, return placeholder
-        return "price_" + plan.getName() + "_" + cycle.name();
+        String priceId = cycle == BillingCycle.MONTHLY
+                ? plan.getStripePriceIdMonthly()
+                : plan.getStripePriceIdYearly();
+
+        if (priceId == null || priceId.isEmpty()) {
+            throw new RuntimeException(
+                    "Stripe price ID not configured for plan: " + plan.getName() +
+                            " (" + cycle + ")"
+            );
+        }
+
+        return priceId;
     }
 
     /**

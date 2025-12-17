@@ -33,6 +33,12 @@ public class SubscriptionPlan {
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal priceYearly = BigDecimal.ZERO;
 
+    @Column(name = "stripe_price_id_monthly")
+    private String stripePriceIdMonthly;
+
+    @Column(name = "stripe_price_id_yearly")
+    private String stripePriceIdYearly;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private String features; // JSON string of features
