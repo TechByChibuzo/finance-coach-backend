@@ -47,14 +47,19 @@ public interface UserSubscriptionRepository extends JpaRepository<UserSubscripti
      */
     Optional<UserSubscription> findByStripeSubscriptionId(String stripeSubscriptionId);
 
-    /**
-     * Find by Stripe customer ID
-     */
-    List<UserSubscription> findByStripeCustomerId(String stripeCustomerId);
+//    /**
+//     * Find by Stripe customer ID
+//     */
+//    Optional<UserSubscription> findByStripeCustomerId(String stripeCustomerId);
 
     /**
      * Count active subscriptions by plan
      */
     @Query("SELECT COUNT(s) FROM UserSubscription s WHERE s.plan.id = :planId AND s.status = 'ACTIVE'")
     Long countActiveByPlanId(@Param("planId") UUID planId);
+
+    /**
+     * Find any subscription for user (active or not)
+     */
+    Optional<UserSubscription> findByUserId(UUID userId);
 }

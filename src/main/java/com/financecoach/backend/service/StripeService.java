@@ -84,10 +84,11 @@ public class StripeService {
     /**
      * Create checkout session
      */
-    public Session createCheckoutSession(String priceId, String successUrl, String cancelUrl)
+    public Session createCheckoutSession(String customerId, String priceId, String successUrl, String cancelUrl)
             throws StripeException {
         SessionCreateParams params = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.SUBSCRIPTION)
+                .setCustomer(customerId)
                 .addLineItem(
                         SessionCreateParams.LineItem.builder()
                                 .setPrice(priceId)

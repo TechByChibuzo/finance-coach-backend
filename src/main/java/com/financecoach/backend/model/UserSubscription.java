@@ -37,10 +37,6 @@ public class UserSubscription {
     private LocalDateTime trialEndDate;
     private LocalDateTime cancelledAt;
 
-    // Stripe integration
-    @Column(length = 255)
-    private String stripeCustomerId;
-
     @Column(length = 255)
     private String stripeSubscriptionId;
 

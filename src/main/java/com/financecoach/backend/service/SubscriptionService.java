@@ -10,7 +10,9 @@ import com.financecoach.backend.repository.*;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
+import com.stripe.model.Subscription;
 import com.stripe.model.checkout.Session;
+import com.stripe.model.Customer;
 import com.stripe.net.Webhook;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -42,10 +44,16 @@ public class SubscriptionService {
     private PaymentRepository paymentRepository;
 
     @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
     private StripeService stripeService;
 
     @Value("${stripe.webhook-secret}")
     private String webhookSecret;
+
+    @Value("${app.frontend-url}")
+    private String frontendUrl;
 
     // ============================================
     // PLAN MANAGEMENT
@@ -224,11 +232,15 @@ public class SubscriptionService {
         // Get price based on billing cycle
         String priceId = getStripePriceId(plan, billingCycle);
 
+        String successUrl = frontendUrl + "/subscription/success?session_id={CHECKOUT_SESSION_ID}";
+        String cancelUrl = frontendUrl + "/subscription/cancel";
+
         // Create checkout session
         Session session = stripeService.createCheckoutSession(
+                stripeCustomerId,
                 priceId,
-                "http://localhost:3000/subscription/success?session_id={CHECKOUT_SESSION_ID}",
-                "http://localhost:3000/pricing"
+                successUrl,
+                cancelUrl
         );
 
         return session.getUrl();
@@ -256,22 +268,22 @@ public class SubscriptionService {
      * Get or create Stripe customer for user
      */
     private String getOrCreateStripeCustomer(UUID userId) throws StripeException {
-        // Check if user already has Stripe customer
-        Optional<UserSubscription> existingSub = subscriptionRepository
-                .findByUserIdOrderByCreatedAtDesc(userId)
-                .stream()
-                .findFirst();
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("User not found"));
 
-        if (existingSub.isPresent() && existingSub.get().getStripeCustomerId() != null) {
-            return existingSub.get().getStripeCustomerId();
+        if (user.getStripeCustomerId() != null) {
+            return user.getStripeCustomerId();
         }
 
         // Create new Stripe customer
-        // In real app, get user email from User entity
-        com.stripe.model.Customer customer = stripeService.createCustomer(
-                "user-" + userId + "@example.com",
-                "User " + userId
+        Customer customer = stripeService.createCustomer(
+                user.getEmail(),
+                user.getFullName() != null ? user.getFullName() : user.getEmail()
         );
+
+        user.setStripeCustomerId(customer.getId());
+        userRepository.save(user);
+        System.out.println("✅ Stored customer ID in user: " + customer.getId());
 
         return customer.getId();
     }
@@ -284,16 +296,23 @@ public class SubscriptionService {
      * Create or upgrade subscription
      */
     @Transactional
-    public UserSubscription createSubscription(UUID userId, String planName, BillingCycle cycle) {
+    public void createSubscription(UUID userId, String planName, BillingCycle cycle) {
         // Get plan
         SubscriptionPlan plan = planRepository.findByName(planName)
                 .orElseThrow(() -> new RuntimeException("Plan not found: " + planName));
 
         // Cancel existing subscription
         getUserSubscription(userId).ifPresent(existing -> {
-            existing.setStatus(SubscriptionStatus.CANCELLED);
-            existing.setCancelledAt(LocalDateTime.now());
-            subscriptionRepository.save(existing);
+            try {
+                if (existing.getStripeSubscriptionId() != null) {
+                    stripeService.cancelSubscription(existing.getStripeSubscriptionId());
+                }
+                existing.setStatus(SubscriptionStatus.CANCELLED);
+                existing.setCancelledAt(LocalDateTime.now());
+                subscriptionRepository.save(existing);
+            } catch (StripeException e) {
+                System.err.println("Failed to cancel Stripe subscription: " + e.getMessage());
+            }
         });
 
         // Create new subscription
@@ -311,7 +330,12 @@ public class SubscriptionService {
             subscription.setEndDate(LocalDateTime.now().plusYears(1));
         }
 
-        return subscriptionRepository.save(subscription);
+        subscription.setAutoRenew(true);
+        subscriptionRepository.save(subscription);
+
+        System.out.println("✅ Subscription activated for user: " + userId);
+        System.out.println("✅ Plan: " + plan.getName());
+        System.out.println("✅ Billing: " + cycle);
     }
 
     /**
@@ -342,14 +366,13 @@ public class SubscriptionService {
         UserSubscription subscription = getUserSubscription(userId)
                 .orElseThrow(() -> new RuntimeException("No active subscription"));
 
-        subscription.setStatus(SubscriptionStatus.CANCELLED);
-        subscription.setCancelledAt(LocalDateTime.now());
-        subscription.setAutoRenew(false);
-
         // Cancel in Stripe if exists
         if (subscription.getStripeSubscriptionId() != null) {
             try {
                 stripeService.cancelSubscription(subscription.getStripeSubscriptionId());
+                subscription.setStatus(SubscriptionStatus.CANCELLED);
+                subscription.setCancelledAt(LocalDateTime.now());
+                subscription.setAutoRenew(false);
             } catch (StripeException e) {
                 // Log error but don't fail
                 System.err.println("Failed to cancel Stripe subscription: " + e.getMessage());
@@ -404,12 +427,62 @@ public class SubscriptionService {
         }
     }
 
+    /**
+     * Handle checkout.session.completed
+     * This is called when user completes payment
+     */
     private void handleCheckoutCompleted(Event event) {
-        // Extract session data and create subscription
-        // Implementation depends on your Stripe setup
-        System.out.println("Checkout completed: " + event.getId());
-    }
+        try {
+            // Parse the session from event data
+            Session session = (Session) event.getDataObjectDeserializer()
+                    .getObject()
+                    .orElseThrow(() -> new RuntimeException("Session not found"));
 
+            System.out.println("Processing checkout session: " + session.getId());
+            System.out.println("Customer: " + session.getCustomer());
+            System.out.println("Subscription: " + session.getSubscription());
+
+            // Get subscription ID from session
+            String stripeSubscriptionId = session.getSubscription();
+            String stripeCustomerId = session.getCustomer();
+
+            if (stripeSubscriptionId == null) {
+                System.out.println("No subscription in session, skipping");
+                return;
+            }
+
+            // Fetch full subscription details from Stripe
+            Subscription stripeSubscription =
+                    com.stripe.model.Subscription.retrieve(stripeSubscriptionId);
+
+            // Get the plan from subscription
+            String stripePriceId = stripeSubscription.getItems().getData().get(0).getPrice().getId();
+
+            // Find matching plan in database
+            SubscriptionPlan plan = findPlanByStripePriceId(stripePriceId);
+
+            // Determine billing cycle
+            BillingCycle billingCycle = stripeSubscription.getItems().getData().get(0)
+                    .getPrice().getRecurring().getInterval().equals("year")
+                    ? BillingCycle.YEARLY
+                    : BillingCycle.MONTHLY;
+
+            // Find user by Stripe customer ID or email
+            UUID userId = findUserByStripeCustomerId(stripeCustomerId);
+
+            if (userId == null) {
+                System.err.println("User not found for Stripe customer: " + stripeCustomerId);
+                return;
+            }
+
+            System.out.println("✅ Found user: " + userId);
+            createSubscription(userId, plan.getName(), billingCycle);
+
+        } catch (Exception e) {
+            System.err.println("Error handling checkout completed: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
     private void handleSubscriptionUpdated(Event event) {
         System.out.println("Subscription updated: " + event.getId());
     }
@@ -460,5 +533,31 @@ public class SubscriptionService {
             case "report_export" -> plan.isFree() ? 0 : -1;
             default -> -1; // Unlimited by default
         };
+    }
+
+    // ============================================
+    // HELPER METHODS FOR WEBHOOK HANDLING
+    // ============================================
+
+    /**
+     * Find plan by Stripe price ID
+     */
+    private SubscriptionPlan findPlanByStripePriceId(String stripePriceId) {
+        return planRepository.findAll().stream()
+                .filter(plan ->
+                        stripePriceId.equals(plan.getStripePriceIdMonthly()) ||
+                                stripePriceId.equals(plan.getStripePriceIdYearly())
+                )
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Plan not found for price: " + stripePriceId));
+    }
+
+    /**
+     * Find user by Stripe customer ID
+     */
+    private UUID findUserByStripeCustomerId(String stripeCustomerId) {
+        return userRepository.findByStripeCustomerId(stripeCustomerId)
+                .map(User::getId)
+                .orElse(null);
     }
 }
