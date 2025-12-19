@@ -3,6 +3,10 @@ package com.financecoach.backend.service;
 
 import com.financecoach.backend.dto.UserRegistrationRequest;
 import com.financecoach.backend.dto.UserResponse;
+import com.financecoach.backend.exception.EmailAlreadyExistsException;
+import com.financecoach.backend.exception.InvalidCredentialsException;
+import com.financecoach.backend.exception.UserNotFoundException;
+import com.financecoach.backend.exception.ValidationException;
 import com.financecoach.backend.model.User;
 import com.financecoach.backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,15 +35,15 @@ public class UserService {
     public UserResponse registerUser(UserRegistrationRequest request) {
         // Validate input
         if (request.getEmail() == null || request.getEmail().isEmpty()) {
-            throw new RuntimeException("Email is required");
+            throw new ValidationException("Email is required");
         }
-        if (request.getPassword() == null || request.getPassword().length() < 6) {
-            throw new RuntimeException("Password must be at least 6 characters");
+        if (request.getPassword() == null || request.getPassword().length() < 8) {
+            throw new ValidationException("Password must be at least 8 characters");
         }
 
         // Check if email already exists
         if (userRepository.existsByEmail(request.getEmail())) {
-            throw new RuntimeException("Email already registered");
+            throw new EmailAlreadyExistsException(request.getEmail());
         }
 
         // Create new user with hashed password
@@ -60,11 +64,11 @@ public class UserService {
     public User authenticate(String email, String password) {
         // Find user by email
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Invalid email or password"));
+                .orElseThrow(InvalidCredentialsException::new);
 
         // Check password
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
-            throw new RuntimeException("Invalid email or password");
+            throw new InvalidCredentialsException();
         }
 
         // Update last login
@@ -76,15 +80,23 @@ public class UserService {
         return user;
     }
 
+    /**
+     * Get user by ID
+     * Throws UserNotFoundException if not found
+     */
     public UserResponse getUserById(UUID id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new UserNotFoundException(id));
         return convertToResponse(user);
     }
 
+    /**
+     * Get user by email
+     * Throws UserNotFoundException if not found
+     */
     public UserResponse getUserByEmail(String email) {
         User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new UserNotFoundException(email));
         return convertToResponse(user);
     }
 
@@ -94,7 +106,14 @@ public class UserService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Delete user
+     * Throws UserNotFoundException if not found
+     */
     public void deleteUser(UUID id) {
+        if (!userRepository.existsById(id)) {
+            throw new UserNotFoundException(id);
+        }
         userRepository.deleteById(id);
     }
 

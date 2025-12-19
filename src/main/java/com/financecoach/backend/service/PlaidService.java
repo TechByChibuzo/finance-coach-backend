@@ -1,6 +1,7 @@
 // src/main/java/com/financecoach/userservice/service/PlaidService.java
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.exception.PlaidIntegrationException;
 import com.plaid.client.model.*;
 import com.plaid.client.request.PlaidApi;
 import com.financecoach.backend.model.BankAccount;
@@ -73,8 +74,11 @@ public class PlaidService {
                 .execute();
 
         if (!exchangeResponse.isSuccessful() || exchangeResponse.body() == null) {
-            throw new RuntimeException("Failed to exchange public token: " +
-                    exchangeResponse.errorBody().string());
+            String errorMsg = exchangeResponse.errorBody() != null
+                    ? exchangeResponse.errorBody().string()
+                    : "Unknown error";
+            throw new PlaidIntegrationException("Failed to exchange token: " + errorMsg);
+
         }
 
         String accessToken = exchangeResponse.body().getAccessToken();
@@ -126,7 +130,7 @@ public class PlaidService {
             BankAccount bankAccount = new BankAccount();
             bankAccount.setUserId(userId);
             bankAccount.setPlaidAccountId(account.getAccountId());
-            bankAccount.setPlaidAccessToken(accessToken); // TODO: Encrypt in production!
+            bankAccount.setPlaidAccessToken(accessToken);
             bankAccount.setInstitutionName(institutionName);
             bankAccount.setInstitutionId(institutionId);
             bankAccount.setAccountName(account.getName());

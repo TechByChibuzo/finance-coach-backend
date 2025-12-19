@@ -1,6 +1,8 @@
 // src/main/java/com/financecoach/userservice/service/TransactionService.java
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.exception.BankAccountNotFoundException;
+import com.financecoach.backend.exception.UnauthorizedAccessException;
 import com.plaid.client.model.*;
 import com.plaid.client.request.PlaidApi;
 import com.financecoach.backend.model.BankAccount;
@@ -44,11 +46,11 @@ public class TransactionService {
         long startTime = System.currentTimeMillis(); // Start timing
         // Get bank account
         BankAccount bankAccount = bankAccountRepository.findById(accountId)
-                .orElseThrow(() -> new RuntimeException("Account not found"));
+                .orElseThrow(() -> new BankAccountNotFoundException(accountId));
 
         // Verify ownership
         if (!bankAccount.getUserId().equals(userId)) {
-            throw new RuntimeException("Unauthorized");
+            throw new UnauthorizedAccessException("bank account");
         }
 
         // Fetch transactions from Plaid (last 30 days)
