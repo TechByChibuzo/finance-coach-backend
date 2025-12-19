@@ -1,10 +1,11 @@
-// src/main/java/com/financecoach/userservice/controller/BudgetController.java
+// src/main/java/com/financecoach/backend/controller/BudgetController.java
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.dto.BudgetRequest;
 import com.financecoach.backend.dto.BudgetResponse;
 import com.financecoach.backend.dto.BudgetSummaryResponse;
 import com.financecoach.backend.service.BudgetService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -34,14 +35,10 @@ public class BudgetController {
      * POST /api/budgets
      */
     @PostMapping
-    public ResponseEntity<?> createOrUpdateBudget(@RequestBody BudgetRequest request) {
-        try {
-            UUID userId = getCurrentUserId();
-            BudgetResponse budget = budgetService.createOrUpdateBudget(userId, request);
-            return ResponseEntity.status(HttpStatus.CREATED).body(budget);
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+    public ResponseEntity<BudgetResponse> createOrUpdateBudget(@Valid @RequestBody BudgetRequest request) {
+        UUID userId = getCurrentUserId();
+        BudgetResponse budget = budgetService.createOrUpdateBudget(userId, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(budget);
     }
 
     /**
@@ -89,13 +86,9 @@ public class BudgetController {
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteBudget(@PathVariable UUID id) {
-        try {
-            UUID userId = getCurrentUserId();
-            budgetService.deleteBudget(id, userId);
-            return ResponseEntity.noContent().build();
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
+        UUID userId = getCurrentUserId();
+        budgetService.deleteBudget(id, userId);
+        return ResponseEntity.noContent().build();
     }
 
     /**
@@ -150,18 +143,14 @@ public class BudgetController {
      * POST /api/budgets/copy-previous
      */
     @PostMapping("/copy-previous")
-    public ResponseEntity<?> copyPreviousMonthBudgets() {
-        try {
-            UUID userId = getCurrentUserId();
-            List<BudgetResponse> copiedBudgets = budgetService.copyPreviousMonthBudgets(userId);
-            return ResponseEntity.ok(Map.of(
-                    "message", "Budgets copied successfully",
-                    "count", copiedBudgets.size(),
-                    "budgets", copiedBudgets
-            ));
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        }
+    public ResponseEntity<Map<String, Object>> copyPreviousMonthBudgets() {
+        UUID userId = getCurrentUserId();
+        List<BudgetResponse> copiedBudgets = budgetService.copyPreviousMonthBudgets(userId);
+        return ResponseEntity.ok(Map.of(
+                "message", "Budgets copied successfully",
+                "count", copiedBudgets.size(),
+                "budgets", copiedBudgets
+        ));
     }
 
     // Helper method to get current authenticated user ID

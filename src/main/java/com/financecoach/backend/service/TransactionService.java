@@ -2,6 +2,7 @@
 package com.financecoach.backend.service;
 
 import com.financecoach.backend.exception.BankAccountNotFoundException;
+import com.financecoach.backend.exception.PlaidIntegrationException;
 import com.financecoach.backend.exception.UnauthorizedAccessException;
 import com.plaid.client.model.*;
 import com.plaid.client.request.PlaidApi;
@@ -41,74 +42,87 @@ public class TransactionService {
     /**
      * Sync transactions for a specific bank account
      */
-    public List<Transaction> syncTransactions(UUID accountId, UUID userId) throws IOException {
+    public List<Transaction> syncTransactions(UUID accountId, UUID userId) {
+        long startTime = System.currentTimeMillis();
 
-        long startTime = System.currentTimeMillis(); // Start timing
-        // Get bank account
-        BankAccount bankAccount = bankAccountRepository.findById(accountId)
-                .orElseThrow(() -> new BankAccountNotFoundException(accountId));
+        try {
+            // Get bank account
+            BankAccount bankAccount = bankAccountRepository.findById(accountId)
+                    .orElseThrow(() -> new BankAccountNotFoundException(accountId));
 
-        // Verify ownership
-        if (!bankAccount.getUserId().equals(userId)) {
-            throw new UnauthorizedAccessException("bank account");
-        }
-
-        // Fetch transactions from Plaid (last 30 days)
-        LocalDate endDate = LocalDate.now();
-        LocalDate startDate = endDate.minusDays(30);
-
-        TransactionsGetRequest request = new TransactionsGetRequest()
-                .accessToken(bankAccount.getPlaidAccessToken())
-                .startDate(startDate)
-                .endDate(endDate);
-
-        Response<TransactionsGetResponse> response = plaidClient
-                .transactionsGet(request)
-                .execute();
-
-        if (!response.isSuccessful() || response.body() == null) {
-            throw new RuntimeException("Failed to fetch transactions: " +
-                    response.errorBody().string());
-        }
-
-        // Save transactions
-        List<Transaction> savedTransactions = new ArrayList<>();
-        for (com.plaid.client.model.Transaction plaidTx : response.body().getTransactions()) {
-            // Check if transaction already exists
-            if (transactionRepository.existsByPlaidTransactionId(plaidTx.getTransactionId())) {
-                continue; // Skip duplicates
+            // Verify ownership
+            if (!bankAccount.getUserId().equals(userId)) {
+                throw new UnauthorizedAccessException("bank account");
             }
 
-            Transaction transaction = convertPlaidTransaction(plaidTx, bankAccount);
-            savedTransactions.add(transactionRepository.save(transaction));
+            // Fetch transactions from Plaid (last 30 days)
+            LocalDate endDate = LocalDate.now();
+            LocalDate startDate = endDate.minusDays(30);
+
+            TransactionsGetRequest request = new TransactionsGetRequest()
+                    .accessToken(bankAccount.getPlaidAccessToken())
+                    .startDate(startDate)
+                    .endDate(endDate);
+
+            Response<TransactionsGetResponse> response = plaidClient
+                    .transactionsGet(request)
+                    .execute();
+
+            if (!response.isSuccessful() || response.body() == null) {
+                String errorMsg = response.errorBody() != null
+                        ? response.errorBody().string()
+                        : "Unknown error";
+                throw new PlaidIntegrationException("Failed to fetch transactions: " + errorMsg);
+            }
+
+            // Save transactions
+            List<Transaction> savedTransactions = new ArrayList<>();
+            for (com.plaid.client.model.Transaction plaidTx : response.body().getTransactions()) {
+                if (transactionRepository.existsByPlaidTransactionId(plaidTx.getTransactionId())) {
+                    continue;
+                }
+
+                Transaction transaction = convertPlaidTransaction(plaidTx, bankAccount);
+                savedTransactions.add(transactionRepository.save(transaction));
+            }
+
+            // Track metrics
+            metricsService.recordTransactionsSynced(savedTransactions.size());
+            long duration = System.currentTimeMillis() - startTime;
+            metricsService.recordTransactionSyncDuration(duration);
+
+            // Update last synced time
+            bankAccount.setLastSyncedAt(LocalDateTime.now());
+            bankAccountRepository.save(bankAccount);
+
+            return savedTransactions;
+
+        } catch (IOException e) {
+            throw new PlaidIntegrationException("Network error syncing transactions", e);
         }
-
-        // TRACK METRICS
-        metricsService.recordTransactionsSynced(savedTransactions.size());
-        long duration = System.currentTimeMillis() - startTime;
-        metricsService.recordTransactionSyncDuration(duration);
-
-        // Update last synced time
-        bankAccount.setLastSyncedAt(LocalDateTime.now());
-        bankAccountRepository.save(bankAccount);
-
-        return savedTransactions;
     }
+
 
     /**
      * Sync transactions for all user's bank accounts
      */
-    public List<Transaction> syncAllTransactions(UUID userId) throws IOException {
+    public List<Transaction> syncAllTransactions(UUID userId) {
         List<BankAccount> accounts = bankAccountRepository.findByUserIdAndIsActive(userId, true);
+
+        if (accounts.isEmpty()) {
+            throw new BankAccountNotFoundException("No active bank accounts found");
+        }
+
         List<Transaction> allTransactions = new ArrayList<>();
 
         for (BankAccount account : accounts) {
             try {
                 List<Transaction> transactions = syncTransactions(account.getId(), userId);
                 allTransactions.addAll(transactions);
-            } catch (Exception e) {
+            } catch (PlaidIntegrationException e) {
                 // Log error but continue with other accounts
-                System.err.println("Failed to sync account " + account.getId() + ": " + e.getMessage());
+                // Exception will be logged by GlobalExceptionHandler
+                throw e; // Re-throw to notify user
             }
         }
 

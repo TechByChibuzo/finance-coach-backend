@@ -1,4 +1,4 @@
-// src/main/java/com/financecoach/userservice/controller/TransactionController.java
+// src/main/java/com/financecoach/backend/controller/TransactionController.java
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.dto.plaid.TransactionResponse;
@@ -6,7 +6,6 @@ import com.financecoach.backend.model.Transaction;
 import com.financecoach.backend.service.TransactionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -30,46 +29,39 @@ public class TransactionController {
 
     /**
      * Sync transactions for a specific account
+     * POST /api/transactions/sync/{accountId}
      */
     @PostMapping("/sync/{accountId}")
-    public ResponseEntity<?> syncAccountTransactions(@PathVariable UUID accountId) {
-        try {
-            UUID userId = getCurrentUserId();
-            List<Transaction> transactions = transactionService.syncTransactions(accountId, userId);
+    public ResponseEntity<List<TransactionResponse>> syncAccountTransactions(@PathVariable UUID accountId) {
+        UUID userId = getCurrentUserId();
+        List<Transaction> transactions = transactionService.syncTransactions(accountId, userId);
 
-            List<TransactionResponse> response = transactions.stream()
-                    .map(this::convertToResponse)
-                    .collect(Collectors.toList());
+        List<TransactionResponse> response = transactions.stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
 
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error syncing transactions: " + e.getMessage());
-        }
+        return ResponseEntity.ok(response);
     }
 
     /**
      * Sync transactions for all user's accounts
+     * POST /api/transactions/sync
      */
     @PostMapping("/sync")
-    public ResponseEntity<?> syncAllTransactions() {
-        try {
-            UUID userId = getCurrentUserId();
-            List<Transaction> transactions = transactionService.syncAllTransactions(userId);
+    public ResponseEntity<List<TransactionResponse>> syncAllTransactions() {
+        UUID userId = getCurrentUserId();
+        List<Transaction> transactions = transactionService.syncAllTransactions(userId);
 
-            List<TransactionResponse> response = transactions.stream()
-                    .map(this::convertToResponse)
-                    .collect(Collectors.toList());
+        List<TransactionResponse> response = transactions.stream()
+                .map(this::convertToResponse)
+                .collect(Collectors.toList());
 
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error syncing transactions: " + e.getMessage());
-        }
+        return ResponseEntity.ok(response);
     }
 
     /**
      * Get all transactions (with optional date range)
+     * GET /api/transactions?startDate=2024-01-01&endDate=2024-12-31
      */
     @GetMapping
     public ResponseEntity<List<TransactionResponse>> getTransactions(
@@ -88,11 +80,10 @@ public class TransactionController {
 
     /**
      * Get transactions by category
+     * GET /api/transactions/category/{category}
      */
     @GetMapping("/category/{category}")
-    public ResponseEntity<List<TransactionResponse>> getTransactionsByCategory(
-            @PathVariable String category) {
-
+    public ResponseEntity<List<TransactionResponse>> getTransactionsByCategory(@PathVariable String category) {
         UUID userId = getCurrentUserId();
         List<Transaction> transactions = transactionService.getTransactionsByCategory(userId, category);
 

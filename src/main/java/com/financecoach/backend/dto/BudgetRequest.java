@@ -1,13 +1,29 @@
-// src/main/java/com/financecoach/userservice/dto/BudgetRequest.java
+// src/main/java/com/financecoach/backend/dto/BudgetRequest.java
 package com.financecoach.backend.dto;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 
 import java.time.LocalDate;
 
 public class BudgetRequest {
+
+    @NotBlank(message = "Category is required")
     private String category;
+
     private LocalDate month;  // Optional - defaults to current month
+
+    @NotNull(message = "Amount is required")
+    @Positive(message = "Amount must be positive")
     private Double amount;
+
     private String notes;
+
+    @Min(value = 0, message = "Alert threshold must be between 0 and 100")
+    @Max(value = 100, message = "Alert threshold must be between 0 and 100")
     private Double alertThreshold;  // Optional - defaults to 80%
 
     // Constructors

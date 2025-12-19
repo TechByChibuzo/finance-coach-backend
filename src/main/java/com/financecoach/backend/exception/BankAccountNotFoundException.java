@@ -8,4 +8,11 @@ public class BankAccountNotFoundException extends FinanceCoachException {
     public BankAccountNotFoundException(UUID accountId) {
         super("Bank account not found with id: " + accountId, "ACCOUNT_NOT_FOUND");
     }
+
+    /**
+     * Constructor for custom error messages
+     */
+    public BankAccountNotFoundException(String message) {
+        super(message, "ACCOUNT_NOT_FOUND");
+    }
 }

@@ -1,9 +1,13 @@
-// src/main/java/com/financecoach/userservice/service/BudgetService.java
+// src/main/java/com/financecoach/backend/service/BudgetService.java
 package com.financecoach.backend.service;
 
 import com.financecoach.backend.dto.BudgetRequest;
 import com.financecoach.backend.dto.BudgetResponse;
 import com.financecoach.backend.dto.BudgetSummaryResponse;
+import com.financecoach.backend.exception.BudgetNotFoundException;
+import com.financecoach.backend.exception.NoPreviousBudgetsException;
+import com.financecoach.backend.exception.UnauthorizedAccessException;
+import com.financecoach.backend.exception.ValidationException;
 import com.financecoach.backend.model.Budget;
 import com.financecoach.backend.repository.BudgetRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +26,7 @@ public class BudgetService {
 
     private final BudgetRepository budgetRepository;
     private final AnalyticsService analyticsService;
+
     @Autowired
     private MetricsService metricsService;
 
@@ -78,10 +83,10 @@ public class BudgetService {
     public BudgetResponse createOrUpdateBudget(UUID userId, BudgetRequest request) {
         // Validate inputs
         if (request.getCategory() == null || request.getCategory().isEmpty()) {
-            throw new RuntimeException("Category is required");
+            throw new ValidationException("Category is required");
         }
         if (request.getAmount() == null || request.getAmount() <= 0) {
-            throw new RuntimeException("Budget amount must be positive");
+            throw new ValidationException("Budget amount must be positive");
         }
 
         // Default to current month if not specified
@@ -232,11 +237,11 @@ public class BudgetService {
     @Transactional
     public void deleteBudget(UUID budgetId, UUID userId) {
         Budget budget = budgetRepository.findById(budgetId)
-                .orElseThrow(() -> new RuntimeException("Budget not found"));
+                .orElseThrow(() -> new BudgetNotFoundException(budgetId));
 
         // Verify ownership
         if (!budget.getUserId().equals(userId)) {
-            throw new RuntimeException("Unauthorized");
+            throw new UnauthorizedAccessException("budget");
         }
 
         // Soft delete
@@ -254,7 +259,6 @@ public class BudgetService {
 
         Map<String, Double> rawSpending = analyticsService.getSpendingByCategory(userId, startDate, endDate);
         Map<String, Double> categorySpending = mapCategoriesToBudgetCategories(rawSpending);
-
 
         // Calculate average monthly spending per category and add 10% buffer
         return categorySpending.entrySet().stream()
@@ -320,7 +324,7 @@ public class BudgetService {
                 userId, previousMonth, true);
 
         if (previousBudgets.isEmpty()) {
-            throw new RuntimeException("No budgets found for previous month");
+            throw new NoPreviousBudgetsException();
         }
 
         List<Budget> newBudgets = previousBudgets.stream()
@@ -328,12 +332,6 @@ public class BudgetService {
                     // Check if budget already exists for current month
                     boolean exists = budgetRepository.existsByUserIdAndCategoryAndMonth(
                             userId, prevBudget.getCategory(), currentMonth);
-
-                    System.out.println("OLD BUDGET");
-                    System.out.println(prevBudget.getId());
-                    System.out.println(prevBudget.getAmount());
-                    System.out.println(prevBudget.getCategory());
-                    System.out.println(exists);
 
                     if (!exists) {
                         Budget newBudget = new Budget(

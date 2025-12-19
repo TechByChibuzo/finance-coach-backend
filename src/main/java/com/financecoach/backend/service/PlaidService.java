@@ -1,7 +1,9 @@
 // src/main/java/com/financecoach/userservice/service/PlaidService.java
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.exception.BankAccountNotFoundException;
 import com.financecoach.backend.exception.PlaidIntegrationException;
+import com.financecoach.backend.exception.UnauthorizedAccessException;
 import com.plaid.client.model.*;
 import com.plaid.client.request.PlaidApi;
 import com.financecoach.backend.model.BankAccount;
@@ -34,137 +36,146 @@ public class PlaidService {
     /**
      * Create a link token for Plaid Link
      */
-    public String createLinkToken(UUID userId, String username) throws IOException {
-        // Create user object
-        LinkTokenCreateRequestUser user = new LinkTokenCreateRequestUser()
-                .clientUserId(userId.toString());
+    public String createLinkToken(UUID userId, String username) {
+        try {
+            LinkTokenCreateRequestUser user = new LinkTokenCreateRequestUser()
+                    .clientUserId(userId.toString());
 
-        // Create link token request
-        LinkTokenCreateRequest request = new LinkTokenCreateRequest()
-                .user(user)
-                .clientName("Finance Coach")
-                .products(Arrays.asList(Products.TRANSACTIONS))
-                .countryCodes(Arrays.asList(CountryCode.US))
-                .language("en");
+            LinkTokenCreateRequest request = new LinkTokenCreateRequest()
+                    .user(user)
+                    .clientName("Finance Coach")
+                    .products(Arrays.asList(Products.TRANSACTIONS))
+                    .countryCodes(Arrays.asList(CountryCode.US))
+                    .language("en");
 
-        // Execute request
-        Response<LinkTokenCreateResponse> response = plaidClient
-                .linkTokenCreate(request)
-                .execute();
+            Response<LinkTokenCreateResponse> response = plaidClient
+                    .linkTokenCreate(request)
+                    .execute();
 
-        if (response.isSuccessful() && response.body() != null) {
-            return response.body().getLinkToken();
-        } else {
-            throw new RuntimeException("Failed to create link token: " + response.errorBody().string());
+            if (response.isSuccessful() && response.body() != null) {
+                return response.body().getLinkToken();
+            }
+
+            String errorMsg = response.errorBody() != null
+                    ? response.errorBody().string()
+                    : "Unknown error";
+            throw new PlaidIntegrationException("Failed to create link token: " + errorMsg);
+
+        } catch (IOException e) {
+            throw new PlaidIntegrationException("Network error creating link token", e);
         }
     }
+
 
     /**
      * Exchange public token for access token and save account
      */
-    public List<BankAccount> exchangePublicToken(UUID userId, String publicToken) throws IOException {
-        long startTime = System.currentTimeMillis(); // Start timing
+    public List<BankAccount> exchangePublicToken(UUID userId, String publicToken) {
+        long startTime = System.currentTimeMillis();
 
-        // Exchange public token for access token
-        ItemPublicTokenExchangeRequest exchangeRequest = new ItemPublicTokenExchangeRequest()
-                .publicToken(publicToken);
+        try {
+            // Exchange public token for access token
+            ItemPublicTokenExchangeRequest exchangeRequest = new ItemPublicTokenExchangeRequest()
+                    .publicToken(publicToken);
 
-        Response<ItemPublicTokenExchangeResponse> exchangeResponse = plaidClient
-                .itemPublicTokenExchange(exchangeRequest)
-                .execute();
+            Response<ItemPublicTokenExchangeResponse> exchangeResponse = plaidClient
+                    .itemPublicTokenExchange(exchangeRequest)
+                    .execute();
 
-        if (!exchangeResponse.isSuccessful() || exchangeResponse.body() == null) {
-            String errorMsg = exchangeResponse.errorBody() != null
-                    ? exchangeResponse.errorBody().string()
-                    : "Unknown error";
-            throw new PlaidIntegrationException("Failed to exchange token: " + errorMsg);
-
-        }
-
-        String accessToken = exchangeResponse.body().getAccessToken();
-        String itemId = exchangeResponse.body().getItemId();
-
-        // Get account details
-        AccountsGetRequest accountsRequest = new AccountsGetRequest()
-                .accessToken(accessToken);
-
-        Response<AccountsGetResponse> accountsResponse = plaidClient
-                .accountsGet(accountsRequest)
-                .execute();
-
-        if (!accountsResponse.isSuccessful() || accountsResponse.body() == null) {
-            throw new RuntimeException("Failed to get accounts: " +
-                    accountsResponse.errorBody().string());
-        }
-
-        // Get institution info
-        String institutionId = accountsResponse.body().getItem().getInstitutionId();
-        String institutionName = "Unknown";
-
-        if (institutionId != null) {
-            try {
-                InstitutionsGetByIdRequest institutionRequest = new InstitutionsGetByIdRequest()
-                        .institutionId(institutionId)
-                        .countryCodes(Arrays.asList(CountryCode.US));
-
-                Response<InstitutionsGetByIdResponse> institutionResponse = plaidClient
-                        .institutionsGetById(institutionRequest)
-                        .execute();
-
-                if (institutionResponse.isSuccessful() && institutionResponse.body() != null) {
-                    institutionName = institutionResponse.body().getInstitution().getName();
-                }
-            } catch (Exception e) {
-                // If institution fetch fails, continue with "Unknown"
-            }
-        }
-
-        // Save accounts to database
-        List<BankAccount> savedAccounts = new ArrayList<>();
-        for (AccountBase account : accountsResponse.body().getAccounts()) {
-            // Check if account already exists
-            if (bankAccountRepository.existsByPlaidAccountId(account.getAccountId())) {
-                continue; // Skip duplicates
+            if (!exchangeResponse.isSuccessful() || exchangeResponse.body() == null) {
+                String errorMsg = exchangeResponse.errorBody() != null
+                        ? exchangeResponse.errorBody().string()
+                        : "Unknown error";
+                throw new PlaidIntegrationException("Failed to exchange token: " + errorMsg);
             }
 
-            BankAccount bankAccount = new BankAccount();
-            bankAccount.setUserId(userId);
-            bankAccount.setPlaidAccountId(account.getAccountId());
-            bankAccount.setPlaidAccessToken(accessToken);
-            bankAccount.setInstitutionName(institutionName);
-            bankAccount.setInstitutionId(institutionId);
-            bankAccount.setAccountName(account.getName());
-            bankAccount.setAccountType(account.getType().toString());
-            bankAccount.setAccountSubtype(account.getSubtype() != null ?
-                    account.getSubtype().toString() : null);
+            String accessToken = exchangeResponse.body().getAccessToken();
+            String itemId = exchangeResponse.body().getItemId();
 
-            // Set balances
-            if (account.getBalances() != null) {
-                if (account.getBalances().getCurrent() != null) {
-                    bankAccount.setCurrentBalance(account.getBalances().getCurrent());
-                }
-                if (account.getBalances().getAvailable() != null) {
-                    bankAccount.setAvailableBalance(account.getBalances().getAvailable());
-                }
-                if (account.getBalances().getIsoCurrencyCode() != null) {
-                    bankAccount.setCurrencyCode(account.getBalances().getIsoCurrencyCode());
+            // Get account details
+            AccountsGetRequest accountsRequest = new AccountsGetRequest()
+                    .accessToken(accessToken);
+
+            Response<AccountsGetResponse> accountsResponse = plaidClient
+                    .accountsGet(accountsRequest)
+                    .execute();
+
+            if (!accountsResponse.isSuccessful() || accountsResponse.body() == null) {
+                String errorMsg = accountsResponse.errorBody() != null
+                        ? accountsResponse.errorBody().string()
+                        : "Unknown error";
+                throw new PlaidIntegrationException("Failed to get accounts: " + errorMsg);
+            }
+
+            // Get institution info
+            String institutionId = accountsResponse.body().getItem().getInstitutionId();
+            String institutionName = "Unknown";
+
+            if (institutionId != null) {
+                try {
+                    InstitutionsGetByIdRequest institutionRequest = new InstitutionsGetByIdRequest()
+                            .institutionId(institutionId)
+                            .countryCodes(Arrays.asList(CountryCode.US));
+
+                    Response<InstitutionsGetByIdResponse> institutionResponse = plaidClient
+                            .institutionsGetById(institutionRequest)
+                            .execute();
+
+                    if (institutionResponse.isSuccessful() && institutionResponse.body() != null) {
+                        institutionName = institutionResponse.body().getInstitution().getName();
+                    }
+                } catch (Exception e) {
+                    // Log but continue with "Unknown"
                 }
             }
 
-            bankAccount.setLastSyncedAt(LocalDateTime.now());
-            bankAccount.setIsActive(true);
+            // Save accounts to database
+            List<BankAccount> savedAccounts = new ArrayList<>();
+            for (AccountBase account : accountsResponse.body().getAccounts()) {
+                // Check if account already exists
+                if (bankAccountRepository.existsByPlaidAccountId(account.getAccountId())) {
+                    continue;
+                }
 
-            savedAccounts.add(bankAccountRepository.save(bankAccount));
+                BankAccount bankAccount = new BankAccount();
+                bankAccount.setUserId(userId);
+                bankAccount.setPlaidAccountId(account.getAccountId());
+                bankAccount.setPlaidAccessToken(accessToken);
+                bankAccount.setInstitutionName(institutionName);
+                bankAccount.setInstitutionId(institutionId);
+                bankAccount.setAccountName(account.getName());
+                bankAccount.setAccountType(account.getType().toString());
+                bankAccount.setAccountSubtype(account.getSubtype() != null ?
+                        account.getSubtype().toString() : null);
 
-            // TRACK METRIC - Count each bank account connected
-            metricsService.recordBankAccountConnected();
+                // Set balances
+                if (account.getBalances() != null) {
+                    if (account.getBalances().getCurrent() != null) {
+                        bankAccount.setCurrentBalance(account.getBalances().getCurrent());
+                    }
+                    if (account.getBalances().getAvailable() != null) {
+                        bankAccount.setAvailableBalance(account.getBalances().getAvailable());
+                    }
+                    if (account.getBalances().getIsoCurrencyCode() != null) {
+                        bankAccount.setCurrencyCode(account.getBalances().getIsoCurrencyCode());
+                    }
+                }
+
+                bankAccount.setLastSyncedAt(LocalDateTime.now());
+                bankAccount.setIsActive(true);
+
+                savedAccounts.add(bankAccountRepository.save(bankAccount));
+                metricsService.recordBankAccountConnected();
+            }
+
+            long duration = System.currentTimeMillis() - startTime;
+            metricsService.recordPlaidApiDuration(duration);
+
+            return savedAccounts;
+
+        } catch (IOException e) {
+            throw new PlaidIntegrationException("Network error exchanging token", e);
         }
-
-        // TRACK METRIC - API call timing
-        long duration = System.currentTimeMillis() - startTime;
-        metricsService.recordPlaidApiDuration(duration);
-
-        return savedAccounts;
     }
 
     /**
@@ -179,14 +190,12 @@ public class PlaidService {
      */
     public void disconnectBankAccount(UUID accountId, UUID userId) {
         BankAccount account = bankAccountRepository.findById(accountId)
-                .orElseThrow(() -> new RuntimeException("Account not found"));
+                .orElseThrow(() -> new BankAccountNotFoundException(accountId));
 
-        // Verify ownership
         if (!account.getUserId().equals(userId)) {
-            throw new RuntimeException("Unauthorized");
+            throw new UnauthorizedAccessException("bank account");
         }
 
-        // Soft delete
         account.setIsActive(false);
         bankAccountRepository.save(account);
     }

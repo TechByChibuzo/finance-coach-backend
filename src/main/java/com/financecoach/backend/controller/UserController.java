@@ -1,4 +1,4 @@
-// src/main/java/com/financecoach/userservice/controller/UserController.java
+// src/main/java/com/financecoach/backend/controller/UserController.java
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.dto.UserResponse;
@@ -23,13 +23,19 @@ public class UserController {
         this.userService = userService;
     }
 
-    // Public endpoint
+    /**
+     * Health check endpoint
+     * GET /api/users/health
+     */
     @GetMapping("/health")
     public ResponseEntity<String> health() {
         return ResponseEntity.ok("User Service is running!");
     }
 
-    // Protected endpoint - get current user's profile
+    /**
+     * Get current user's profile
+     * GET /api/users/me
+     */
     @GetMapping("/me")
     public ResponseEntity<UserResponse> getCurrentUser() {
         UUID userId = getCurrentUserId();
@@ -37,21 +43,30 @@ public class UserController {
         return ResponseEntity.ok(user);
     }
 
-    // Protected endpoint - get all users (admin only in future)
+    /**
+     * Get all users (admin only in future)
+     * GET /api/users
+     */
     @GetMapping
     public ResponseEntity<List<UserResponse>> getAllUsers() {
         List<UserResponse> users = userService.getAllUsers();
         return ResponseEntity.ok(users);
     }
 
-    // Protected endpoint - get user by ID
+    /**
+     * Get user by ID
+     * GET /api/users/{id}
+     */
     @GetMapping("/{id}")
     public ResponseEntity<UserResponse> getUserById(@PathVariable UUID id) {
         UserResponse user = userService.getUserById(id);
         return ResponseEntity.ok(user);
     }
 
-    // Protected endpoint - delete current user
+    /**
+     * Delete current user
+     * DELETE /api/users/me
+     */
     @DeleteMapping("/me")
     public ResponseEntity<Void> deleteCurrentUser() {
         UUID userId = getCurrentUserId();

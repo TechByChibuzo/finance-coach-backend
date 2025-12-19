@@ -303,4 +303,46 @@ public class GlobalExceptionHandler {
 
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
     }
+
+    /**
+     * Handle budget not found exceptions
+     */
+    @ExceptionHandler(BudgetNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleBudgetNotFoundException(
+            BudgetNotFoundException ex,
+            HttpServletRequest request) {
+
+        logger.warn("Budget not found: {}", ex.getMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.NOT_FOUND.value(),
+                "Not Found",
+                ex.getMessage(),
+                ex.getErrorCode()
+        );
+        error.setPath(request.getRequestURI());
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+    }
+
+    /**
+     * Handle no previous budgets exception
+     */
+    @ExceptionHandler(NoPreviousBudgetsException.class)
+    public ResponseEntity<ErrorResponse> handleNoPreviousBudgetsException(
+            NoPreviousBudgetsException ex,
+            HttpServletRequest request) {
+
+        logger.info("No previous budgets found: {}", ex.getMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.NOT_FOUND.value(),
+                "Not Found",
+                ex.getMessage(),
+                ex.getErrorCode()
+        );
+        error.setPath(request.getRequestURI());
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+    }
 }
