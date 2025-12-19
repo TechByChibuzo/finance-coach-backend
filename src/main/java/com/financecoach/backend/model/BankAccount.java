@@ -1,6 +1,7 @@
 // src/main/java/com/financecoach/userservice/model/BankAccount.java
 package com.financecoach.backend.model;
 
+import com.financecoach.backend.security.EncryptedStringConverter;
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -20,7 +21,8 @@ public class BankAccount {
     private String plaidAccountId;
 
     @Column(name = "plaid_access_token", nullable = false)
-    private String plaidAccessToken;  // ENCRYPTED in production!
+    @Convert(converter = EncryptedStringConverter.class)
+    private String plaidAccessToken;
 
     @Column(name = "institution_name")
     private String institutionName;
