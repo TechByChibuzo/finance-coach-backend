@@ -9,6 +9,8 @@ import com.financecoach.backend.exception.UserNotFoundException;
 import com.financecoach.backend.exception.ValidationException;
 import com.financecoach.backend.model.User;
 import com.financecoach.backend.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -20,6 +22,9 @@ import java.util.stream.Collectors;
 
 @Service
 public class UserService {
+
+    private static final Logger logger = LoggerFactory.getLogger(UserService.class);
+
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -33,16 +38,20 @@ public class UserService {
     }
 
     public UserResponse registerUser(UserRegistrationRequest request) {
+        logger.info("Attempting to register new user with email: {}", request.getEmail());
         // Validate input
         if (request.getEmail() == null || request.getEmail().isEmpty()) {
+            logger.error("Registration failed - email is null or empty");
             throw new ValidationException("Email is required");
         }
         if (request.getPassword() == null || request.getPassword().length() < 8) {
+            logger.error("Registration failed - password too short");
             throw new ValidationException("Password must be at least 8 characters");
         }
 
         // Check if email already exists
         if (userRepository.existsByEmail(request.getEmail())) {
+            logger.warn("Registration failed - email already exists: {}", request.getEmail());
             throw new EmailAlreadyExistsException(request.getEmail());
         }
 
@@ -55,6 +64,8 @@ public class UserService {
 
         // Save to database
         User savedUser = userRepository.save(user);
+        logger.info("User registered successfully - ID: {}, Email: {}",
+                savedUser.getId(), savedUser.getEmail());
 
         // TRACK METRIC
         metricsService.recordUserRegistration();
@@ -62,12 +73,15 @@ public class UserService {
     }
 
     public User authenticate(String email, String password) {
+        logger.debug("Authentication attempt for email: {}", email);
+
         // Find user by email
         User user = userRepository.findByEmail(email)
                 .orElseThrow(InvalidCredentialsException::new);
 
         // Check password
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
+            logger.warn("Authentication failed - invalid password for: {}", email);
             throw new InvalidCredentialsException();
         }
 
@@ -75,7 +89,9 @@ public class UserService {
         user.setLastLogin(LocalDateTime.now());
         userRepository.save(user);
 
-        // TRACK METRIC
+        logger.info("User authenticated successfully - ID: {}, Email: {}",
+                user.getId(), email);
+
         metricsService.recordUserLogin();
         return user;
     }
@@ -85,6 +101,7 @@ public class UserService {
      * Throws UserNotFoundException if not found
      */
     public UserResponse getUserById(UUID id) {
+        logger.debug("Fetching user by ID: {}", id);
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException(id));
         return convertToResponse(user);
@@ -111,6 +128,7 @@ public class UserService {
      * Throws UserNotFoundException if not found
      */
     public void deleteUser(UUID id) {
+        logger.info("Attempting to delete user: {}", id);
         if (!userRepository.existsById(id)) {
             throw new UserNotFoundException(id);
         }
