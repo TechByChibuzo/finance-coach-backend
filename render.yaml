@@ -39,6 +39,8 @@ services:
         sync: false
       - key: SENDGRID_FROM_EMAIL
         value: cufombaa@gmail.com
+      - key: SENDGRID_FROM_NAME
+        value: Finance Coach
       - key: APP_FRONTEND_URL
         value: https://finance-coach-frontend.vercel.app
 
