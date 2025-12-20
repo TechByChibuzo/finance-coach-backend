@@ -1,8 +1,3 @@
-// ============================================
-// COMPLETE SubscriptionService.java
-// With all methods needed for SubscriptionController
-// ============================================
-
 package com.financecoach.backend.service;
 
 import com.financecoach.backend.model.*;
@@ -14,6 +9,8 @@ import com.stripe.model.Subscription;
 import com.stripe.model.checkout.Session;
 import com.stripe.model.Customer;
 import com.stripe.net.Webhook;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -27,6 +24,8 @@ import java.util.UUID;
 
 @Service
 public class SubscriptionService {
+
+    private static final Logger logger = LoggerFactory.getLogger(SubscriptionService.class);
 
     @Autowired
     private UserSubscriptionRepository subscriptionRepository;
@@ -63,6 +62,7 @@ public class SubscriptionService {
      * Get all active subscription plans
      */
     public List<SubscriptionPlan> getAllPlans() {
+        logger.debug("Fetching all subscription plans");
         return planRepository.findByIsActiveTrue();
     }
 
@@ -70,6 +70,7 @@ public class SubscriptionService {
      * Get plan by ID
      */
     public Optional<SubscriptionPlan> getPlanById(UUID planId) {
+        logger.debug("Fetching plan by ID: {}", planId);
         return planRepository.findById(planId);
     }
 
@@ -77,6 +78,7 @@ public class SubscriptionService {
      * Get plan by name
      */
     public Optional<SubscriptionPlan> getPlanByName(String planName) {
+        logger.debug("Fetching plan by name: {}", planName);
         return planRepository.findByName(planName);
     }
 
@@ -88,6 +90,7 @@ public class SubscriptionService {
      * Get user's current active subscription
      */
     public Optional<UserSubscription> getUserSubscription(UUID userId) {
+        logger.debug("Fetching active subscription for user: {}", userId);
         return subscriptionRepository.findActiveByUserId(userId);
     }
 
@@ -95,9 +98,13 @@ public class SubscriptionService {
      * Get user's subscription plan (or default to FREE)
      */
     public SubscriptionPlan getUserPlan(UUID userId) {
-        return getUserSubscription(userId)
+        logger.debug("Getting user plan for: {}", userId);
+        SubscriptionPlan plan = getUserSubscription(userId)
                 .map(UserSubscription::getPlan)
                 .orElse(getFreePlan());
+        logger.debug("User {} is on plan: {}", userId, plan.getName());
+        return plan;
+
     }
 
     // ============================================
@@ -108,15 +115,19 @@ public class SubscriptionService {
      * Check if user has access to a feature
      */
     public boolean hasFeatureAccess(UUID userId, String featureName) {
+        logger.debug("Checking feature access for user: {}, feature: {}", userId, featureName);
+
         // Get feature flag
         Optional<FeatureFlag> flag = featureFlagRepository.findByFeatureName(featureName);
         if (flag.isEmpty() || !flag.get().getIsEnabled()) {
+            logger.warn("Feature disabled or not found: {}", featureName);
             return false; // Feature disabled globally
         }
 
         // Check required plan
         FeatureFlag feature = flag.get();
         if (feature.getRequiredPlan() == null) {
+            logger.debug("Feature {} requires no plan, access granted", featureName);
             return true; // No plan required
         }
 
@@ -131,8 +142,11 @@ public class SubscriptionService {
      * Check if user can use a feature (considering usage limits)
      */
     public boolean canUseFeature(UUID userId, String featureName) {
+        logger.debug("Checking if user {} can use feature: {}", userId, featureName);
+
         // First check basic access
         if (!hasFeatureAccess(userId, featureName)) {
+            logger.warn("User {} does not have access to feature: {}", userId, featureName);
             return false;
         }
 
@@ -141,6 +155,7 @@ public class SubscriptionService {
         Integer usageLimit = getFeatureLimit(plan, featureName);
 
         if (usageLimit == null || usageLimit == -1) {
+            logger.debug("Feature {} has unlimited usage for user: {}", featureName, userId);
             return true; // Unlimited
         }
 
@@ -222,9 +237,15 @@ public class SubscriptionService {
     public String createCheckoutSession(UUID userId, UUID planId, BillingCycle billingCycle)
             throws StripeException {
 
+        logger.info("Creating checkout session - User: {}, Plan: {}, Cycle: {}",
+                userId, planId, billingCycle);
+
         // Get plan
         SubscriptionPlan plan = planRepository.findById(planId)
-                .orElseThrow(() -> new RuntimeException("Plan not found"));
+                .orElseThrow(() -> {
+                    logger.error("Plan not found: {}", planId);
+                    return new RuntimeException("Plan not found");
+                });
 
         // Get or create Stripe customer
         String stripeCustomerId = getOrCreateStripeCustomer(userId);
@@ -243,6 +264,9 @@ public class SubscriptionService {
                 cancelUrl
         );
 
+        logger.info("Checkout session created successfully - User: {}, SessionId: {}",
+                userId, session.getId());
+
         return session.getUrl();
     }
 
@@ -255,12 +279,15 @@ public class SubscriptionService {
                 : plan.getStripePriceIdYearly();
 
         if (priceId == null || priceId.isEmpty()) {
+            logger.error("Stripe price ID not configured for plan: {} ({})",
+                    plan.getName(), cycle);
             throw new RuntimeException(
                     "Stripe price ID not configured for plan: " + plan.getName() +
                             " (" + cycle + ")"
             );
         }
 
+        logger.debug("Retrieved Stripe price ID: {} for plan: {}", priceId, plan.getName());
         return priceId;
     }
 
@@ -268,10 +295,16 @@ public class SubscriptionService {
      * Get or create Stripe customer for user
      */
     private String getOrCreateStripeCustomer(UUID userId) throws StripeException {
+        logger.debug("Getting or creating Stripe customer for user: {}", userId);
+
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> {
+                    logger.error("User not found: {}", userId);
+                    return new RuntimeException("User not found");
+                });
 
         if (user.getStripeCustomerId() != null) {
+            logger.debug("Existing Stripe customer found: {}", user.getStripeCustomerId());
             return user.getStripeCustomerId();
         }
 
@@ -283,7 +316,9 @@ public class SubscriptionService {
 
         user.setStripeCustomerId(customer.getId());
         userRepository.save(user);
-        System.out.println("✅ Stored customer ID in user: " + customer.getId());
+
+        logger.info("Created new Stripe customer - User: {}, CustomerId: {}",
+                userId, customer.getId());
 
         return customer.getId();
     }
@@ -297,12 +332,19 @@ public class SubscriptionService {
      */
     @Transactional
     public void createSubscription(UUID userId, String planName, BillingCycle cycle) {
+        logger.info("Creating subscription - User: {}, Plan: {}, Cycle: {}",
+                userId, planName, cycle);
+
         // Get plan
         SubscriptionPlan plan = planRepository.findByName(planName)
-                .orElseThrow(() -> new RuntimeException("Plan not found: " + planName));
+                .orElseThrow(() -> {
+                    logger.error("Plan not found: {}", planName);
+                    return new RuntimeException("Plan not found: " + planName);
+                });
 
         // Cancel existing subscription
         getUserSubscription(userId).ifPresent(existing -> {
+            logger.info("Cancelling existing subscription: {}", existing.getId());
             try {
                 if (existing.getStripeSubscriptionId() != null) {
                     stripeService.cancelSubscription(existing.getStripeSubscriptionId());
@@ -311,7 +353,8 @@ public class SubscriptionService {
                 existing.setCancelledAt(LocalDateTime.now());
                 subscriptionRepository.save(existing);
             } catch (StripeException e) {
-                System.err.println("Failed to cancel Stripe subscription: " + e.getMessage());
+                logger.error("Failed to cancel Stripe subscription: {}",
+                        existing.getStripeSubscriptionId(), e);
             }
         });
 
@@ -333,9 +376,9 @@ public class SubscriptionService {
         subscription.setAutoRenew(true);
         subscriptionRepository.save(subscription);
 
-        System.out.println("✅ Subscription activated for user: " + userId);
-        System.out.println("✅ Plan: " + plan.getName());
-        System.out.println("✅ Billing: " + cycle);
+        logger.info("Subscription created successfully - User: {}, Plan: {}, Cycle: {}",
+                userId, plan.getName(), cycle);
+
     }
 
     /**
@@ -343,6 +386,7 @@ public class SubscriptionService {
      */
     @Transactional
     public UserSubscription startTrial(UUID userId, String planName, int trialDays) {
+        logger.info("Starting trial - User: {}, Plan: {}, Days: {}", userId, planName, trialDays);
         SubscriptionPlan plan = planRepository.findByName(planName)
                 .orElseThrow(() -> new RuntimeException("Plan not found"));
 
@@ -363,8 +407,13 @@ public class SubscriptionService {
      */
     @Transactional
     public void cancelSubscription(UUID userId) {
+        logger.info("Cancelling subscription for user: {}", userId);
+
         UserSubscription subscription = getUserSubscription(userId)
-                .orElseThrow(() -> new RuntimeException("No active subscription"));
+                .orElseThrow(() -> {
+                    logger.warn("No active subscription found for user: {}", userId);
+                    return new RuntimeException("No active subscription");
+                });
 
         // Cancel in Stripe if exists
         if (subscription.getStripeSubscriptionId() != null) {
@@ -380,6 +429,8 @@ public class SubscriptionService {
         }
 
         subscriptionRepository.save(subscription);
+        logger.info("Subscription cancelled successfully for user: {}", userId);
+
     }
 
     // ============================================
@@ -391,14 +442,21 @@ public class SubscriptionService {
      */
     @Transactional
     public void handleStripeWebhook(String payload, String sigHeader) {
+        logger.info("Processing Stripe webhook");
+
         Event event;
 
         try {
             // Verify webhook signature
             event = Webhook.constructEvent(payload, sigHeader, webhookSecret);
+            logger.debug("Webhook event constructed - Type: {}, ID: {}",
+                    event.getType(), event.getId());
         } catch (SignatureVerificationException e) {
+            logger.error("Invalid webhook signature", e);
             throw new RuntimeException("Invalid webhook signature");
         }
+
+        logger.info("Handling Stripe webhook event: {}", event.getType());
 
         // Handle different event types
         switch (event.getType()) {
@@ -423,7 +481,7 @@ public class SubscriptionService {
                 break;
 
             default:
-                System.out.println("Unhandled event type: " + event.getType());
+                logger.debug("Unhandled webhook event type: {}", event.getType());
         }
     }
 
@@ -438,16 +496,16 @@ public class SubscriptionService {
                     .getObject()
                     .orElseThrow(() -> new RuntimeException("Session not found"));
 
-            System.out.println("Processing checkout session: " + session.getId());
-            System.out.println("Customer: " + session.getCustomer());
-            System.out.println("Subscription: " + session.getSubscription());
+            logger.debug("Checkout session - ID: {}, Customer: {}, Subscription: {}",
+                    session.getId(), session.getCustomer(), session.getSubscription());
+
 
             // Get subscription ID from session
             String stripeSubscriptionId = session.getSubscription();
             String stripeCustomerId = session.getCustomer();
 
             if (stripeSubscriptionId == null) {
-                System.out.println("No subscription in session, skipping");
+                logger.warn("No subscription in session, skipping");
                 return;
             }
 
@@ -471,16 +529,17 @@ public class SubscriptionService {
             UUID userId = findUserByStripeCustomerId(stripeCustomerId);
 
             if (userId == null) {
-                System.err.println("User not found for Stripe customer: " + stripeCustomerId);
+                logger.error("User not found for Stripe customer: {}", stripeCustomerId);
                 return;
             }
 
-            System.out.println("✅ Found user: " + userId);
+            logger.info("Creating subscription from webhook - User: {}, Plan: {}, Cycle: {}",
+                    userId, plan.getName(), billingCycle);
             createSubscription(userId, plan.getName(), billingCycle);
+            logger.info("Checkout completed successfully processed");
 
         } catch (Exception e) {
-            System.err.println("Error handling checkout completed: " + e.getMessage());
-            e.printStackTrace();
+            logger.error("Error handling checkout completed webhook", e);
         }
     }
     private void handleSubscriptionUpdated(Event event) {
