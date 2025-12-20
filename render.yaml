@@ -39,7 +39,7 @@ services:
         sync: false
       - key: SENDGRID_FROM_EMAIL
         value: cufombaa@gmail.com
-      - key: FRONTEND_URL
+      - key: APP_FRONTEND_URL
         value: https://finance-coach-frontend-4mvyth09n-chibuzo-ufombas-projects.vercel.app
 
 
