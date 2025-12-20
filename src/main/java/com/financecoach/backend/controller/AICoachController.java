@@ -1,7 +1,10 @@
-// src/main/java/com/financecoach/userservice/controller/AICoachController.java
+// src/main/java/com/financecoach/backend/controller/AICoachController.java
 package com.financecoach.backend.controller;
 
+import com.financecoach.backend.dto.ChatRequest;
+import com.financecoach.backend.exception.ValidationException;
 import com.financecoach.backend.service.AICoachService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -24,23 +27,18 @@ public class AICoachController {
 
     /**
      * Chat with AI coach
+     * POST /api/ai-coach/chat
      */
     @PostMapping("/chat")
-    public ResponseEntity<Map<String, String>> chat(@RequestBody Map<String, String> request) {
+    public ResponseEntity<Map<String, String>> chat(@Valid @RequestBody ChatRequest request) {
         UUID userId = getCurrentUserId();
-        String userMessage = request.get("message");
-
-        if (userMessage == null || userMessage.trim().isEmpty()) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Message cannot be empty"));
-        }
-
-        String response = aiCoachService.chat(userId, userMessage);
+        String response = aiCoachService.chat(userId, request.getMessage());
         return ResponseEntity.ok(Map.of("response", response));
     }
 
     /**
      * Get weekly summary
+     * GET /api/ai-coach/weekly-summary
      */
     @GetMapping("/weekly-summary")
     public ResponseEntity<Map<String, String>> getWeeklySummary() {
@@ -51,6 +49,7 @@ public class AICoachController {
 
     /**
      * Get monthly report
+     * GET /api/ai-coach/monthly-report
      */
     @GetMapping("/monthly-report")
     public ResponseEntity<Map<String, String>> getMonthlyReport() {
@@ -61,6 +60,7 @@ public class AICoachController {
 
     /**
      * Analyze category spending
+     * GET /api/ai-coach/analyze-category/{category}
      */
     @GetMapping("/analyze-category/{category}")
     public ResponseEntity<Map<String, String>> analyzeCategory(@PathVariable String category) {
@@ -71,6 +71,7 @@ public class AICoachController {
 
     /**
      * Get savings recommendations
+     * POST /api/ai-coach/savings-recommendations
      */
     @PostMapping("/savings-recommendations")
     public ResponseEntity<Map<String, String>> getSavingsRecommendations(
@@ -80,8 +81,7 @@ public class AICoachController {
         Double savingsGoal = request.get("savingsGoal");
 
         if (savingsGoal == null || savingsGoal <= 0) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", "Savings goal must be positive"));
+            throw new ValidationException("Savings goal must be positive");
         }
 
         String recommendations = aiCoachService.getSavingsRecommendations(userId, savingsGoal);
