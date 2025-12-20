@@ -543,19 +543,19 @@ public class SubscriptionService {
         }
     }
     private void handleSubscriptionUpdated(Event event) {
-        System.out.println("Subscription updated: " + event.getId());
+        logger.info("Processing subscription.updated webhook - Event ID: {}", event.getId());
     }
 
     private void handleSubscriptionCancelled(Event event) {
-        System.out.println("Subscription cancelled: " + event.getId());
+        logger.info("Processing subscription.deleted webhook - Event ID: {}", event.getId());
     }
 
     private void handlePaymentSucceeded(Event event) {
-        System.out.println("Payment succeeded: " + event.getId());
+        logger.info("Processing payment.succeeded webhook - Event ID: {}", event.getId());
     }
 
     private void handlePaymentFailed(Event event) {
-        System.out.println("Payment failed: " + event.getId());
+        logger.warn("Processing payment.failed webhook - Event ID: {}", event.getId());
     }
 
     // ============================================
@@ -602,6 +602,8 @@ public class SubscriptionService {
      * Find plan by Stripe price ID
      */
     private SubscriptionPlan findPlanByStripePriceId(String stripePriceId) {
+        logger.debug("Finding plan by Stripe price ID: {}", stripePriceId);
+
         return planRepository.findAll().stream()
                 .filter(plan ->
                         stripePriceId.equals(plan.getStripePriceIdMonthly()) ||
