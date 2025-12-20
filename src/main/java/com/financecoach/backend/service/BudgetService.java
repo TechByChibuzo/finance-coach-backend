@@ -10,6 +10,8 @@ import com.financecoach.backend.exception.UnauthorizedAccessException;
 import com.financecoach.backend.exception.ValidationException;
 import com.financecoach.backend.model.Budget;
 import com.financecoach.backend.repository.BudgetRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,6 +25,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class BudgetService {
+
+    private static final Logger logger = LoggerFactory.getLogger(BudgetService.class);
 
     private final BudgetRepository budgetRepository;
     private final AnalyticsService analyticsService;
@@ -81,11 +85,15 @@ public class BudgetService {
      */
     @Transactional
     public BudgetResponse createOrUpdateBudget(UUID userId, BudgetRequest request) {
+        logger.info("Creating/updating budget for user: {}, category: {}",
+                userId, request.getCategory());
         // Validate inputs
         if (request.getCategory() == null || request.getCategory().isEmpty()) {
+            logger.error("Budget creation failed - category is null or empty");
             throw new ValidationException("Category is required");
         }
         if (request.getAmount() == null || request.getAmount() <= 0) {
+            logger.error("Budget creation failed - invalid amount: {}", request.getAmount());
             throw new ValidationException("Budget amount must be positive");
         }
 
@@ -103,7 +111,10 @@ public class BudgetService {
                 .findByUserIdAndCategoryAndMonth(userId, request.getCategory(), month)
                 .orElse(null);
 
+        boolean isNewBudget = (budget == null);
+
         if (budget != null) {
+            logger.debug("Updating existing budget: {}", budget.getId());
             // Update existing budget
             budget.setAmount(request.getAmount());
             budget.setIsActive(true);
@@ -114,6 +125,7 @@ public class BudgetService {
                 budget.setAlertThreshold(request.getAlertThreshold());
             }
         } else {
+            logger.debug("Creating new budget for category: {}", request.getCategory());
             // Create new budget
             budget = new Budget(userId, request.getCategory(), month, request.getAmount());
             budget.setIsActive(true);
@@ -138,6 +150,12 @@ public class BudgetService {
         // Save to database
         Budget savedBudget = budgetRepository.save(budget);
         budgetRepository.flush();
+
+        logger.info("Budget {} successfully - ID: {}, Category: {}, Amount: {}",
+                isNewBudget ? "created" : "updated",
+                savedBudget.getId(),
+                savedBudget.getCategory(),
+                savedBudget.getAmount());
 
         return convertToResponse(savedBudget);
     }
@@ -236,17 +254,26 @@ public class BudgetService {
      */
     @Transactional
     public void deleteBudget(UUID budgetId, UUID userId) {
+        logger.info("Deleting budget: {} for user: {}", budgetId, userId);
+
         Budget budget = budgetRepository.findById(budgetId)
-                .orElseThrow(() -> new BudgetNotFoundException(budgetId));
+                .orElseThrow(() -> {
+                    logger.warn("Budget not found: {}", budgetId);
+                    return new BudgetNotFoundException(budgetId);
+                });
 
         // Verify ownership
         if (!budget.getUserId().equals(userId)) {
+            logger.warn("Unauthorized attempt to delete budget: {} by user: {}",
+                    budgetId, userId);
             throw new UnauthorizedAccessException("budget");
         }
 
         // Soft delete
         budget.setIsActive(false);
         budgetRepository.save(budget);
+        logger.info("Budget soft-deleted successfully: {}", budgetId);
+
     }
 
     /**
@@ -316,6 +343,8 @@ public class BudgetService {
      */
     @Transactional
     public List<BudgetResponse> copyPreviousMonthBudgets(UUID userId) {
+        logger.info("Copying previous month budgets for user: {}", userId);
+
         LocalDate currentMonth = LocalDate.now().withDayOfMonth(1);
         LocalDate previousMonth = currentMonth.minusMonths(1);
 
@@ -324,8 +353,11 @@ public class BudgetService {
                 userId, previousMonth, true);
 
         if (previousBudgets.isEmpty()) {
+            logger.warn("No previous budgets found for user: {}", userId);
             throw new NoPreviousBudgetsException();
         }
+
+        logger.debug("Found {} budgets to copy from previous month", previousBudgets.size());
 
         List<Budget> newBudgets = previousBudgets.stream()
                 .map(prevBudget -> {
@@ -334,6 +366,9 @@ public class BudgetService {
                             userId, prevBudget.getCategory(), currentMonth);
 
                     if (!exists) {
+                        logger.debug("Copying budget - Category: {}, Amount: {}",
+                                prevBudget.getCategory(), prevBudget.getAmount());
+
                         Budget newBudget = new Budget(
                                 userId,
                                 prevBudget.getCategory(),
@@ -351,6 +386,8 @@ public class BudgetService {
 
         // Refresh spending for new budgets
         refreshAllBudgetSpending(userId, currentMonth);
+
+        logger.info("Successfully copied {} budgets for user: {}", newBudgets.size(), userId);
 
         return newBudgets.stream()
                 .map(this::convertToResponse)

@@ -4,6 +4,8 @@ import com.sendgrid.*;
 import com.sendgrid.helpers.mail.Mail;
 import com.sendgrid.helpers.mail.objects.Content;
 import com.sendgrid.helpers.mail.objects.Email;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -11,6 +13,8 @@ import java.io.IOException;
 
 @Service
 public class EmailService {
+
+    private static final Logger logger = LoggerFactory.getLogger(EmailService.class);
 
     private final SendGrid sendGridClient;
     private final String fromEmail;
@@ -33,6 +37,8 @@ public class EmailService {
      * Send password reset email via SendGrid
      */
     public void sendPasswordResetEmail(String toEmail, String resetToken, String userName) {
+        logger.info("Sending password reset email to: {}", toEmail);
+
         String resetLink = frontendUrl + "/reset-password?token=" + resetToken;
 
         Email from = new Email(fromEmail, fromName);
@@ -56,16 +62,15 @@ public class EmailService {
             Response response = sendGridClient.api(request);
 
             if (response.getStatusCode() >= 200 && response.getStatusCode() < 300) {
-                System.out.println("✅ Password reset email sent successfully to: " + toEmail);
+                logger.info("Password reset email sent successfully to: {}", toEmail);
             } else {
-                System.err.println("⚠️ SendGrid returned status: " + response.getStatusCode());
-                System.err.println("Response body: " + response.getBody());
+                logger.warn("SendGrid returned non-success status: {} for email: {}",
+                        response.getStatusCode(), toEmail);
+                logger.debug("SendGrid response body: {}", response.getBody());
             }
 
         } catch (IOException e) {
-            System.err.println("❌ Failed to send password reset email to: " + toEmail);
-            e.printStackTrace();
-            // In production: log to monitoring service, send alert
+            logger.error("Failed to send password reset email to: {}", toEmail, e);
             throw new RuntimeException("Failed to send password reset email", e);
         }
     }
@@ -74,6 +79,8 @@ public class EmailService {
      * Send welcome email (bonus - for new user registration)
      */
     public void sendWelcomeEmail(String toEmail, String userName) {
+        logger.info("Sending welcome email to: {}", toEmail);
+
         Email from = new Email(fromEmail, fromName);
         Email to = new Email(toEmail);
         String subject = "Welcome to Finance Coach! 🎉";
@@ -94,12 +101,14 @@ public class EmailService {
             Response response = sendGridClient.api(request);
 
             if (response.getStatusCode() >= 200 && response.getStatusCode() < 300) {
-                System.out.println("✅ Welcome email sent successfully to: " + toEmail);
+                logger.info("Welcome email sent successfully to: {}", toEmail);
+            } else {
+                logger.warn("SendGrid returned non-success status: {} for welcome email",
+                        response.getStatusCode());
             }
 
         } catch (IOException e) {
-            System.err.println("❌ Failed to send welcome email to: " + toEmail);
-            e.printStackTrace();
+            logger.error("Failed to send welcome email to: {}", toEmail, e);
             // Don't throw - welcome email failure shouldn't break registration
         }
     }

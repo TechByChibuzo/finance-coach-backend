@@ -8,6 +8,8 @@ import com.plaid.client.model.*;
 import com.plaid.client.request.PlaidApi;
 import com.financecoach.backend.model.BankAccount;
 import com.financecoach.backend.repository.BankAccountRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import retrofit2.Response;
@@ -21,6 +23,8 @@ import java.util.UUID;
 
 @Service
 public class PlaidService {
+
+    private static final Logger logger = LoggerFactory.getLogger(PlaidService.class);
 
     private final PlaidApi plaidClient;
     private final BankAccountRepository bankAccountRepository;
@@ -37,6 +41,8 @@ public class PlaidService {
      * Create a link token for Plaid Link
      */
     public String createLinkToken(UUID userId, String username) {
+        logger.info("Creating Plaid link token for user: {}", userId);
+
         try {
             LinkTokenCreateRequestUser user = new LinkTokenCreateRequestUser()
                     .clientUserId(userId.toString());
@@ -53,15 +59,19 @@ public class PlaidService {
                     .execute();
 
             if (response.isSuccessful() && response.body() != null) {
+                logger.info("Link token created successfully for user: {}", userId);
                 return response.body().getLinkToken();
             }
 
             String errorMsg = response.errorBody() != null
                     ? response.errorBody().string()
                     : "Unknown error";
+
+            logger.error("Failed to create link token for user: {} - Error: {}", userId, errorMsg);
             throw new PlaidIntegrationException("Failed to create link token: " + errorMsg);
 
         } catch (IOException e) {
+            logger.error("Network error creating link token for user: {}", userId, e);
             throw new PlaidIntegrationException("Network error creating link token", e);
         }
     }
@@ -72,6 +82,7 @@ public class PlaidService {
      */
     public List<BankAccount> exchangePublicToken(UUID userId, String publicToken) {
         long startTime = System.currentTimeMillis();
+        logger.info("Exchanging public token for user: {}", userId);
 
         try {
             // Exchange public token for access token
@@ -86,11 +97,12 @@ public class PlaidService {
                 String errorMsg = exchangeResponse.errorBody() != null
                         ? exchangeResponse.errorBody().string()
                         : "Unknown error";
+                logger.error("Failed to exchange token for user: {} - Error: {}", userId, errorMsg);
                 throw new PlaidIntegrationException("Failed to exchange token: " + errorMsg);
             }
 
             String accessToken = exchangeResponse.body().getAccessToken();
-            String itemId = exchangeResponse.body().getItemId();
+            logger.debug("Access token obtained for user: {}", userId);
 
             // Get account details
             AccountsGetRequest accountsRequest = new AccountsGetRequest()
@@ -104,6 +116,7 @@ public class PlaidService {
                 String errorMsg = accountsResponse.errorBody() != null
                         ? accountsResponse.errorBody().string()
                         : "Unknown error";
+                logger.error("Failed to get accounts for user: {} - Error: {}", userId, errorMsg);
                 throw new PlaidIntegrationException("Failed to get accounts: " + errorMsg);
             }
 
@@ -125,15 +138,18 @@ public class PlaidService {
                         institutionName = institutionResponse.body().getInstitution().getName();
                     }
                 } catch (Exception e) {
-                    // Log but continue with "Unknown"
+                    logger.warn("Failed to fetch institution name for: {} - using 'Unknown'", institutionId);
                 }
             }
 
             // Save accounts to database
             List<BankAccount> savedAccounts = new ArrayList<>();
+            int accountCount = 0;
+
             for (AccountBase account : accountsResponse.body().getAccounts()) {
                 // Check if account already exists
                 if (bankAccountRepository.existsByPlaidAccountId(account.getAccountId())) {
+                    logger.debug("Account already exists, skipping: {}", account.getAccountId());
                     continue;
                 }
 
@@ -165,15 +181,21 @@ public class PlaidService {
                 bankAccount.setIsActive(true);
 
                 savedAccounts.add(bankAccountRepository.save(bankAccount));
+                accountCount++;
+
                 metricsService.recordBankAccountConnected();
             }
 
             long duration = System.currentTimeMillis() - startTime;
             metricsService.recordPlaidApiDuration(duration);
 
+            logger.info("Successfully connected {} bank account(s) for user: {} in {}ms",
+                    accountCount, userId, duration);
+
             return savedAccounts;
 
         } catch (IOException e) {
+            logger.error("Network error exchanging token for user: {}", userId, e);
             throw new PlaidIntegrationException("Network error exchanging token", e);
         }
     }
