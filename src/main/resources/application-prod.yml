@@ -1,0 +1,157 @@
+# src/main/resources/application-prod.yml
+# ============================================
+# PRODUCTION CONFIGURATION
+# ============================================
+
+spring:
+  application:
+    name: finance-coach-backend
+
+  # ============================================
+  # DATABASE CONFIGURATION
+  # ============================================
+  datasource:
+    url: ${DATABASE_URL}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 20000
+      idle-timeout: 300000
+      max-lifetime: 1200000
+      leak-detection-threshold: 60000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate  # NEVER auto-update schema in production
+    show-sql: false       # Never log SQL in production
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false  # No formatting in production
+
+# ============================================
+# SERVER CONFIGURATION
+# ============================================
+server:
+  port: ${PORT:8080}  # Use Render's PORT env var
+  compression:
+    enabled: true
+  error:
+    include-message: never      # Don't leak error details
+    include-stacktrace: never   # Security
+
+# ============================================
+# SECURITY CONFIGURATION
+# ============================================
+jwt:
+  secret: ${JWT_SECRET}
+  expiration: 86400000  # 24 hours
+
+# ============================================
+# EXTERNAL API CONFIGURATION
+# ============================================
+plaid:
+  client-id: ${PLAID_CLIENT_ID}
+  secret: ${PLAID_SECRET}
+  environment: ${PLAID_ENVIRONMENT:sandbox}  # Configurable
+
+claude:
+  api-key: ${CLAUDE_API_KEY}
+  model: ${CLAUDE_MODEL:claude-sonnet-4-20250514}
+  max-tokens: ${CLAUDE_MAX_TOKENS:4096}
+
+sendgrid:
+  api-key: ${SENDGRID_API_KEY}
+  from-email: ${SENDGRID_FROM_EMAIL}
+  from-name: ${SENDGRID_FROM_NAME:Finance Coach}
+
+stripe:
+  api-key: ${STRIPE_API_KEY}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET}
+
+# ============================================
+# APPLICATION CONFIGURATION
+# ============================================
+app:
+  frontend-url: ${APP_FRONTEND_URL}
+
+jasypt:
+  encryptor:
+    password: ${JASYPT_ENCRYPTOR_PASSWORD}
+
+# ============================================
+# MONITORING & OBSERVABILITY
+# ============================================
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+
+  endpoint:
+    health:
+      show-details: when-authorized  # Only show details to authenticated users
+      show-components: when-authorized
+    prometheus:
+      enabled: true
+
+  health:
+    db:
+      enabled: true
+    diskspace:
+      enabled: true
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+  metrics:
+    enable:
+      jvm: true
+      process: true
+      system: true
+      http: true
+      jdbc: true
+      hikaricp: true
+
+    export:
+      prometheus:
+        enabled: true
+
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+
+    tags:
+      application: ${spring.application.name}
+      environment: production
+
+# ============================================
+# LOGGING CONFIGURATION (PRODUCTION)
+# ============================================
+logging:
+  level:
+    root: INFO
+    com.financecoach: INFO         # Only important events
+    org.springframework.web: WARN
+    org.springframework.security: WARN
+    org.hibernate: WARN
+    com.plaid: INFO
+
+  pattern:
+    # Console only (Render captures this)
+    console: "%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n"
+
+  # NO file logging (use console, Render captures stdout)
+
+# ============================================
+# APPLICATION INFO
+# ============================================
+info:
+  app:
+    name: Finance Coach API
+    description: AI-powered personal finance coach
+    version: 1.0.0
+    author: Chibuzo Ufomba
