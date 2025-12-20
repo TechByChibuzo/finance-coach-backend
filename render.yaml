@@ -29,6 +29,18 @@ services:
         sync: false
       - key: CLAUDE_MAX_TOKENS
         sync: false
+      - key: JASYPT_ENCRYPTOR_PASSWORD
+        sync: false
+      - key: STRIPE_API_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: SENDGRID_FROM_EMAIL
+        value: noreply@financecoach.com
+      - key: FRONTEND_URL
+        value: https://your-frontend.vercel.app
 
 
 databases:
