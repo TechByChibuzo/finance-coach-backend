@@ -1,3 +1,4 @@
+// src/main/java/com/financecoach/backend/config/SecurityConfig.java
 package com.financecoach.backend.config;
 
 import com.financecoach.backend.security.JwtAuthenticationFilter;
@@ -6,6 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
@@ -25,34 +27,35 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-                // Enable CORS
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-
-                // Disable CSRF (not needed for stateless JWT)
-                .csrf(csrf -> csrf.disable())
-
-                // Configure authorization
+                .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        // Public endpoints (no authentication required)
+                        // Public endpoints
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/users/health").permitAll()
                         .requestMatchers("/api/plaid/**").permitAll()
                         .requestMatchers("/actuator/**").permitAll()
 
+                        // Swagger/OpenAPI endpoints (PUBLIC)
+                        .requestMatchers(
+                                "/api-docs/**",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/v3/api-docs/**",
+                                "/swagger-resources/**",
+                                "/webjars/**"
+                        ).permitAll()
+
                         // Subscription public endpoints
-                        .requestMatchers("/api/subscriptions/plans").permitAll()      // (pricing page)
-                        .requestMatchers("/api/subscriptions/webhook").permitAll()    // (Stripe webhook)
+                        .requestMatchers("/api/subscriptions/plans").permitAll()
+                        .requestMatchers("/api/subscriptions/webhook").permitAll()
 
                         // All other endpoints require authentication
                         .anyRequest().authenticated()
                 )
-
-                // Stateless session (JWT is stateless)
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
-
-                // Add JWT filter
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
@@ -63,10 +66,9 @@ public class SecurityConfig {
         System.out.println("=== CORS Configuration Loading ===");
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // Use allowedOriginPatterns to support wildcards
         configuration.setAllowedOriginPatterns(Arrays.asList(
-                "http://localhost:*",           // All localhost ports
-                "https://*.vercel.app"          // ALL Vercel URLs (preview + production)
+                "http://localhost:*",
+                "https://*.vercel.app"
         ));
 
         configuration.setAllowedMethods(Arrays.asList(
@@ -75,7 +77,7 @@ public class SecurityConfig {
 
         configuration.setAllowedHeaders(Arrays.asList("*"));
         configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L);  // Cache preflight for 1 hour
+        configuration.setMaxAge(3600L);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
