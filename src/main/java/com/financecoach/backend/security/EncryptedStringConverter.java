@@ -8,7 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
-@Converter
+@Converter(autoApply = false)
 @Component
 public class EncryptedStringConverter implements AttributeConverter<String, String> {
 
@@ -26,7 +26,7 @@ public class EncryptedStringConverter implements AttributeConverter<String, Stri
 
     @Override
     public String convertToEntityAttribute(String dbData) {
-        if (dbData == null) {
+        if (dbData == null || !dbData.startsWith("ENC(")) {
             return null;
         }
         return encryptor.decrypt(dbData);
