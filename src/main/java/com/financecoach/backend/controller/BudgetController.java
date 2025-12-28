@@ -14,6 +14,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -96,9 +97,9 @@ public class BudgetController {
      * GET /api/budgets/recommendations
      */
     @GetMapping("/recommendations")
-    public ResponseEntity<Map<String, Double>> getBudgetRecommendations() {
+    public ResponseEntity<Map<String, BigDecimal>> getBudgetRecommendations() {
         UUID userId = getCurrentUserId();
-        Map<String, Double> recommendations = budgetService.getBudgetRecommendations(userId);
+        Map<String, BigDecimal> recommendations = budgetService.getBudgetRecommendations(userId);
         return ResponseEntity.ok(recommendations);
     }
 
