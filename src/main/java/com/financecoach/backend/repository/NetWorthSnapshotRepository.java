@@ -6,16 +6,19 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface NetWorthSnapshotRepository extends JpaRepository<NetWorthSnapshot, UUID> {
 
-    List<NetWorthSnapshot> findByUserIdOrderBySnapshotDateDesc(UUID userId);
+    List<NetWorthSnapshot> findByUserIdAndSnapshotDateBetweenOrderBySnapshotDateAsc(
+            UUID userId,
+            LocalDate startDate,
+            LocalDate endDate
+    );
 
     List<NetWorthSnapshot> findByUserIdAndSnapshotDateAfterOrderBySnapshotDateAsc(
-            UUID userId, LocalDate startDate);
-
-    Optional<NetWorthSnapshot> findByUserIdAndSnapshotDate(UUID userId, LocalDate snapshotDate);
+            UUID userId,
+            LocalDate startDate
+    );
 }
