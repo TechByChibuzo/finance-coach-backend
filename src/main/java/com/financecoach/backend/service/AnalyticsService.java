@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/userservice/service/AnalyticsService.java
 package com.financecoach.backend.service;
 
 import com.financecoach.backend.model.Transaction;
@@ -6,6 +5,8 @@ import com.financecoach.backend.repository.TransactionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -23,59 +24,67 @@ public class AnalyticsService {
     /**
      * Get spending summary by category
      */
-    public Map<String, Double> getSpendingByCategory(UUID userId, LocalDate startDate, LocalDate endDate) {
+    public Map<String, BigDecimal> getSpendingByCategory(UUID userId, LocalDate startDate, LocalDate endDate) {
         List<Transaction> transactions = transactionRepository
                 .findByUserIdAndDateBetween(userId, startDate, endDate);
 
         return transactions.stream()
-                .filter(t -> t.getAmount() > 0) // Only expenses (positive amounts)
+                .filter(t -> t.getAmount().compareTo(BigDecimal.ZERO) > 0) // Only expenses (positive amounts)
                 .collect(Collectors.groupingBy(
                         t -> t.getCategory() != null ? t.getCategory() : "Uncategorized",
-                        Collectors.summingDouble(Transaction::getAmount)
+                        Collectors.reducing(
+                                BigDecimal.ZERO,
+                                Transaction::getAmount,
+                                BigDecimal::add
+                        )
                 ));
     }
 
     /**
      * Get total spending for a period
      */
-    public Double getTotalSpending(UUID userId, LocalDate startDate, LocalDate endDate) {
+    public BigDecimal getTotalSpending(UUID userId, LocalDate startDate, LocalDate endDate) {
         List<Transaction> transactions = transactionRepository
                 .findByUserIdAndDateBetween(userId, startDate, endDate);
 
         return transactions.stream()
-                .filter(t -> t.getAmount() > 0) // Only expenses
-                .mapToDouble(Transaction::getAmount)
-                .sum();
+                .map(Transaction::getAmount) // Only expenses
+                .filter(amount -> amount.compareTo(BigDecimal.ZERO) > 0)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     /**
      * Get total income for a period
      */
-    public Double getTotalIncome(UUID userId, LocalDate startDate, LocalDate endDate) {
+    public BigDecimal getTotalIncome(UUID userId, LocalDate startDate, LocalDate endDate) {
         List<Transaction> transactions = transactionRepository
                 .findByUserIdAndDateBetween(userId, startDate, endDate);
 
         return transactions.stream()
-                .filter(t -> t.getAmount() < 0) // Only income (negative amounts in Plaid)
-                .mapToDouble(t -> Math.abs(t.getAmount()))
-                .sum();
+                .filter(t -> t.getAmount().compareTo(BigDecimal.ZERO) < 0) // Only income (negative amounts in Plaid)
+                .map(t -> t.getAmount().abs()) // Use BigDecimal.abs()
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     /**
      * Get top merchants by spending
      */
-    public Map<String, Double> getTopMerchants(UUID userId, LocalDate startDate, LocalDate endDate, int limit) {
+    public Map<String, BigDecimal> getTopMerchants(UUID userId, LocalDate startDate, LocalDate endDate, int limit) {
         List<Transaction> transactions = transactionRepository
                 .findByUserIdAndDateBetween(userId, startDate, endDate);
 
         return transactions.stream()
-                .filter(t -> t.getAmount() > 0)
+                .filter(t -> t.getAmount().compareTo(BigDecimal.ZERO) > 0)
                 .collect(Collectors.groupingBy(
                         t -> t.getMerchantName() != null ? t.getMerchantName() : t.getName(),
-                        Collectors.summingDouble(Transaction::getAmount)
+                        Collectors.reducing(
+                                BigDecimal.ZERO,
+                                Transaction::getAmount,
+                                BigDecimal::add
+                        )
                 ))
                 .entrySet().stream()
-                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .sorted(Map.Entry.<String, BigDecimal>comparingByValue().reversed())
                 .limit(limit)
                 .collect(Collectors.toMap(
                         Map.Entry::getKey,
@@ -88,15 +97,19 @@ public class AnalyticsService {
     /**
      * Get spending trends (day by day)
      */
-    public Map<LocalDate, Double> getSpendingTrend(UUID userId, LocalDate startDate, LocalDate endDate) {
+    public Map<LocalDate, BigDecimal> getSpendingTrend(UUID userId, LocalDate startDate, LocalDate endDate) {
         List<Transaction> transactions = transactionRepository
                 .findByUserIdAndDateBetween(userId, startDate, endDate);
 
         return transactions.stream()
-                .filter(t -> t.getAmount() > 0)
+                .filter(t -> t.getAmount().compareTo(BigDecimal.ZERO) > 0)
                 .collect(Collectors.groupingBy(
                         Transaction::getDate,
-                        Collectors.summingDouble(Transaction::getAmount)
+                        Collectors.reducing(
+                                BigDecimal.ZERO,
+                                Transaction::getAmount,
+                                BigDecimal::add
+                        )
                 ))
                 .entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
@@ -115,16 +128,18 @@ public class AnalyticsService {
         LocalDate startDate = month.withDayOfMonth(1);
         LocalDate endDate = month.withDayOfMonth(month.lengthOfMonth());
 
-        Double totalSpending = getTotalSpending(userId, startDate, endDate);
-        Double totalIncome = getTotalIncome(userId, startDate, endDate);
-        Map<String, Double> categoryBreakdown = getSpendingByCategory(userId, startDate, endDate);
-        Map<String, Double> topMerchants = getTopMerchants(userId, startDate, endDate, 5);
+        BigDecimal totalSpending = getTotalSpending(userId, startDate, endDate);
+        BigDecimal totalIncome = getTotalIncome(userId, startDate, endDate);
+        Map<String, BigDecimal> categoryBreakdown = getSpendingByCategory(userId, startDate, endDate);
+        Map<String, BigDecimal> topMerchants = getTopMerchants(userId, startDate, endDate, 5);
+
+        BigDecimal netCashFlow = totalIncome.subtract(totalSpending);
 
         Map<String, Object> summary = new HashMap<>();
         summary.put("month", month.toString());
         summary.put("totalSpending", totalSpending);
         summary.put("totalIncome", totalIncome);
-        summary.put("netCashFlow", totalIncome - totalSpending);
+        summary.put("netCashFlow", netCashFlow);
         summary.put("categoryBreakdown", categoryBreakdown);
         summary.put("topMerchants", topMerchants);
         summary.put("transactionCount", transactionRepository
@@ -144,19 +159,25 @@ public class AnalyticsService {
         Map<String, Object> currentSummary = getMonthlySummary(userId, currentMonth);
         Map<String, Object> previousSummary = getMonthlySummary(userId, previousMonth);
 
-        Double currentSpending = (Double) currentSummary.get("totalSpending");
-        Double previousSpending = (Double) previousSummary.get("totalSpending");
+        BigDecimal currentSpending = (BigDecimal) currentSummary.get("totalSpending");
+        BigDecimal previousSpending = (BigDecimal) previousSummary.get("totalSpending");
 
-        Double percentageChange = 0.0;
-        if (previousSpending > 0) {
-            percentageChange = ((currentSpending - previousSpending) / previousSpending) * 100;
+        BigDecimal spendingChange = currentSpending.subtract(previousSpending);
+
+        double percentageChange = 0.0;
+        if (previousSpending.compareTo(BigDecimal.ZERO) > 0) {
+            percentageChange = currentSpending
+                    .subtract(previousSpending)
+                    .divide(previousSpending, 4, RoundingMode.HALF_UP)
+                    .multiply(new BigDecimal("100"))
+                    .doubleValue();  // Convert to Double for display
         }
 
         Map<String, Object> comparison = new HashMap<>();
         comparison.put("currentMonth", currentSummary);
         comparison.put("previousMonth", previousSummary);
-        comparison.put("spendingChange", currentSpending - previousSpending);
-        comparison.put("spendingChangePercentage", percentageChange);
+        comparison.put("spendingChange", spendingChange);  // BigDecimal (money difference)
+        comparison.put("spendingChangePercentage", percentageChange);  // Double (display %)
 
         return comparison;
     }

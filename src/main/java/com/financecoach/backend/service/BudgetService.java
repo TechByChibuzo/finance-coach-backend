@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/service/BudgetService.java
 package com.financecoach.backend.service;
 
 import com.financecoach.backend.dto.BudgetRequest;
@@ -16,6 +15,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.List;
@@ -65,15 +66,19 @@ public class BudgetService {
     /**
      * Map raw Plaid categories to budget categories, combining similar categories
      */
-    private Map<String, Double> mapCategoriesToBudgetCategories(Map<String, Double> rawSpending) {
-        Map<String, Double> mappedSpending = new HashMap<>();
+    private Map<String, BigDecimal> mapCategoriesToBudgetCategories(Map<String, BigDecimal> rawSpending) {
+        Map<String, BigDecimal> mappedSpending = new HashMap<>();
 
-        for (Map.Entry<String, Double> entry : rawSpending.entrySet()) {
+        for (Map.Entry<String, BigDecimal> entry : rawSpending.entrySet()) {
             String budgetCategory = mapPlaidCategoryToBudgetCategory(entry.getKey());
 
             // Skip null categories (transfers, income)
             if (budgetCategory != null) {
-                mappedSpending.merge(budgetCategory, entry.getValue(), Double::sum);
+                mappedSpending.merge(
+                        budgetCategory,
+                        entry.getValue(),
+                        BigDecimal::add  // Use BigDecimal.add instead of Double::sum
+                );
             }
         }
 
@@ -87,12 +92,14 @@ public class BudgetService {
     public BudgetResponse createOrUpdateBudget(UUID userId, BudgetRequest request) {
         logger.info("Creating/updating budget for user: {}, category: {}",
                 userId, request.getCategory());
+
         // Validate inputs
         if (request.getCategory() == null || request.getCategory().isEmpty()) {
             logger.error("Budget creation failed - category is null or empty");
             throw new ValidationException("Category is required");
         }
-        if (request.getAmount() == null || request.getAmount() <= 0) {
+
+        if (request.getAmount() == null || request.getAmount().compareTo(BigDecimal.ZERO) <= 0) {
             logger.error("Budget creation failed - invalid amount: {}", request.getAmount());
             throw new ValidationException("Budget amount must be positive");
         }
@@ -142,9 +149,10 @@ public class BudgetService {
         // Calculate current spending for this category
         LocalDate startDate = month;
         LocalDate endDate = month.plusMonths(1).minusDays(1);
-        Map<String, Double> plaidSpending = analyticsService.getSpendingByCategory(userId, startDate, endDate);
-        Map<String, Double> categorySpending = mapCategoriesToBudgetCategories(plaidSpending);
-        Double spent = categorySpending.getOrDefault(request.getCategory(), 0.0);
+
+        Map<String, BigDecimal> plaidSpending = analyticsService.getSpendingByCategory(userId, startDate, endDate);
+        Map<String, BigDecimal> categorySpending = mapCategoriesToBudgetCategories(plaidSpending);
+        BigDecimal spent = categorySpending.getOrDefault(request.getCategory(), BigDecimal.ZERO);
         budget.updateSpent(spent);
 
         // Save to database
@@ -182,13 +190,15 @@ public class BudgetService {
         // Calculate actual spending for each category
         LocalDate startDate = normalizedMonth;
         LocalDate endDate = normalizedMonth.plusMonths(1).minusDays(1);
-        Map<String, Double> rawSpending = analyticsService.getSpendingByCategory(userId, startDate, endDate);
-        Map<String, Double> actualSpending = mapCategoriesToBudgetCategories(rawSpending);
+
+        Map<String, BigDecimal> rawSpending = analyticsService.getSpendingByCategory(userId, startDate, endDate);
+        Map<String, BigDecimal> actualSpending = mapCategoriesToBudgetCategories(rawSpending);
 
         // Update spent amounts
         for (Budget budget : budgets) {
-            Double spent = actualSpending.getOrDefault(budget.getCategory(), 0.0);
-            if (!spent.equals(budget.getSpent())) {
+            BigDecimal spent = actualSpending.getOrDefault(budget.getCategory(), BigDecimal.ZERO);
+
+            if (spent.compareTo(budget.getSpent()) != 0) {
                 budget.updateSpent(spent);
                 budgetRepository.save(budget);
             }
@@ -199,12 +209,21 @@ public class BudgetService {
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
 
-        // Calculate summary
-        Double totalBudget = budgets.stream().mapToDouble(Budget::getAmount).sum();
-        Double totalSpent = budgets.stream().mapToDouble(Budget::getSpent).sum();
-        Double totalRemaining = totalBudget - totalSpent;
-        Double percentageSpent = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0.0;
+        BigDecimal totalBudget = budgets.stream()
+                .map(Budget::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        BigDecimal totalSpent = budgets.stream()
+                .map(Budget::getSpent)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalRemaining = totalBudget.subtract(totalSpent);
+
+        BigDecimal percentageSpentDecimal = totalBudget.compareTo(BigDecimal.ZERO) > 0
+                ? totalSpent.divide(totalBudget, 4, RoundingMode.HALF_UP).multiply(new BigDecimal("100"))
+                : BigDecimal.ZERO;
+
+        double percentageSpent = percentageSpentDecimal.doubleValue();
         int exceededCount = (int) budgets.stream().filter(Budget::isExceeded).count();
         int alertCount = (int) budgets.stream().filter(Budget::shouldAlert).count();
 
@@ -273,25 +292,34 @@ public class BudgetService {
         budget.setIsActive(false);
         budgetRepository.save(budget);
         logger.info("Budget soft-deleted successfully: {}", budgetId);
-
     }
 
     /**
      * Get budget recommendations based on historical spending
      */
-    public Map<String, Double> getBudgetRecommendations(UUID userId) {
+    public Map<String, BigDecimal> getBudgetRecommendations(UUID userId) {
         // Get last 3 months of spending
         LocalDate endDate = LocalDate.now();
         LocalDate startDate = endDate.minusMonths(3);
 
-        Map<String, Double> rawSpending = analyticsService.getSpendingByCategory(userId, startDate, endDate);
-        Map<String, Double> categorySpending = mapCategoriesToBudgetCategories(rawSpending);
+        Map<String, BigDecimal> rawSpending = analyticsService.getSpendingByCategory(userId, startDate, endDate);
+        Map<String, BigDecimal> categorySpending = mapCategoriesToBudgetCategories(rawSpending);
 
         // Calculate average monthly spending per category and add 10% buffer
         return categorySpending.entrySet().stream()
                 .collect(Collectors.toMap(
                         Map.Entry::getKey,
-                        entry -> Math.ceil((entry.getValue() / 3) * 1.1) // Average + 10% buffer
+                        entry -> {
+                            // Average over 3 months
+                            BigDecimal average = entry.getValue()
+                                    .divide(new BigDecimal("3"), 2, RoundingMode.HALF_UP);
+
+                            // Add 10% buffer
+                            BigDecimal withBuffer = average.multiply(new BigDecimal("1.1"));
+
+                            // Round up to nearest dollar
+                            return withBuffer.setScale(0, RoundingMode.CEILING);
+                        }
                 ));
     }
 
@@ -317,6 +345,7 @@ public class BudgetService {
 
     /**
      * Refresh spent amounts for all budgets (useful for background jobs)
+     * ✅ UPDATED: Now uses BigDecimal
      */
     @Transactional
     public void refreshAllBudgetSpending(UUID userId, LocalDate month) {
@@ -327,12 +356,12 @@ public class BudgetService {
         // Calculate actual spending
         LocalDate startDate = normalizedMonth;
         LocalDate endDate = normalizedMonth.plusMonths(1).minusDays(1);
-        Map<String, Double> rawSpending = analyticsService.getSpendingByCategory(userId, startDate, endDate);
-        Map<String, Double> actualSpending = mapCategoriesToBudgetCategories(rawSpending);
+        Map<String, BigDecimal> rawSpending = analyticsService.getSpendingByCategory(userId, startDate, endDate);
+        Map<String, BigDecimal> actualSpending = mapCategoriesToBudgetCategories(rawSpending);
 
         // Update each budget
         for (Budget budget : budgets) {
-            Double spent = actualSpending.getOrDefault(budget.getCategory(), 0.0);
+            BigDecimal spent = actualSpending.getOrDefault(budget.getCategory(), BigDecimal.ZERO);
             budget.updateSpent(spent);
             budgetRepository.save(budget);
         }
