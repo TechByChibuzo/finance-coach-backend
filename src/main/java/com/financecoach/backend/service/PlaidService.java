@@ -15,9 +15,10 @@ import org.springframework.stereotype.Service;
 import retrofit2.Response;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -50,8 +51,8 @@ public class PlaidService {
             LinkTokenCreateRequest request = new LinkTokenCreateRequest()
                     .user(user)
                     .clientName("Finance Coach")
-                    .products(Arrays.asList(Products.TRANSACTIONS))
-                    .countryCodes(Arrays.asList(CountryCode.US))
+                    .products(List.of(Products.TRANSACTIONS, Products.INVESTMENTS))
+                    .countryCodes(List.of(CountryCode.US))
                     .language("en");
 
             Response<LinkTokenCreateResponse> response = plaidClient
@@ -128,7 +129,7 @@ public class PlaidService {
                 try {
                     InstitutionsGetByIdRequest institutionRequest = new InstitutionsGetByIdRequest()
                             .institutionId(institutionId)
-                            .countryCodes(Arrays.asList(CountryCode.US));
+                            .countryCodes(List.of(CountryCode.US));
 
                     Response<InstitutionsGetByIdResponse> institutionResponse = plaidClient
                             .institutionsGetById(institutionRequest)
@@ -166,11 +167,13 @@ public class PlaidService {
 
                 // Set balances
                 if (account.getBalances() != null) {
-                    if (account.getBalances().getCurrent() != null) {
-                        bankAccount.setCurrentBalance(account.getBalances().getCurrent());
+                    Double currentBalance = account.getBalances().getCurrent();
+                    if (currentBalance != null) {
+                        bankAccount.setCurrentBalance(BigDecimal.valueOf(currentBalance));
                     }
-                    if (account.getBalances().getAvailable() != null) {
-                        bankAccount.setAvailableBalance(account.getBalances().getAvailable());
+                    Double availableBalance = account.getBalances().getAvailable();
+                    if (availableBalance != null) {
+                        bankAccount.setAvailableBalance(BigDecimal.valueOf(availableBalance));
                     }
                     if (account.getBalances().getIsoCurrencyCode() != null) {
                         bankAccount.setCurrencyCode(account.getBalances().getIsoCurrencyCode());
@@ -220,5 +223,90 @@ public class PlaidService {
 
         account.setIsActive(false);
         bankAccountRepository.save(account);
+    }
+
+    /**
+     * Get investment holdings from Plaid
+     */
+    public InvestmentsHoldingsGetResponse getHoldings(String accessToken) {
+        logger.info("Fetching investment holdings from Plaid");
+
+        try {
+            InvestmentsHoldingsGetRequest request = new InvestmentsHoldingsGetRequest()
+                    .accessToken(accessToken);
+
+            Response<InvestmentsHoldingsGetResponse> response = plaidClient
+                    .investmentsHoldingsGet(request)
+                    .execute();
+
+            if (!response.isSuccessful()) {
+                String errorBody = "No error body";
+                try {
+                    if (response.errorBody() != null) {
+                        errorBody = response.errorBody().string();
+                    }
+                } catch (IOException e) {
+                    logger.error("Could not read error body", e);
+                }
+
+                logger.error("=== PLAID API ERROR ===");
+                logger.error("Status Code: {}", response.code());
+                logger.error("Status Message: {}", response.message());
+                logger.error("Error Body: {}", errorBody);
+                logger.error("Access Token: {}", accessToken);
+                logger.error("=====================");
+
+                throw new PlaidIntegrationException(
+                        String.format("Plaid API error [%d]: %s", response.code(), errorBody)
+                );
+            }
+
+            InvestmentsHoldingsGetResponse holdingsResponse = response.body();
+
+            logger.info("Successfully fetched holdings from Plaid");
+
+            return holdingsResponse;
+
+        } catch (IOException e) {
+            logger.error("Failed to fetch holdings from Plaid", e);
+            throw new PlaidIntegrationException("Unable to fetch investment holdings", e);
+        }
+    }
+
+    /**
+     * Get investment transactions (buys, sells, dividends, etc.)
+     */
+    public InvestmentsTransactionsGetResponse getInvestmentTransactions(
+            String accessToken,
+            LocalDate startDate,
+            LocalDate endDate) {
+
+        logger.info("Fetching investment transactions from {} to {}", startDate, endDate);
+
+        try {
+            InvestmentsTransactionsGetRequest request = new InvestmentsTransactionsGetRequest()
+                    .accessToken(accessToken)
+                    .startDate(startDate)
+                    .endDate(endDate);
+
+            Response<InvestmentsTransactionsGetResponse> response = plaidClient
+                    .investmentsTransactionsGet(request)
+                    .execute();
+
+            if (!response.isSuccessful()) {
+                logger.error("Failed to fetch investment transactions: {}", response.message());
+                throw new PlaidIntegrationException("Failed to fetch investment transactions: " + response.message());
+            }
+
+            InvestmentsTransactionsGetResponse transactionsResponse = response.body();
+
+            logger.info("Successfully fetched investment transactions");
+
+            return transactionsResponse;
+
+        } catch (IOException e) {
+            logger.error("Failed to fetch investment transactions from Plaid", e);
+            throw new PlaidIntegrationException("Unable to fetch investment transactions", e);
+        }
     }
 }

@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import retrofit2.Response;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -49,6 +50,7 @@ public class TransactionService {
             // Get bank account
             BankAccount bankAccount = bankAccountRepository.findById(accountId)
                     .orElseThrow(() -> new BankAccountNotFoundException(accountId));
+
 
             // Verify ownership
             if (!bankAccount.getUserId().equals(userId)) {
@@ -161,7 +163,7 @@ public class TransactionService {
         transaction.setDate(plaidTx.getDate());
 
         // Amount (Plaid uses positive for expenses, negative for income)
-        transaction.setAmount(plaidTx.getAmount());
+        transaction.setAmount(BigDecimal.valueOf(plaidTx.getAmount()));
 
         // Merchant
         transaction.setMerchantName(plaidTx.getMerchantName());
