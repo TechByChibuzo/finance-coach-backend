@@ -1,4 +1,4 @@
-// src/main/java/com/financecoach/userservice/controller/AnalyticsController.java
+// src/main/java/com/financecoach/backend/controller/AnalyticsController.java
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.service.AnalyticsService;
@@ -9,12 +9,14 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/analytics")
+@CrossOrigin(origins = "${app.frontend-url}")
 public class AnalyticsController {
 
     private final AnalyticsService analyticsService;
@@ -26,41 +28,56 @@ public class AnalyticsController {
 
     /**
      * Get spending by category
+     * ✅ UPDATED: Returns BigDecimal map
      */
     @GetMapping("/spending-by-category")
-    public ResponseEntity<Map<String, Double>> getSpendingByCategory(
+    public ResponseEntity<Map<String, BigDecimal>> getSpendingByCategory(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
 
         UUID userId = getCurrentUserId();
-        Map<String, Double> spending = analyticsService.getSpendingByCategory(userId, startDate, endDate);
+        Map<String, BigDecimal> spending = analyticsService.getSpendingByCategory(userId, startDate, endDate);
         return ResponseEntity.ok(spending);
     }
 
     /**
      * Get total spending
+     * ✅ UPDATED: Returns BigDecimal
      */
     @GetMapping("/total-spending")
-    public ResponseEntity<Map<String, Double>> getTotalSpending(
+    public ResponseEntity<Map<String, BigDecimal>> getTotalSpending(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
 
         UUID userId = getCurrentUserId();
-        Double total = analyticsService.getTotalSpending(userId, startDate, endDate);
+        BigDecimal total = analyticsService.getTotalSpending(userId, startDate, endDate);
         return ResponseEntity.ok(Map.of("totalSpending", total));
+    }
+
+    /**
+     * Get total income
+     */
+    @GetMapping("/total-income")
+    public ResponseEntity<Map<String, BigDecimal>> getTotalIncome(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+
+        UUID userId = getCurrentUserId();
+        BigDecimal total = analyticsService.getTotalIncome(userId, startDate, endDate);
+        return ResponseEntity.ok(Map.of("totalIncome", total));
     }
 
     /**
      * Get top merchants
      */
     @GetMapping("/top-merchants")
-    public ResponseEntity<Map<String, Double>> getTopMerchants(
+    public ResponseEntity<Map<String, BigDecimal>> getTopMerchants(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam(defaultValue = "5") int limit) {
 
         UUID userId = getCurrentUserId();
-        Map<String, Double> topMerchants = analyticsService.getTopMerchants(userId, startDate, endDate, limit);
+        Map<String, BigDecimal> topMerchants = analyticsService.getTopMerchants(userId, startDate, endDate, limit);
         return ResponseEntity.ok(topMerchants);
     }
 
@@ -68,17 +85,18 @@ public class AnalyticsController {
      * Get spending trend (day by day)
      */
     @GetMapping("/spending-trend")
-    public ResponseEntity<Map<LocalDate, Double>> getSpendingTrend(
+    public ResponseEntity<Map<LocalDate, BigDecimal>> getSpendingTrend(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
 
         UUID userId = getCurrentUserId();
-        Map<LocalDate, Double> trend = analyticsService.getSpendingTrend(userId, startDate, endDate);
+        Map<LocalDate, BigDecimal> trend = analyticsService.getSpendingTrend(userId, startDate, endDate);
         return ResponseEntity.ok(trend);
     }
 
     /**
      * Get monthly summary
+     * (BigDecimal for money, Integer for counts, String for dates, etc.)
      */
     @GetMapping("/monthly-summary")
     public ResponseEntity<Map<String, Object>> getMonthlySummary(
