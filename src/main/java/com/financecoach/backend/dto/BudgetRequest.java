@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 public class BudgetRequest {
@@ -18,7 +19,7 @@ public class BudgetRequest {
 
     @NotNull(message = "Amount is required")
     @Positive(message = "Amount must be positive")
-    private Double amount;
+    private BigDecimal amount;
 
     private String notes;
 
@@ -29,13 +30,13 @@ public class BudgetRequest {
     // Constructors
     public BudgetRequest() {}
 
-    public BudgetRequest(String category, Double amount) {
+    public BudgetRequest(String category, BigDecimal amount) {
         this.category = category;
         this.amount = amount;
         this.month = LocalDate.now().withDayOfMonth(1);
     }
 
-    public BudgetRequest(String category, LocalDate month, Double amount) {
+    public BudgetRequest(String category, LocalDate month, BigDecimal amount) {
         this.category = category;
         this.month = month;
         this.amount = amount;
@@ -58,11 +59,11 @@ public class BudgetRequest {
         this.month = month;
     }
 
-    public Double getAmount() {
+    public BigDecimal getAmount() {
         return amount;
     }
 
-    public void setAmount(Double amount) {
+    public void setAmount(BigDecimal amount) {
         this.amount = amount;
     }
 

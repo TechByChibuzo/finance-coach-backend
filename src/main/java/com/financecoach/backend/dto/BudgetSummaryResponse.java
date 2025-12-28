@@ -1,14 +1,18 @@
-// src/main/java/com/financecoach/userservice/dto/BudgetSummaryResponse.java
+// src/main/java/com/financecoach/backend/dto/BudgetSummaryResponse.java
 package com.financecoach.backend.dto;
 
+import lombok.Data;
+
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
+@Data
 public class BudgetSummaryResponse {
     private LocalDate month;
-    private Double totalBudget;
-    private Double totalSpent;
-    private Double totalRemaining;
+    private BigDecimal totalBudget;
+    private BigDecimal totalSpent;
+    private BigDecimal totalRemaining;
     private Double percentageSpent;
     private Integer categoriesCount;
     private Integer exceededCount;
@@ -19,8 +23,8 @@ public class BudgetSummaryResponse {
     // Constructors
     public BudgetSummaryResponse() {}
 
-    public BudgetSummaryResponse(LocalDate month, Double totalBudget, Double totalSpent,
-                                 Double totalRemaining, Double percentageSpent,
+    public BudgetSummaryResponse(LocalDate month, BigDecimal totalBudget, BigDecimal totalSpent,
+                                 BigDecimal totalRemaining, Double percentageSpent,
                                  Integer categoriesCount, Integer exceededCount,
                                  Integer alertCount, List<BudgetResponse> budgets,
                                  String status) {
@@ -36,84 +40,5 @@ public class BudgetSummaryResponse {
         this.status = status;
     }
 
-    // Getters and Setters
-    public LocalDate getMonth() {
-        return month;
-    }
 
-    public void setMonth(LocalDate month) {
-        this.month = month;
-    }
-
-    public Double getTotalBudget() {
-        return totalBudget;
-    }
-
-    public void setTotalBudget(Double totalBudget) {
-        this.totalBudget = totalBudget;
-    }
-
-    public Double getTotalSpent() {
-        return totalSpent;
-    }
-
-    public void setTotalSpent(Double totalSpent) {
-        this.totalSpent = totalSpent;
-    }
-
-    public Double getTotalRemaining() {
-        return totalRemaining;
-    }
-
-    public void setTotalRemaining(Double totalRemaining) {
-        this.totalRemaining = totalRemaining;
-    }
-
-    public Double getPercentageSpent() {
-        return percentageSpent;
-    }
-
-    public void setPercentageSpent(Double percentageSpent) {
-        this.percentageSpent = percentageSpent;
-    }
-
-    public Integer getCategoriesCount() {
-        return categoriesCount;
-    }
-
-    public void setCategoriesCount(Integer categoriesCount) {
-        this.categoriesCount = categoriesCount;
-    }
-
-    public Integer getExceededCount() {
-        return exceededCount;
-    }
-
-    public void setExceededCount(Integer exceededCount) {
-        this.exceededCount = exceededCount;
-    }
-
-    public Integer getAlertCount() {
-        return alertCount;
-    }
-
-    public void setAlertCount(Integer alertCount) {
-        this.alertCount = alertCount;
-    }
-
-    public List<BudgetResponse> getBudgets() {
-        return budgets;
-    }
-
-    public void setBudgets(List<BudgetResponse> budgets) {
-        this.budgets = budgets;
-    }
-
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
-    }
 }
