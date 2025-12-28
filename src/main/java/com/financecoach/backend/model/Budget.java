@@ -1,7 +1,10 @@
-// src/main/java/com/financecoach/userservice/model/Budget.java
+// src/main/java/com/financecoach/backend/model/Budget.java
 package com.financecoach.backend.model;
 
 import jakarta.persistence.*;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -30,11 +33,11 @@ public class Budget {
     @Column(name = "month", nullable = false)
     private LocalDate month;  // First day of the month (e.g., 2024-12-01)
 
-    @Column(name = "amount", nullable = false)
-    private Double amount;  // Budget limit for this category
+    @Column(nullable = false, precision = 19, scale = 2)
+    private BigDecimal amount;
 
-    @Column(name = "spent", nullable = false)
-    private Double spent = 0.0;  // Amount spent so far (calculated)
+    @Column(precision = 19, scale = 2)
+    private BigDecimal spent;  // Amount spent so far (calculated)
 
     @Column(name = "currency_code")
     private String currencyCode = "USD";
@@ -60,7 +63,7 @@ public class Budget {
         this.updatedAt = LocalDateTime.now();
     }
 
-    public Budget(UUID userId, String category, LocalDate month, Double amount) {
+    public Budget(UUID userId, String category, LocalDate month, BigDecimal amount) {
         this();
         this.userId = userId;
         this.category = category;
@@ -69,22 +72,28 @@ public class Budget {
     }
 
     // Update spent amount and updatedAt timestamp
-    public void updateSpent(Double spent) {
+    public void updateSpent(BigDecimal spent) {
         this.spent = spent;
         this.updatedAt = LocalDateTime.now();
     }
 
     // Calculate percentage spent
     public Double getPercentageSpent() {
-        if (amount == null || amount == 0) {
+        if (amount == null || spent == null || amount.compareTo(BigDecimal.ZERO) == 0) {
             return 0.0;
         }
-        return (spent / amount) * 100;
+
+        return spent
+                .divide(amount, 4, RoundingMode.HALF_EVEN)
+                .multiply(BigDecimal.valueOf(100))
+                .doubleValue();
     }
 
     // Check if budget is exceeded
     public Boolean isExceeded() {
-        return spent != null && amount != null && spent > amount;
+        return spent != null
+                && amount != null
+                && spent.compareTo(amount) > 0;
     }
 
     // Check if alert threshold is reached
@@ -93,8 +102,11 @@ public class Budget {
     }
 
     // Get remaining budget
-    public Double getRemainingBudget() {
-        return amount - spent;
+    public BigDecimal getRemainingBudget() {
+        if (amount == null) return BigDecimal.ZERO;
+        if (spent == null) return amount;
+
+        return amount.subtract(spent);
     }
 
     // Getters and Setters
@@ -130,20 +142,20 @@ public class Budget {
         this.month = month;
     }
 
-    public Double getAmount() {
+    public BigDecimal getAmount() {
         return amount;
     }
 
-    public void setAmount(Double amount) {
+    public void setAmount(BigDecimal amount) {
         this.amount = amount;
         this.updatedAt = LocalDateTime.now();
     }
 
-    public Double getSpent() {
+    public BigDecimal getSpent() {
         return spent;
     }
 
-    public void setSpent(Double spent) {
+    public void setSpent(BigDecimal spent) {
         this.spent = spent;
         this.updatedAt = LocalDateTime.now();
     }
