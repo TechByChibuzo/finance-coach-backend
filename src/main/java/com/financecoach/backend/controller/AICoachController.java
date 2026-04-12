@@ -2,6 +2,7 @@
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.dto.ChatRequest;
+import com.financecoach.backend.dto.SavingsGoalRequest;
 import com.financecoach.backend.exception.ValidationException;
 import com.financecoach.backend.service.AICoachService;
 import jakarta.validation.Valid;
@@ -11,11 +12,13 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.Map;
 import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/ai-coach")
+@CrossOrigin(origins = "${app.frontend-url}")
 public class AICoachController {
 
     private final AICoachService aiCoachService;
@@ -72,19 +75,19 @@ public class AICoachController {
     /**
      * Get savings recommendations
      * POST /api/ai-coach/savings-recommendations
+     * ✅ UPDATED: Now uses BigDecimal and proper DTO
      */
     @PostMapping("/savings-recommendations")
     public ResponseEntity<Map<String, String>> getSavingsRecommendations(
-            @RequestBody Map<String, Double> request) {
+            @Valid @RequestBody SavingsGoalRequest request) {
 
         UUID userId = getCurrentUserId();
-        Double savingsGoal = request.get("savingsGoal");
 
-        if (savingsGoal == null || savingsGoal <= 0) {
-            throw new ValidationException("Savings goal must be positive");
-        }
+        String recommendations = aiCoachService.getSavingsRecommendations(
+                userId,
+                request.getSavingsGoal()
+        );
 
-        String recommendations = aiCoachService.getSavingsRecommendations(userId, savingsGoal);
         return ResponseEntity.ok(Map.of("recommendations", recommendations));
     }
 

@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/userservice/service/AICoachService.java
 package com.financecoach.backend.service;
 
 import com.financecoach.backend.model.Transaction;
@@ -6,6 +5,8 @@ import com.financecoach.backend.repository.TransactionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +19,7 @@ public class AICoachService {
     private final ClaudeService claudeService;
     private final TransactionRepository transactionRepository;
     private final AnalyticsService analyticsService;
+
     @Autowired
     private MetricsService metricsService;
 
@@ -34,7 +36,7 @@ public class AICoachService {
      * General financial chat with context
      */
     public String chat(UUID userId, String userMessage) {
-        long startTime = System.currentTimeMillis(); // Start timing
+        long startTime = System.currentTimeMillis();
 
         // TRACK METRIC - Count request
         metricsService.recordAiCoachRequest();
@@ -54,7 +56,7 @@ public class AICoachService {
         // Combine context with user message
         String fullMessage = context + "\n\nUser asks: " + userMessage;
 
-        String response =  claudeService.chat(fullMessage, systemPrompt);
+        String response = claudeService.chat(fullMessage, systemPrompt);
 
         // TRACK METRIC - Response time
         long duration = System.currentTimeMillis() - startTime;
@@ -70,10 +72,10 @@ public class AICoachService {
         LocalDate endDate = LocalDate.now();
         LocalDate startDate = endDate.minusDays(7);
 
-        // Get spending data
-        Double totalSpending = analyticsService.getTotalSpending(userId, startDate, endDate);
-        Map<String, Double> categoryBreakdown = analyticsService.getSpendingByCategory(userId, startDate, endDate);
-        Map<String, Double> topMerchants = analyticsService.getTopMerchants(userId, startDate, endDate, 5);
+        // Get spending data (all BigDecimal now)
+        BigDecimal totalSpending = analyticsService.getTotalSpending(userId, startDate, endDate);
+        Map<String, BigDecimal> categoryBreakdown = analyticsService.getSpendingByCategory(userId, startDate, endDate);
+        Map<String, BigDecimal> topMerchants = analyticsService.getTopMerchants(userId, startDate, endDate, 5);
 
         // Build summary prompt
         String prompt = String.format("""
@@ -108,10 +110,20 @@ public class AICoachService {
      */
     public String generateMonthlyReport(UUID userId) {
         LocalDate now = LocalDate.now();
-        LocalDate startDate = now.withDayOfMonth(1);
-        LocalDate endDate = now;
 
         Map<String, Object> monthlySummary = analyticsService.getMonthlySummary(userId, now);
+
+        // Cast to BigDecimal (not Double)
+        BigDecimal totalSpending = (BigDecimal) monthlySummary.get("totalSpending");
+        BigDecimal totalIncome = (BigDecimal) monthlySummary.get("totalIncome");
+        BigDecimal netCashFlow = (BigDecimal) monthlySummary.get("netCashFlow");
+        Integer transactionCount = (Integer) monthlySummary.get("transactionCount");
+
+        @SuppressWarnings("unchecked")
+        Map<String, BigDecimal> categoryBreakdown = (Map<String, BigDecimal>) monthlySummary.get("categoryBreakdown");
+
+        @SuppressWarnings("unchecked")
+        Map<String, BigDecimal> topMerchants = (Map<String, BigDecimal>) monthlySummary.get("topMerchants");
 
         String prompt = String.format("""
             Generate a comprehensive monthly financial report based on this data:
@@ -138,12 +150,12 @@ public class AICoachService {
             Make it encouraging and actionable.
             """,
                 monthlySummary.get("month"),
-                monthlySummary.get("totalSpending"),
-                monthlySummary.get("totalIncome"),
-                monthlySummary.get("netCashFlow"),
-                monthlySummary.get("transactionCount"),
-                formatCategoryBreakdown((Map<String, Double>) monthlySummary.get("categoryBreakdown")),
-                formatTopMerchants((Map<String, Double>) monthlySummary.get("topMerchants"))
+                totalSpending,
+                totalIncome,
+                netCashFlow,
+                transactionCount,
+                formatCategoryBreakdown(categoryBreakdown),
+                formatTopMerchants(topMerchants)
         );
 
         return claudeService.chat(prompt);
@@ -159,17 +171,22 @@ public class AICoachService {
         List<Transaction> categoryTransactions = transactionRepository
                 .findByUserIdAndCategory(userId, category);
 
-        Double totalCategorySpending = categoryTransactions.stream()
+        // Use BigDecimal for money calculations
+        BigDecimal totalCategorySpending = categoryTransactions.stream()
                 .filter(t -> t.getDate().isAfter(startDate) && t.getDate().isBefore(endDate))
-                .mapToDouble(Transaction::getAmount)
-                .sum();
+                .map(Transaction::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Get merchant breakdown
-        Map<String, Double> merchantBreakdown = categoryTransactions.stream()
+        // Get merchant breakdown with BigDecimal
+        Map<String, BigDecimal> merchantBreakdown = categoryTransactions.stream()
                 .filter(t -> t.getDate().isAfter(startDate) && t.getDate().isBefore(endDate))
                 .collect(Collectors.groupingBy(
                         t -> t.getMerchantName() != null ? t.getMerchantName() : "Unknown",
-                        Collectors.summingDouble(Transaction::getAmount)
+                        Collectors.reducing(
+                                BigDecimal.ZERO,
+                                Transaction::getAmount,
+                                BigDecimal::add
+                        )
                 ));
 
         String prompt = String.format("""
@@ -201,20 +218,30 @@ public class AICoachService {
     /**
      * Get savings recommendations
      */
-    public String getSavingsRecommendations(UUID userId, Double savingsGoal) {
+    public String getSavingsRecommendations(UUID userId, BigDecimal savingsGoal) {  // ✅ Changed from Double
         LocalDate endDate = LocalDate.now();
         LocalDate startDate = endDate.minusDays(30);
 
-        Map<String, Double> categorySpending = analyticsService.getSpendingByCategory(userId, startDate, endDate);
-        Double totalSpending = analyticsService.getTotalSpending(userId, startDate, endDate);
-        Double totalIncome = analyticsService.getTotalIncome(userId, startDate, endDate);
+        Map<String, BigDecimal> categorySpending = analyticsService.getSpendingByCategory(userId, startDate, endDate);
+        BigDecimal totalSpending = analyticsService.getTotalSpending(userId, startDate, endDate);
+        BigDecimal totalIncome = analyticsService.getTotalIncome(userId, startDate, endDate);
+
+        // Calculate current savings
+        BigDecimal currentSavings = totalIncome.subtract(totalSpending);
+
+        // Calculate savings rate percentage (can be Double for display)
+        Double savingsRatePercentage = totalIncome.compareTo(BigDecimal.ZERO) > 0
+                ? currentSavings.divide(totalIncome, 4, RoundingMode.HALF_UP)
+                .multiply(new BigDecimal("100"))
+                .doubleValue()
+                : 0.0;
 
         String prompt = String.format("""
             The user wants to save $%.2f per month. Help them create a plan.
             
             Current monthly spending: $%.2f
             Current monthly income: $%.2f
-            Current savings rate: $%.2f (%.1f%%)
+            Current savings: $%.2f (%.1f%%)
             
             Spending by category:
             %s
@@ -231,23 +258,26 @@ public class AICoachService {
                 savingsGoal,
                 totalSpending,
                 totalIncome,
-                totalIncome - totalSpending,
-                ((totalIncome - totalSpending) / totalIncome) * 100,
+                currentSavings,
+                savingsRatePercentage,
                 formatCategoryBreakdown(categorySpending)
         );
 
         return claudeService.chat(prompt);
     }
 
-    // Helper methods
+    // ==================== HELPER METHODS ====================
 
+    /**
+     * Build financial context for the user
+     */
     private String buildUserFinancialContext(UUID userId) {
         LocalDate endDate = LocalDate.now();
         LocalDate startDate = endDate.minusDays(30);
 
-        Double totalSpending = analyticsService.getTotalSpending(userId, startDate, endDate);
-        Map<String, Double> categoryBreakdown = analyticsService.getSpendingByCategory(userId, startDate, endDate);
-        Map<String, Double> topMerchants = analyticsService.getTopMerchants(userId, startDate, endDate, 5);
+        BigDecimal totalSpending = analyticsService.getTotalSpending(userId, startDate, endDate);
+        Map<String, BigDecimal> categoryBreakdown = analyticsService.getSpendingByCategory(userId, startDate, endDate);
+        Map<String, BigDecimal> topMerchants = analyticsService.getTopMerchants(userId, startDate, endDate, 5);
 
         return String.format("""
             User's Financial Context (Last 30 days):
@@ -265,22 +295,31 @@ public class AICoachService {
         );
     }
 
-    private String formatCategoryBreakdown(Map<String, Double> categories) {
+    /**
+     * Format category breakdown for Claude prompt
+     */
+    private String formatCategoryBreakdown(Map<String, BigDecimal> categories) {
         return categories.entrySet().stream()
-                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .sorted(Map.Entry.<String, BigDecimal>comparingByValue().reversed())  // ✅ Fixed generic type
                 .map(e -> String.format("- %s: $%.2f", e.getKey(), e.getValue()))
                 .collect(Collectors.joining("\n"));
     }
 
-    private String formatTopMerchants(Map<String, Double> merchants) {
+    /**
+     * Format top merchants for Claude prompt
+     */
+    private String formatTopMerchants(Map<String, BigDecimal> merchants) {
         return merchants.entrySet().stream()
                 .map(e -> String.format("- %s: $%.2f", e.getKey(), e.getValue()))
                 .collect(Collectors.joining("\n"));
     }
 
-    private String formatMerchantBreakdown(Map<String, Double> merchants) {
+    /**
+     * Format merchant breakdown for Claude prompt
+     */
+    private String formatMerchantBreakdown(Map<String, BigDecimal> merchants) {
         return merchants.entrySet().stream()
-                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .sorted(Map.Entry.<String, BigDecimal>comparingByValue().reversed())
                 .map(e -> String.format("- %s: $%.2f", e.getKey(), e.getValue()))
                 .collect(Collectors.joining("\n"));
     }
