@@ -30,14 +30,17 @@ public class TransactionService {
     private final BankAccountRepository bankAccountRepository;
     @Autowired
     private MetricsService metricsService;
+    private final VectorStoreService vectorStoreService;
 
     @Autowired
     public TransactionService(PlaidApi plaidClient,
                               TransactionRepository transactionRepository,
-                              BankAccountRepository bankAccountRepository) {
+                              BankAccountRepository bankAccountRepository,
+                              VectorStoreService vectorStoreService) {
         this.plaidClient = plaidClient;
         this.transactionRepository = transactionRepository;
         this.bankAccountRepository = bankAccountRepository;
+        this.vectorStoreService = vectorStoreService;
     }
 
     /**
@@ -85,7 +88,9 @@ public class TransactionService {
                 }
 
                 Transaction transaction = convertPlaidTransaction(plaidTx, bankAccount);
-                savedTransactions.add(transactionRepository.save(transaction));
+                Transaction saved = transactionRepository.save(transaction);
+                savedTransactions.add(saved);
+                vectorStoreService.indexTransaction(saved);
             }
 
             // Track metrics

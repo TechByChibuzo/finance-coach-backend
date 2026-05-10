@@ -19,6 +19,7 @@ public class AICoachService {
     private final ClaudeService claudeService;
     private final TransactionRepository transactionRepository;
     private final AnalyticsService analyticsService;
+    private final VectorStoreService vectorStoreService;
 
     @Autowired
     private MetricsService metricsService;
@@ -26,10 +27,12 @@ public class AICoachService {
     @Autowired
     public AICoachService(ClaudeService claudeService,
                           TransactionRepository transactionRepository,
-                          AnalyticsService analyticsService) {
+                          AnalyticsService analyticsService,
+                          VectorStoreService vectorStoreService) {
         this.claudeService = claudeService;
         this.transactionRepository = transactionRepository;
         this.analyticsService = analyticsService;
+        this.vectorStoreService = vectorStoreService;
     }
 
     /**
@@ -38,31 +41,37 @@ public class AICoachService {
     public String chat(UUID userId, String userMessage) {
         long startTime = System.currentTimeMillis();
 
-        // TRACK METRIC - Count request
         metricsService.recordAiCoachRequest();
 
-        // Build context about user's finances
-        String context = buildUserFinancialContext(userId);
+        // RAG: retrieve semantically relevant transactions instead of dumping everything
+        List<String> relevantContext = vectorStoreService.retrieveRelevantContext(userId, userMessage);
 
-        // System prompt for Claude
-        String systemPrompt = """
-            You are a friendly and knowledgeable personal finance coach. 
-            You help users understand their spending, save money, and make better financial decisions.
-            
-            Be conversational, supportive, and specific. Use the user's actual data to give personalized advice.
-            Keep responses concise (2-3 paragraphs max) unless the user asks for detailed analysis.
-            """;
+        String systemPrompt = buildSystemPrompt(relevantContext);
 
-        // Combine context with user message
-        String fullMessage = context + "\n\nUser asks: " + userMessage;
+        String response = claudeService.chat(userMessage, systemPrompt);
 
-        String response = claudeService.chat(fullMessage, systemPrompt);
-
-        // TRACK METRIC - Response time
         long duration = System.currentTimeMillis() - startTime;
         metricsService.recordAiCoachResponseDuration(duration);
 
         return response;
+    }
+
+    private String buildSystemPrompt(List<String> relevantTransactions) {
+        String contextBlock = relevantTransactions.isEmpty()
+                ? "No transaction data available yet. Encourage the user to connect their bank account."
+                : String.join("\n", relevantTransactions);
+
+        return """
+        You are a friendly and knowledgeable personal finance coach.
+        You help users understand their spending, save money, and make better financial decisions.
+        
+        Be conversational, supportive, and specific. Use the user's actual transaction data below
+        to give personalized advice. Don't make up numbers — only reference what's in the context.
+        
+        Keep responses concise (2-3 paragraphs max) unless the user asks for detailed analysis.
+        
+        RELEVANT TRANSACTION CONTEXT (retrieved based on the user's question):
+        """ + contextBlock;
     }
 
     /**
