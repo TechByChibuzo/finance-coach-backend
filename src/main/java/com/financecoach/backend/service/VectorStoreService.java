@@ -1,10 +1,12 @@
 package com.financecoach.backend.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.financecoach.backend.model.Transaction;
 import com.financecoach.backend.model.TransactionEmbedding;
 import com.financecoach.backend.repository.TransactionEmbeddingRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,11 +22,17 @@ public class VectorStoreService {
 
     private final TransactionEmbeddingRepository embeddingRepository;
     private final EmbeddingService embeddingService;
+    private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
     public VectorStoreService(TransactionEmbeddingRepository embeddingRepository,
-                              EmbeddingService embeddingService) {
+                              EmbeddingService embeddingService,
+                              JdbcTemplate jdbcTemplate,
+                              ObjectMapper objectMapper) {
         this.embeddingRepository = embeddingRepository;
         this.embeddingService = embeddingService;
+        this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
@@ -47,15 +55,19 @@ public class VectorStoreService {
                             : transaction.getName()
             );
 
-            TransactionEmbedding record = new TransactionEmbedding(
+            String vectorString = buildVectorString(embedding);
+            String metadataJson = objectMapper.writeValueAsString(metadata);
+
+            jdbcTemplate.update(
+                    "INSERT INTO transaction_embeddings (id, transaction_id, user_id, embedding, content, metadata, created_at) " +
+                            "VALUES (gen_random_uuid(), ?, ?, ?::vector, ?, ?::jsonb, NOW())",
                     transaction.getPlaidTransactionId(),
                     transaction.getUserId(),
-                    embedding,
+                    vectorString,
                     content,
-                    metadata
+                    metadataJson
             );
 
-            embeddingRepository.save(record);
             logger.debug("Indexed transaction {}", transaction.getPlaidTransactionId());
 
         } catch (Exception e) {
@@ -68,15 +80,21 @@ public class VectorStoreService {
         logger.debug("Retrieving RAG context for query: '{}'", query);
 
         float[] queryEmbedding = embeddingService.embedText(query);
+        String vectorString = buildVectorString(queryEmbedding);
 
-        List<TransactionEmbedding> results = embeddingRepository
-                .findSimilarTransactions(userId, queryEmbedding, limit);
+        List<String> results = jdbcTemplate.query(
+                "SELECT content FROM transaction_embeddings " +
+                        "WHERE user_id = ? " +
+                        "ORDER BY embedding <=> ?::vector " +
+                        "LIMIT ?",
+                (rs, rowNum) -> rs.getString("content"),
+                userId,
+                vectorString,
+                limit
+        );
 
         logger.debug("Retrieved {} relevant transactions", results.size());
-
-        return results.stream()
-                .map(TransactionEmbedding::getContent)
-                .toList();
+        return results;
     }
 
     public List<String> retrieveRelevantContext(UUID userId, String query) {
@@ -85,5 +103,15 @@ public class VectorStoreService {
 
     public long getIndexedTransactionCount(UUID userId) {
         return embeddingRepository.countByUserId(userId);
+    }
+
+    private String buildVectorString(float[] embedding) {
+        StringBuilder sb = new StringBuilder("[");
+        for (int i = 0; i < embedding.length; i++) {
+            sb.append(embedding[i]);
+            if (i < embedding.length - 1) sb.append(",");
+        }
+        sb.append("]");
+        return sb.toString();
     }
 }
