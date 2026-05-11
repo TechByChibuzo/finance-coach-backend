@@ -20,6 +20,8 @@ public class AICoachService {
     private final TransactionRepository transactionRepository;
     private final AnalyticsService analyticsService;
     private final VectorStoreService vectorStoreService;
+    private final ConversationService conversationService;
+
 
     @Autowired
     private MetricsService metricsService;
@@ -28,32 +30,47 @@ public class AICoachService {
     public AICoachService(ClaudeService claudeService,
                           TransactionRepository transactionRepository,
                           AnalyticsService analyticsService,
-                          VectorStoreService vectorStoreService) {
+                          VectorStoreService vectorStoreService,
+                          ConversationService conversationService) {
         this.claudeService = claudeService;
         this.transactionRepository = transactionRepository;
         this.analyticsService = analyticsService;
         this.vectorStoreService = vectorStoreService;
+        this.conversationService = conversationService;
     }
 
-    /**
-     * General financial chat with context
-     */
     public String chat(UUID userId, String userMessage) {
+        return chat(userId, userMessage, "default");
+    }
+
+    public String chat(UUID userId, String userMessage, String sessionId) {
         long startTime = System.currentTimeMillis();
 
         metricsService.recordAiCoachRequest();
 
-        // RAG: retrieve semantically relevant transactions instead of dumping everything
+        // RAG — retrieve relevant transactions
         List<String> relevantContext = vectorStoreService.retrieveRelevantContext(userId, userMessage);
 
+        // Build system prompt with RAG context
         String systemPrompt = buildSystemPrompt(relevantContext);
 
-        String response = claudeService.chat(userMessage, systemPrompt);
+        // Load conversation history for this session
+        List<ClaudeService.ConversationTurn> history = conversationService.getHistory(userId, sessionId);
+
+        // Call Claude with history
+        String response = claudeService.chat(userMessage, systemPrompt, history);
+
+        // Save this turn to memory
+        conversationService.saveMessage(userId, sessionId, userMessage, response);
 
         long duration = System.currentTimeMillis() - startTime;
         metricsService.recordAiCoachResponseDuration(duration);
 
         return response;
+    }
+
+    public void clearSession(UUID userId, String sessionId) {
+        conversationService.clearSession(userId, sessionId);
     }
 
     private String buildSystemPrompt(List<String> relevantTransactions) {

@@ -9,6 +9,7 @@ import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.TextBlock;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import java.util.List;
 
 import java.util.Optional;
 
@@ -77,4 +78,45 @@ public class ClaudeService {
     public String chat(String userMessage) {
         return chat(userMessage, null);
     }
+
+    public String chat(String userMessage, String systemPrompt,
+                       List<ConversationTurn> history) {
+        try {
+            MessageCreateParams.Builder paramsBuilder = MessageCreateParams.builder()
+                    .model(model)
+                    .maxTokens(maxTokens);
+
+            if (systemPrompt != null && !systemPrompt.isEmpty()) {
+                paramsBuilder.system(systemPrompt);
+            }
+
+            // Add conversation history
+            for (ConversationTurn turn : history) {
+                paramsBuilder.addUserMessage(turn.userMessage());
+                paramsBuilder.addAssistantMessage(turn.assistantMessage());
+            }
+
+            // Add current message
+            paramsBuilder.addUserMessage(userMessage);
+
+            Message message = client.messages().create(paramsBuilder.build());
+
+            if (message.content() != null && !message.content().isEmpty()) {
+                ContentBlock firstBlock = message.content().get(0);
+                Optional<TextBlock> textBlockOptional = firstBlock.text();
+                if (textBlockOptional.isPresent()) {
+                    return textBlockOptional.get().text();
+                }
+            }
+
+            return "I apologize, but I couldn't generate a response. Please try again.";
+
+        } catch (Exception e) {
+            System.err.println("Error calling Claude API: " + e.getMessage());
+            return "I'm having trouble connecting right now. Please try again later.";
+        }
+    }
+
+    public record ConversationTurn(String userMessage, String assistantMessage) {}
+
 }

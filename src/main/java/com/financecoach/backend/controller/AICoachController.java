@@ -35,8 +35,15 @@ public class AICoachController {
     @PostMapping("/chat")
     public ResponseEntity<Map<String, String>> chat(@Valid @RequestBody ChatRequest request) {
         UUID userId = getCurrentUserId();
-        String response = aiCoachService.chat(userId, request.getMessage());
+        String response = aiCoachService.chat(userId, request.getMessage(), request.getSessionId());
         return ResponseEntity.ok(Map.of("response", response));
+    }
+
+    @DeleteMapping("/chat/{sessionId}")
+    public ResponseEntity<Void> clearSession(@PathVariable String sessionId) {
+        UUID userId = getCurrentUserId();
+        aiCoachService.clearSession(userId, sessionId);
+        return ResponseEntity.noContent().build();
     }
 
     /**

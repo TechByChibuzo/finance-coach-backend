@@ -12,9 +12,16 @@ public class ChatRequest {
     @Size(max = 2000, message = "Message must be less than 2000 characters")
     private String message;
 
+    private String sessionId = "default";
+
     public ChatRequest() {}
 
     public ChatRequest(String message) {
         this.message = message;
+    }
+
+    public ChatRequest(String message, String sessionId) {
+        this.message = message;
+        this.sessionId = sessionId;
     }
 }
