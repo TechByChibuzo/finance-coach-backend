@@ -197,15 +197,15 @@ public class AICoachService {
         List<Transaction> categoryTransactions = transactionRepository
                 .findByUserIdAndCategory(userId, category);
 
-        // Use BigDecimal for money calculations
-        BigDecimal totalCategorySpending = categoryTransactions.stream()
+        List<Transaction> filteredTransactions = categoryTransactions.stream()
                 .filter(t -> t.getDate().isAfter(startDate) && t.getDate().isBefore(endDate))
+                .toList();
+
+        BigDecimal totalCategorySpending = filteredTransactions.stream()
                 .map(Transaction::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Get merchant breakdown with BigDecimal
-        Map<String, BigDecimal> merchantBreakdown = categoryTransactions.stream()
-                .filter(t -> t.getDate().isAfter(startDate) && t.getDate().isBefore(endDate))
+        Map<String, BigDecimal> merchantBreakdown = filteredTransactions.stream()
                 .collect(Collectors.groupingBy(
                         t -> t.getMerchantName() != null ? t.getMerchantName() : "Unknown",
                         Collectors.reducing(
@@ -217,24 +217,24 @@ public class AICoachService {
 
         String prompt = String.format("""
             Analyze the user's spending in the %s category:
-            
+
             Last 30 days spending: $%.2f
             Number of transactions: %d
-            
+
             Breakdown by merchant:
             %s
-            
+
             Please provide:
             1. Analysis of their spending pattern in this category
             2. Is this spending reasonable or excessive?
             3. Specific tips to reduce spending in this category
             4. Alternatives or strategies they could try
-            
+
             Be specific and actionable.
             """,
                 category,
                 totalCategorySpending,
-                categoryTransactions.size(),
+                filteredTransactions.size(),
                 formatMerchantBreakdown(merchantBreakdown)
         );
 
