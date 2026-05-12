@@ -2,6 +2,10 @@
 
 An AI-powered personal finance coaching platform. Users connect their bank accounts via Plaid, and an AI coach built on Claude analyses their real transaction data to deliver personalised spending insights, budget tracking, and financial recommendations — using a full RAG (Retrieval-Augmented Generation) pipeline backed by pgvector.
 
+## Live Demo
+- **Frontend:** https://finance-coach-frontend.vercel.app
+- **API:** https://api.aifinancecoach.dev
+- **API Docs:** https://api.aifinancecoach.dev/swagger-ui.html
 ---
 
 ## Table of Contents
@@ -99,6 +103,13 @@ When a user sends a chat message:
 4. Claude responds with advice grounded in the user's actual spending data
 5. The turn is saved to `conversation_messages` for multi-turn context
 
+### Spending Anomaly Detection
+
+1. Calculates mean and standard deviation of spending per category over 6 months
+2. Computes Z-score for current month: `z = (current - mean) / stdDev`
+3. Flags anomalies above threshold: LOW (1.5), MEDIUM (2.0), HIGH (3.0+)
+4. Saves detected anomalies with severity for user review
+
 ### Transaction Sync
 
 - Transactions are fetched from Plaid using the `/transactions/get` endpoint
@@ -107,6 +118,22 @@ When a user sends a chat message:
 - A scheduler runs at 6AM and 6PM daily to auto-sync all active accounts
 
 ---
+
+## AWS Infrastructure
+
+The backend is deployed on AWS using a fully automated CI/CD pipeline.
+
+| Component | Service |
+|---|---|
+| Container Runtime | AWS ECS Fargate |
+| Container Registry | Amazon ECR |
+| Database | Amazon RDS PostgreSQL 15 |
+| AI Inference | AWS Bedrock (Claude) |
+| Load Balancer | Application Load Balancer (ALB) |
+| SSL Certificate | AWS Certificate Manager (ACM) |
+| Secrets | AWS Secrets Manager |
+| Monitoring | CloudWatch + Container Insights |
+| CI/CD | GitHub Actions → ECR → ECS |
 
 ## Getting Started
 
