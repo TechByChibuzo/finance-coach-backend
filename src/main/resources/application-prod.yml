@@ -11,7 +11,9 @@ spring:
   # DATABASE CONFIGURATION
   # ============================================
   datasource:
-    url: ${DATABASE_URL}
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
@@ -23,30 +25,43 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: validate  # NEVER auto-update schema in production
-    show-sql: false       # Never log SQL in production
+      ddl-auto: update
+    show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: false  # No formatting in production
+        format_sql: false
+
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      embedding:
+        options:
+          model: text-embedding-3-small
+    model:
+      audio:
+        speech: none
+        transcription: none
+      image: none
+      moderation: none
 
 # ============================================
 # SERVER CONFIGURATION
 # ============================================
 server:
-  port: ${PORT:8080}  # Use Render's PORT env var
+  port: ${PORT:8090}
   compression:
     enabled: true
   error:
-    include-message: never      # Don't leak error details
-    include-stacktrace: never   # Security
+    include-message: never
+    include-stacktrace: never
 
 # ============================================
 # SECURITY CONFIGURATION
 # ============================================
 jwt:
   secret: ${JWT_SECRET}
-  expiration: 86400000  # 24 hours
+  expiration: 86400000
 
 # ============================================
 # EXTERNAL API CONFIGURATION
@@ -54,7 +69,7 @@ jwt:
 plaid:
   client-id: ${PLAID_CLIENT_ID}
   secret: ${PLAID_SECRET}
-  environment: ${PLAID_ENVIRONMENT:sandbox}  # Configurable
+  environment: ${PLAID_ENVIRONMENT:sandbox}
 
 claude:
   api-key: ${CLAUDE_API_KEY}
@@ -92,7 +107,7 @@ management:
 
   endpoint:
     health:
-      show-details: when-authorized  # Only show details to authenticated users
+      show-details: when-authorized
       show-components: when-authorized
     prometheus:
       enabled: true
@@ -134,17 +149,14 @@ management:
 logging:
   level:
     root: INFO
-    com.financecoach: INFO         # Only important events
+    com.financecoach: INFO
     org.springframework.web: WARN
     org.springframework.security: WARN
     org.hibernate: WARN
     com.plaid: INFO
 
   pattern:
-    # Console only (Render captures this)
     console: "%d{yyyy-MM-dd HH:mm:ss} %-5level [%thread] %logger{36} - %msg%n"
-
-  # NO file logging (use console, Render captures stdout)
 
 # ============================================
 # APPLICATION INFO
