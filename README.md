@@ -13,6 +13,7 @@ An AI-powered personal finance coaching platform. Users connect their bank accou
 - [Features](#features)
 - [Tech Stack](#tech-stack)
 - [Architecture](#architecture)
+- [AWS Infrastructure](#aws-infrastructure)
 - [Getting Started](#getting-started)
 - [Environment Variables](#environment-variables)
 - [Running the App](#running-the-app)
@@ -25,8 +26,9 @@ An AI-powered personal finance coaching platform. Users connect their bank accou
 
 ## Features
 
-- **AI Finance Coach** — Conversational AI coach powered by Claude (Anthropic), with multi-turn conversation memory and session management
+- **AI Finance Coach** — Conversational AI coach powered by Claude via AWS Bedrock, with multi-turn conversation memory and session management
 - **RAG Pipeline** — Transaction data is embedded via OpenAI and stored in pgvector; user questions retrieve semantically relevant transactions before calling Claude, grounding responses in real spending data
+- **Spending Anomaly Detection** — Z-score statistical algorithm detects unusual spending patterns per category compared to 6 months of historical data
 - **Plaid Integration** — Full bank account connection flow (Link token → public token → access token), transaction sync (manual + scheduled at 6AM/6PM daily), investment holdings
 - **Budget Tracking** — Create and manage monthly budgets per category; spending is automatically calculated and mapped from Plaid's Personal Finance Categories (PFC)
 - **Analytics** — Spending by category, top merchants, daily trends, monthly summaries, month-over-month comparisons
@@ -43,8 +45,8 @@ An AI-powered personal finance coaching platform. Users connect their bank accou
 |---|---|
 | Language | Java 21 |
 | Framework | Spring Boot 3.3.6 |
-| Database | PostgreSQL + pgvector extension |
-| AI / LLM | Anthropic Claude (claude-sonnet-4-6) |
+| Database | Amazon RDS PostgreSQL 15 + pgvector extension |
+| AI / LLM | AWS Bedrock (Claude claude-sonnet-4-5) |
 | Embeddings | OpenAI text-embedding-3-small |
 | RAG Framework | Spring AI 1.0.0 |
 | Bank Data | Plaid API |
@@ -142,6 +144,24 @@ The backend is deployed on AWS using a fully automated CI/CD pipeline.
 | Monitoring | CloudWatch + Container Insights |
 | CI/CD | GitHub Actions → ECR → ECS |
 
+### Deployment Flow
+
+```
+git push main
+↓
+GitHub Actions builds linux/amd64 Docker image
+↓
+Pushes to Amazon ECR
+↓
+ECS Fargate pulls latest image and redeploys
+↓
+ALB health checks confirm new task is healthy
+↓
+Live at https://api.aifinancecoach.dev
+```
+
+---
+
 ## Getting Started
 
 ### Prerequisites
@@ -164,7 +184,7 @@ Spring Boot will auto-create all tables on first run (`ddl-auto: update`).
 ### Clone & Build
 
 ```bash
-git clone https://github.com/<your-username>/finance-coach-backend.git
+git clone https://github.com/TechByChibuzo/finance-coach-backend.git
 cd finance-coach-backend
 mvn clean package -DskipTests
 ```
@@ -180,8 +200,9 @@ Create a `.env` file or set these in your environment before running:
 DB_USERNAME=your_db_username
 DB_PASSWORD=your_db_password
 
-# Anthropic (Claude)
+# AWS Bedrock (Claude)
 CLAUDE_API_KEY=sk-ant-...
+CLAUDE_MODEL=us.anthropic.claude-sonnet-4-5-20250929-v1:0
 
 # OpenAI (Embeddings)
 OPENAI_API_KEY=sk-proj-...
@@ -193,10 +214,6 @@ PLAID_SECRET=your_plaid_secret
 # Stripe
 STRIPE_API_KEY=sk_live_...
 STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_PREMIUM_MONTHLY_PRICE_ID=price_...
-STRIPE_PREMIUM_YEARLY_PRICE_ID=price_...
-STRIPE_PRO_MONTHLY_PRICE_ID=price_...
-STRIPE_PRO_YEARLY_PRICE_ID=price_...
 
 # SendGrid
 SENDGRID_API_KEY=SG....
@@ -247,6 +264,7 @@ java -jar target/*.jar
 | Plaid | `/api/plaid` | `POST /create-link-token`, `POST /exchange-token`, `GET /accounts` |
 | Transactions | `/api/transactions` | `POST /sync/{accountId}`, `GET /` |
 | AI Coach | `/api/ai-coach` | `POST /chat`, `DELETE /chat/{sessionId}`, `GET /weekly-summary`, `GET /monthly-report` |
+| Anomalies | `/api/anomalies` | `POST /detect`, `GET /unreviewed`, `GET /count`, `PUT /{id}/review` |
 | Analytics | `/api/analytics` | `GET /spending-by-category`, `GET /monthly-summary`, `GET /compare-months`, `GET /spending-trend` |
 | Budgets | `/api/budgets` | `POST /`, `GET /current`, `GET /recommendations`, `POST /copy-previous`, `GET /exceeded` |
 | Investments | `/api/investments` | `GET /portfolio`, `GET /holdings` |
@@ -261,13 +279,17 @@ All endpoints except `/api/auth/**` require a `Bearer` JWT token in the `Authori
 
 **RAG over fine-tuning** — Rather than fine-tuning a model on financial data, transactions are embedded and retrieved at query time. This keeps advice current without retraining and grounds Claude's responses in the user's actual data.
 
-**Plaid PFC categories** — Plaid's Personal Finance Category (PFC) system returns standardised categories like `FOOD_AND_DRINK`. These are mapped to user-friendly budget categories (`Food & Dining`) in `BudgetService`, keeping the UI clean while preserving the original data.
+**AWS Bedrock over direct Anthropic API** — Using Bedrock for Claude inference consolidates all AWS costs on one bill, leverages IAM roles for authentication (no API keys needed at runtime), and enables enterprise features like request logging and guardrails.
 
-**pgvector over a dedicated vector DB** — Storing embeddings in PostgreSQL alongside relational data avoids introducing a separate vector database. The `<=>` cosine similarity operator handles the retrieval efficiently for this scale.
+**JdbcTemplate for vector inserts** — Hibernate doesn't natively support pgvector's `vector` type. Rather than fighting with type converters, vector inserts use raw JDBC with `?::vector` casting, while reads use JPA normally.
+
+**pgvector over a dedicated vector DB** — Storing embeddings in PostgreSQL alongside relational data avoids introducing a separate vector database. The `<=>` cosine similarity operator handles retrieval efficiently for this scale.
+
+**Z-score anomaly detection** — A simple but effective statistical approach. By comparing current spending to 6 months of historical data per category, the algorithm flags genuinely unusual patterns without requiring ML model training or external services.
 
 **Conversation memory in PostgreSQL** — Conversation history is persisted per user/session. Each chat request loads the last 10 turns to maintain context without exceeding Claude's context window.
 
-**Scheduled + manual sync** — Transactions sync automatically twice daily (6AM and 6PM) but users can also trigger a manual sync. Each sync fetches the last 30 days and skips already-indexed transactions by `plaidTransactionId`.
+**Secrets Manager over environment variables** — All sensitive API keys are stored in AWS Secrets Manager and injected at container startup. This means no secrets in task definitions, environment variables, or any files.
 
 ---
 
@@ -285,6 +307,11 @@ Custom metrics tracked via `MetricsService`:
 - Bank accounts connected
 - Budgets created
 - Plaid API call duration
+
+CloudWatch Container Insights provides:
+- CPU and memory utilization graphs
+- Task count and deployment history
+- Alarm state monitoring
 
 ---
 
