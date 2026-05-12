@@ -64,34 +64,41 @@ An AI-powered personal finance coaching platform. Users connect their bank accou
 The backend is structured in standard Spring Boot layers:
 
 ```
-Frontend (React)
-      │
-      ▼
- JWT Auth Filter
-      │
-      ▼
-  Controllers  (REST endpoints — one per domain)
-      │
-      ▼
-   Services    (business logic)
-   ┌──────────────────────────────────────────┐
-   │  AICoachService ──► VectorStoreService   │
-   │       │                   │              │
-   │       ▼                   ▼              │
-   │  ClaudeService      EmbeddingService     │
-   │  (Anthropic API)    (OpenAI API)         │
-   │       │                                  │
-   │  ConversationService                     │
-   │  (PostgreSQL)                            │
-   └──────────────────────────────────────────┘
-   │  TransactionService ──► PlaidService     │
-   │       │                                  │
-   │       ▼                                  │
-   │  VectorStoreService (indexes embeddings) │
-   └──────────────────────────────────────────┘
-      │
-      ▼
- PostgreSQL + pgvector
+Frontend (React/Vercel)
+│
+▼
+https://api.aifinancecoach.dev
+│
+▼
+AWS ALB (Application Load Balancer)
+│
+▼
+JWT Auth Filter
+│
+▼
+Controllers  (REST endpoints — one per domain)
+│
+▼
+Services    (business logic)
+┌──────────────────────────────────────────┐
+│  AICoachService ──► VectorStoreService   │
+│       │                   │              │
+│       ▼                   ▼              │
+│  ClaudeService      EmbeddingService     │
+│  (AWS Bedrock)      (OpenAI API)         │
+│       │                                  │
+│  ConversationService                     │
+│  (PostgreSQL)                            │
+└──────────────────────────────────────────┘
+│  TransactionService ──► PlaidService     │
+│       │                                  │
+│       ▼                                  │
+│  VectorStoreService (indexes embeddings) │
+│  AnomalyDetectionService (Z-score)       │
+└──────────────────────────────────────────┘
+│
+▼
+Amazon RDS PostgreSQL + pgvector
 ```
 
 ### RAG Pipeline
