@@ -48,3 +48,4 @@ application.yml
 .env
 .env.local
 .env.*.local
+task-definition.json
