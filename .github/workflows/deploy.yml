@@ -40,9 +40,14 @@ jobs:
 
       - name: Deploy to ECS
         run: |
+          REVISION=$(aws ecs describe-task-definition \
+            --task-definition finance-coach-backend \
+            --query 'taskDefinition.revision' \
+            --output text)
           aws ecs update-service \
             --cluster finance-coach-cluster \
             --service finance-coach-service \
+            --task-definition finance-coach-backend:$REVISION \
             --force-new-deployment
 
       - name: Wait for deployment
