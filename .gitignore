@@ -43,7 +43,6 @@ logs/
 *.log
 
 # Secrets and Config
-application.yml
 *.env
 .env
 .env.local

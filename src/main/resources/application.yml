@@ -1,0 +1,195 @@
+# src/main/resources/application.yml
+spring:
+  application:
+    name: finance-coach-backend
+
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      embedding:
+        options:
+          model: text-embedding-3-small
+    model:
+      audio:
+        speech: none
+        transcription: none
+      image: none
+      moderation: none
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/financecoach}
+    username: ${DB_USERNAME:admin}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update  # Creates tables automatically
+    show-sql: true      # See SQL in console (helpful for learning)
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        type:
+          preferred_array_jdbc_type: VECTOR
+
+server:
+  port: 8090
+
+# JWT Configuration
+jwt:
+  secret: ${JWT_SECRET}
+  expiration: 86400000  # 24 hours in milliseconds
+
+# Plaid Configuration
+plaid:
+  client-id: ${PLAID_CLIENT_ID}
+  secret: ${PLAID_SECRET}
+  environment: sandbox  # sandbox, development, or production
+
+# Claude API Configuration
+claude:
+  api-key: ${CLAUDE_API_KEY}
+  model: claude-sonnet-4-5-20250929
+  max-tokens: 1000
+
+# SendGrid Configuration
+sendgrid:
+  api-key: ${SENDGRID_API_KEY}
+  from-email: ${SENDGRID_FROM_EMAIL:cufombaa@gmail.com}
+  from-name: ${SENDGRID_FROM_NAME:Finance Coach}
+
+# App Configuration
+app:
+  frontend-url: ${APP_FRONTEND_URL:http://localhost:5173}
+
+stripe:
+  api-key: ${STRIPE_API_KEY}
+  webhook-secret: ${STRIPE_WEBHOOK_SECRET}
+
+  # Stripe Price IDs (get from Stripe dashboard)
+  prices:
+    premium-monthly: ${STRIPE_PREMIUM_MONTHLY_PRICE_ID}
+    premium-yearly: ${STRIPE_PREMIUM_YEARLY_PRICE_ID}
+    pro-monthly: ${STRIPE_PRO_MONTHLY_PRICE_ID}
+    pro-yearly: ${STRIPE_PRO_YEARLY_PRICE_ID}
+
+jasypt:
+  encryptor:
+    password: ${JASYPT_ENCRYPTOR_PASSWORD}
+
+# ============================================
+# MONITORING & OBSERVABILITY CONFIGURATION
+# ============================================
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+    prometheus:
+      enabled: true
+
+  # Health checks
+  health:
+    db:
+      enabled: true
+    diskspace:
+      enabled: true
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
+
+  # Metrics configuration
+  metrics:
+    enable:
+      jvm: true
+      process: true
+      system: true
+      logback: true
+      http: true
+      jdbc: true
+      hikaricp: true
+
+    export:
+      prometheus:
+        enabled: true    # Enable Prometheus metrics export
+
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true  # Enable histogram for percentile calculation
+
+    tags:
+      application: ${spring.application.name}  # Tag all metrics with app name
+      environment: ${SPRING_PROFILES_ACTIVE:development}  # Tag with environment
+
+    # Info endpoint configuration (shows up at /actuator/info)
+    info:
+      env:
+        enabled: true
+      build:
+        enabled: true
+      git:
+        enabled: true
+        mode: full  # Show full git info
+
+# ============================================
+# LOGGING CONFIGURATION
+# ============================================
+
+logging:
+  level:
+    root: INFO
+    com.financecoach: DEBUG
+    org.springframework.web: INFO
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    com.plaid: DEBUG
+
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+  file:
+    name: logs/finance-coach.log
+
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 30
+      total-size-cap: 1GB
+      file-name-pattern: logs/finance-coach-%d{yyyy-MM-dd}.%i.log
+
+# swagger
+springdoc:
+  api-docs:
+    path: /api-docs
+    enabled: true
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true
+    tags-sorter: alpha
+    operations-sorter: alpha
+    doc-expansion: list
+    display-request-duration: true
+    filter: true
+  show-actuator: true
+
+# ============================================
+# APPLICATION INFO (shows in /actuator/info)
+# ============================================
+
+info:
+  app:
+    name: Finance Coach API
+    description: AI-powered personal finance coach
+    version: 1.0.0
+    author: Chibuzo Ufomba
