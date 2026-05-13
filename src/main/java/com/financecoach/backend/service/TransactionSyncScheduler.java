@@ -3,15 +3,18 @@ package com.financecoach.backend.service;
 
 import com.financecoach.backend.model.BankAccount;
 import com.financecoach.backend.repository.BankAccountRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
 public class TransactionSyncScheduler {
+
+    private static final Logger logger = LoggerFactory.getLogger(TransactionSyncScheduler.class);
 
     private final TransactionService transactionService;
     private final BankAccountRepository bankAccountRepository;
@@ -29,7 +32,7 @@ public class TransactionSyncScheduler {
      */
     @Scheduled(cron = "0 0 6,18 * * *")
     public void syncAllAccounts() {
-        System.out.println("Starting scheduled transaction sync at " + LocalDateTime.now());
+        logger.info("Starting scheduled transaction sync");
 
         List<BankAccount> activeAccounts = bankAccountRepository.findByIsActive(true);
 
@@ -40,15 +43,14 @@ public class TransactionSyncScheduler {
             try {
                 transactionService.syncTransactions(account.getId(), account.getUserId());
                 successCount++;
-                System.out.println("Successfully synced account: " + account.getId());
+                logger.info("Successfully synced account: {}", account.getId());
             } catch (Exception e) {
                 failureCount++;
-                System.err.println("Failed to sync account " + account.getId() + ": " + e.getMessage());
-                // In production: log to monitoring service, send alert, etc.
+                logger.error("Failed to sync account {}: {}", account.getId(), e.getMessage());
             }
         }
 
-        System.out.println("Sync completed. Success: " + successCount + ", Failed: " + failureCount);
+        logger.info("Sync completed. Success: {}, Failed: {}", successCount, failureCount);
     }
 
     /**
