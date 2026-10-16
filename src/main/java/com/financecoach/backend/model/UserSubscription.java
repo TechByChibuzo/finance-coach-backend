@@ -37,7 +37,7 @@ public class UserSubscription {
     private LocalDateTime trialEndDate;
     private LocalDateTime cancelledAt;
 
-    @Column(length = 255)
+    @Column(length = 255, unique = true)
     private String stripeSubscriptionId;
 
     // Auto-renewal

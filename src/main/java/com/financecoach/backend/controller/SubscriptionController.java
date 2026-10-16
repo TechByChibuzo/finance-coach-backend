@@ -8,6 +8,8 @@ package com.financecoach.backend.controller;
 import com.financecoach.backend.dto.*;
 import com.financecoach.backend.model.*;
 import com.financecoach.backend.service.SubscriptionService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -23,6 +25,8 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/subscriptions")
 @CrossOrigin(origins = "http://localhost:5173")
 public class SubscriptionController {
+
+    private static final Logger logger = LoggerFactory.getLogger(SubscriptionController.class);
 
     @Autowired
     private SubscriptionService subscriptionService;
@@ -149,8 +153,13 @@ public class SubscriptionController {
         try {
             subscriptionService.handleStripeWebhook(payload, sigHeader);
             return ResponseEntity.ok().build();
-        } catch (Exception e) {
+        } catch (IllegalArgumentException e) {
+            // Bad signature - not from Stripe
             return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            // Non-2xx makes Stripe retry the event later
+            logger.error("Failed to process Stripe webhook", e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 

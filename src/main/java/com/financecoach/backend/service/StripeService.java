@@ -84,6 +84,13 @@ public class StripeService {
     }
 
     /**
+     * Retrieve the current state of a subscription
+     */
+    public Subscription retrieveSubscription(String subscriptionId) throws StripeException {
+        return Subscription.retrieve(subscriptionId);
+    }
+
+    /**
      * Cancel subscription at the end of the current billing period.
      * The customer keeps access until then and is not charged again.
      */
@@ -111,11 +118,13 @@ public class StripeService {
     /**
      * Create checkout session
      */
-    public Session createCheckoutSession(String customerId, String priceId, String successUrl, String cancelUrl)
+    public Session createCheckoutSession(String customerId, String priceId, String successUrl, String cancelUrl,
+                                         String clientReferenceId)
             throws StripeException {
         SessionCreateParams params = SessionCreateParams.builder()
                 .setMode(SessionCreateParams.Mode.SUBSCRIPTION)
                 .setCustomer(customerId)
+                .setClientReferenceId(clientReferenceId)
                 .addLineItem(
                         SessionCreateParams.LineItem.builder()
                                 .setPrice(priceId)

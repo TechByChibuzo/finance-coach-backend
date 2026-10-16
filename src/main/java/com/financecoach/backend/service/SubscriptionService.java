@@ -3,8 +3,12 @@ package com.financecoach.backend.service;
 import com.financecoach.backend.model.*;
 import com.financecoach.backend.repository.*;
 import com.stripe.exception.SignatureVerificationException;
+import com.stripe.exception.EventDataObjectDeserializationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Event;
+import com.stripe.model.EventDataObjectDeserializer;
+import com.stripe.model.Invoice;
+import com.stripe.model.StripeObject;
 import com.stripe.model.Subscription;
 import com.stripe.model.checkout.Session;
 import com.stripe.model.Customer;
@@ -263,7 +267,8 @@ public class SubscriptionService {
                 stripeCustomerId,
                 priceId,
                 successUrl,
-                cancelUrl
+                cancelUrl,
+                userId.toString()
         );
 
         logger.info("Checkout session created successfully - User: {}, SessionId: {}",
@@ -476,7 +481,12 @@ public class SubscriptionService {
     // ============================================
 
     /**
-     * Handle Stripe webhook events
+     * Handle Stripe webhook events.
+     *
+     * Stripe is the source of truth for paid subscriptions: for every subscription-related event we
+     * fetch the current subscription from Stripe and copy its state (plan, status, period end) onto
+     * the local row. That makes handling idempotent and independent of event order or retries.
+     * Exceptions propagate so the controller returns an error and Stripe retries the event.
      */
     @Transactional
     public void handleStripeWebhook(String payload, String sigHeader) {
@@ -491,35 +501,33 @@ public class SubscriptionService {
                     event.getType(), event.getId());
         } catch (SignatureVerificationException e) {
             logger.error("Invalid webhook signature", e);
-            throw new RuntimeException("Invalid webhook signature");
+            throw new IllegalArgumentException("Invalid webhook signature");
         }
 
-        logger.info("Handling Stripe webhook event: {}", event.getType());
+        logger.info("Handling Stripe webhook event: {} ({})", event.getType(), event.getId());
 
-        // Handle different event types
-        switch (event.getType()) {
-            case "checkout.session.completed":
-                handleCheckoutCompleted(event);
-                break;
+        try {
+            switch (event.getType()) {
+                case "checkout.session.completed" ->
+                        handleCheckoutCompleted((Session) getEventObject(event));
 
-            case "customer.subscription.updated":
-                handleSubscriptionUpdated(event);
-                break;
+                case "customer.subscription.created",
+                     "customer.subscription.updated",
+                     "customer.subscription.deleted" ->
+                        syncSubscriptionFromStripe(((Subscription) getEventObject(event)).getId());
 
-            case "customer.subscription.deleted":
-                handleSubscriptionCancelled(event);
-                break;
+                // Renewals extend the period; failed payments move the subscription to past_due
+                case "invoice.payment_succeeded", "invoice.payment_failed" -> {
+                    String stripeSubscriptionId = getInvoiceSubscriptionId((Invoice) getEventObject(event));
+                    if (stripeSubscriptionId != null) {
+                        syncSubscriptionFromStripe(stripeSubscriptionId);
+                    }
+                }
 
-            case "invoice.payment_succeeded":
-                handlePaymentSucceeded(event);
-                break;
-
-            case "invoice.payment_failed":
-                handlePaymentFailed(event);
-                break;
-
-            default:
-                logger.debug("Unhandled webhook event type: {}", event.getType());
+                default -> logger.debug("Unhandled webhook event type: {}", event.getType());
+            }
+        } catch (StripeException e) {
+            throw new RuntimeException("Stripe API error while handling event " + event.getId(), e);
         }
     }
 
@@ -527,73 +535,129 @@ public class SubscriptionService {
      * Handle checkout.session.completed
      * This is called when user completes payment
      */
-    private void handleCheckoutCompleted(Event event) {
-        try {
-            // Parse the session from event data
-            Session session = (Session) event.getDataObjectDeserializer()
-                    .getObject()
-                    .orElseThrow(() -> new RuntimeException("Session not found"));
+    private void handleCheckoutCompleted(Session session) throws StripeException {
+        logger.debug("Checkout session - ID: {}, Customer: {}, Subscription: {}",
+                session.getId(), session.getCustomer(), session.getSubscription());
 
-            logger.debug("Checkout session - ID: {}, Customer: {}, Subscription: {}",
-                    session.getId(), session.getCustomer(), session.getSubscription());
-
-
-            // Get subscription ID from session
-            String stripeSubscriptionId = session.getSubscription();
-            String stripeCustomerId = session.getCustomer();
-
-            if (stripeSubscriptionId == null) {
-                logger.warn("No subscription in session, skipping");
-                return;
-            }
-
-            // Fetch full subscription details from Stripe
-            Subscription stripeSubscription =
-                    com.stripe.model.Subscription.retrieve(stripeSubscriptionId);
-
-            // Get the plan from subscription
-            String stripePriceId = stripeSubscription.getItems().getData().get(0).getPrice().getId();
-
-            // Find matching plan in database
-            SubscriptionPlan plan = findPlanByStripePriceId(stripePriceId);
-
-            // Determine billing cycle
-            BillingCycle billingCycle = stripeSubscription.getItems().getData().get(0)
-                    .getPrice().getRecurring().getInterval().equals("year")
-                    ? BillingCycle.YEARLY
-                    : BillingCycle.MONTHLY;
-
-            // Find user by Stripe customer ID or email
-            UUID userId = findUserByStripeCustomerId(stripeCustomerId);
-
-            if (userId == null) {
-                logger.error("User not found for Stripe customer: {}", stripeCustomerId);
-                return;
-            }
-
-            logger.info("Creating subscription from webhook - User: {}, Plan: {}, Cycle: {}",
-                    userId, plan.getName(), billingCycle);
-            createSubscription(userId, plan, billingCycle, stripeSubscription);
-            logger.info("Checkout completed successfully processed");
-
-        } catch (Exception e) {
-            logger.error("Error handling checkout completed webhook", e);
+        if (session.getSubscription() == null) {
+            logger.warn("No subscription in session {}, skipping", session.getId());
+            return;
         }
-    }
-    private void handleSubscriptionUpdated(Event event) {
-        logger.info("Processing subscription.updated webhook - Event ID: {}", event.getId());
+
+        Subscription stripeSubscription = stripeService.retrieveSubscription(session.getSubscription());
+
+        // Prefer the user ID we attached to the session; fall back to the Stripe customer
+        UUID userId = session.getClientReferenceId() != null
+                ? UUID.fromString(session.getClientReferenceId())
+                : findUserByStripeCustomerId(session.getCustomer());
+
+        if (userId == null) {
+            throw new IllegalStateException("User not found for Stripe customer: " + session.getCustomer());
+        }
+
+        upsertSubscription(userId, stripeSubscription);
+        logger.info("Checkout completed successfully processed - Session: {}", session.getId());
     }
 
-    private void handleSubscriptionCancelled(Event event) {
-        logger.info("Processing subscription.deleted webhook - Event ID: {}", event.getId());
+    /**
+     * Copy the current state of a Stripe subscription onto the local row (creating it if needed)
+     */
+    private void syncSubscriptionFromStripe(String stripeSubscriptionId) throws StripeException {
+        Subscription stripeSubscription = stripeService.retrieveSubscription(stripeSubscriptionId);
+
+        UUID userId = subscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId)
+                .map(UserSubscription::getUserId)
+                .orElseGet(() -> findUserByStripeCustomerId(stripeSubscription.getCustomer()));
+
+        if (userId == null) {
+            logger.warn("No user for Stripe subscription {} (customer {}), skipping",
+                    stripeSubscriptionId, stripeSubscription.getCustomer());
+            return;
+        }
+
+        upsertSubscription(userId, stripeSubscription);
     }
 
-    private void handlePaymentSucceeded(Event event) {
-        logger.info("Processing payment.succeeded webhook - Event ID: {}", event.getId());
+    private void upsertSubscription(UUID userId, Subscription stripeSubscription) {
+        SubscriptionPlan plan = findPlanByStripePriceId(getPriceId(stripeSubscription));
+        BillingCycle billingCycle = getBillingCycle(stripeSubscription);
+
+        Optional<UserSubscription> existing =
+                subscriptionRepository.findByStripeSubscriptionId(stripeSubscription.getId());
+
+        if (existing.isEmpty()) {
+            if (mapStripeStatus(stripeSubscription.getStatus()) != SubscriptionStatus.ACTIVE) {
+                logger.info("Ignoring inactive Stripe subscription {} with no local record ({})",
+                        stripeSubscription.getId(), stripeSubscription.getStatus());
+                return;
+            }
+            createSubscription(userId, plan, billingCycle, stripeSubscription);
+            return;
+        }
+
+        UserSubscription subscription = existing.get();
+        SubscriptionStatus status = mapStripeStatus(stripeSubscription.getStatus());
+
+        subscription.setPlan(plan);
+        subscription.setBillingCycle(billingCycle);
+        subscription.setStatus(status);
+        subscription.setEndDate(getCurrentPeriodEnd(stripeSubscription, billingCycle));
+        subscription.setAutoRenew(!Boolean.TRUE.equals(stripeSubscription.getCancelAtPeriodEnd()));
+        subscription.setUpdatedAt(LocalDateTime.now());
+
+        if (status == SubscriptionStatus.CANCELLED && subscription.getCancelledAt() == null) {
+            subscription.setCancelledAt(LocalDateTime.now());
+        }
+
+        subscriptionRepository.save(subscription);
+        logger.info("Synced Stripe subscription {} - User: {}, Plan: {}, Status: {}, Ends: {}",
+                stripeSubscription.getId(), userId, plan.getName(), status, subscription.getEndDate());
     }
 
-    private void handlePaymentFailed(Event event) {
-        logger.warn("Processing payment.failed webhook - Event ID: {}", event.getId());
+    /**
+     * Map Stripe's subscription status to ours.
+     * past_due keeps access while Stripe retries the payment; once Stripe gives up the
+     * subscription becomes canceled or unpaid and access ends.
+     */
+    private SubscriptionStatus mapStripeStatus(String stripeStatus) {
+        return switch (stripeStatus) {
+            case "active", "trialing", "past_due" -> SubscriptionStatus.ACTIVE;
+            case "canceled", "incomplete_expired" -> SubscriptionStatus.CANCELLED;
+            default -> SubscriptionStatus.SUSPENDED; // unpaid, incomplete, paused
+        };
+    }
+
+    private String getPriceId(Subscription stripeSubscription) {
+        return stripeSubscription.getItems().getData().get(0).getPrice().getId();
+    }
+
+    private BillingCycle getBillingCycle(Subscription stripeSubscription) {
+        return "year".equals(stripeSubscription.getItems().getData().get(0)
+                .getPrice().getRecurring().getInterval())
+                ? BillingCycle.YEARLY
+                : BillingCycle.MONTHLY;
+    }
+
+    private String getInvoiceSubscriptionId(Invoice invoice) {
+        if (invoice.getParent() == null || invoice.getParent().getSubscriptionDetails() == null) {
+            return null; // one-off invoice, not tied to a subscription
+        }
+        return invoice.getParent().getSubscriptionDetails().getSubscription();
+    }
+
+    /**
+     * Deserialize the event payload. Falls back to unsafe deserialization when the webhook
+     * endpoint's API version differs from the SDK's, which would otherwise yield nothing.
+     */
+    private StripeObject getEventObject(Event event) {
+        EventDataObjectDeserializer deserializer = event.getDataObjectDeserializer();
+        return deserializer.getObject().orElseGet(() -> {
+            try {
+                return deserializer.deserializeUnsafe();
+            } catch (EventDataObjectDeserializationException e) {
+                throw new IllegalStateException("Could not deserialize Stripe event " + event.getId(), e);
+            }
+        });
     }
 
     // ============================================
