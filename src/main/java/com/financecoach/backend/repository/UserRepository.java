@@ -12,9 +12,10 @@ import java.util.UUID;
 public interface UserRepository extends JpaRepository<User, UUID> {
 
     // Spring Data JPA automatically implements these methods!
-    Optional<User> findByEmail(String email);
+    // Case-insensitive so accounts created before emails were normalized still match
+    Optional<User> findByEmailIgnoreCase(String email);
 
     Optional<User> findByStripeCustomerId(String stripeCustomerId);
 
-    boolean existsByEmail(String email);
+    boolean existsByEmailIgnoreCase(String email);
 }

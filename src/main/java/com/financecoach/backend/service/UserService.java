@@ -16,6 +16,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -47,15 +48,18 @@ public class UserService {
             throw new ValidationException("Password must be at least 8 characters");
         }
 
+        // Emails are case-insensitive: store one canonical form
+        String email = normalizeEmail(request.getEmail());
+
         // Check if email already exists
-        if (userRepository.existsByEmail(request.getEmail())) {
-            logger.warn("Registration failed - email already exists: {}", request.getEmail());
-            throw new EmailAlreadyExistsException(request.getEmail());
+        if (userRepository.existsByEmailIgnoreCase(email)) {
+            logger.warn("Registration failed - email already exists: {}", email);
+            throw new EmailAlreadyExistsException(email);
         }
 
         // Create new user with hashed password
         User user = new User();
-        user.setEmail(request.getEmail());
+        user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword())); // Hash password!
         user.setFullName(request.getFullName());
         user.setCreatedAt(LocalDateTime.now());
@@ -74,7 +78,7 @@ public class UserService {
         logger.debug("Authentication attempt for email: {}", email);
 
         // Find user by email
-        User user = userRepository.findByEmail(email)
+        User user = userRepository.findByEmailIgnoreCase(normalizeEmail(email))
                 .orElseThrow(InvalidCredentialsException::new);
 
         // Check password
@@ -110,7 +114,7 @@ public class UserService {
      * Throws UserNotFoundException if not found
      */
     public UserResponse getUserByEmail(String email) {
-        User user = userRepository.findByEmail(email)
+        User user = userRepository.findByEmailIgnoreCase(normalizeEmail(email))
                 .orElseThrow(() -> new UserNotFoundException(email));
         return convertToResponse(user);
     }
@@ -125,6 +129,14 @@ public class UserService {
             throw new UserNotFoundException(id);
         }
         userRepository.deleteById(id);
+    }
+
+    /**
+     * Canonical form of an email address: trimmed and lower-cased, so "Foo@X.com " and
+     * "foo@x.com" are the same account.
+     */
+    public static String normalizeEmail(String email) {
+        return email == null ? null : email.trim().toLowerCase(Locale.ROOT);
     }
 
     // Helper method to convert Entity to DTO

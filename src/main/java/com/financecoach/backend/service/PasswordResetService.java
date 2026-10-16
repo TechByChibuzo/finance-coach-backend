@@ -43,7 +43,7 @@ public class PasswordResetService {
     @Transactional
     public void initiatePasswordReset(String email) {
         // Find user by email (don't reveal if user exists for security)
-        User user = userRepository.findByEmail(email).orElse(null);
+        User user = userRepository.findByEmailIgnoreCase(UserService.normalizeEmail(email)).orElse(null);
 
         if (user == null) {
             // For security, always return success even if user doesn't exist
