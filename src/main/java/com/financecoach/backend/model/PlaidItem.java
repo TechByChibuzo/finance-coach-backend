@@ -41,6 +41,10 @@ public class PlaidItem {
     @Column(name = "institution_name")
     private String institutionName;
 
+    // Position in the item's /transactions/sync stream; null until the first sync
+    @Column(name = "transactions_cursor", columnDefinition = "TEXT")
+    private String transactionsCursor;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 }

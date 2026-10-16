@@ -76,6 +76,11 @@ public class VectorStoreService {
         }
     }
 
+    @Transactional
+    public void removeTransaction(String plaidTransactionId) {
+        embeddingRepository.deleteByTransactionId(plaidTransactionId);
+    }
+
     public List<String> retrieveRelevantContext(UUID userId, String query, int limit) {
         logger.debug("Retrieving RAG context for query: '{}'", query);
 

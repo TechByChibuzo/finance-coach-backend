@@ -61,6 +61,7 @@ public class PlaidService {
                     .clientName("Finance Coach")
                     .products(List.of(Products.TRANSACTIONS, Products.INVESTMENTS))
                     .countryCodes(List.of(CountryCode.US))
+                    .transactions(new LinkTokenTransactions().daysRequested(730))
                     .language("en");
 
             Response<LinkTokenCreateResponse> response = plaidClient

@@ -10,7 +10,10 @@ import com.financecoach.backend.model.BankAccount;
 import com.financecoach.backend.model.PlaidItem;
 import com.financecoach.backend.model.Transaction;
 import com.financecoach.backend.repository.BankAccountRepository;
+import com.financecoach.backend.repository.PlaidItemRepository;
 import com.financecoach.backend.repository.TransactionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import retrofit2.Response;
@@ -27,6 +30,10 @@ import java.util.UUID;
 @Service
 public class TransactionService {
 
+    private static final Logger logger = LoggerFactory.getLogger(TransactionService.class);
+    private static final int SYNC_PAGE_SIZE = 500;
+    private static final int MAX_SYNC_ATTEMPTS = 3;
+
     private final PlaidApi plaidClient;
     private final TransactionRepository transactionRepository;
     private final BankAccountRepository bankAccountRepository;
@@ -34,18 +41,21 @@ public class TransactionService {
     private MetricsService metricsService;
     private final VectorStoreService vectorStoreService;
     private final PlaidService plaidService;
+    private final PlaidItemRepository plaidItemRepository;
 
     @Autowired
     public TransactionService(PlaidApi plaidClient,
                               TransactionRepository transactionRepository,
                               BankAccountRepository bankAccountRepository,
                               VectorStoreService vectorStoreService,
-                              PlaidService plaidService) {
+                              PlaidService plaidService,
+                              PlaidItemRepository plaidItemRepository) {
         this.plaidClient = plaidClient;
         this.transactionRepository = transactionRepository;
         this.bankAccountRepository = bankAccountRepository;
         this.vectorStoreService = vectorStoreService;
         this.plaidService = plaidService;
+        this.plaidItemRepository = plaidItemRepository;
     }
 
     /**
@@ -86,8 +96,10 @@ public class TransactionService {
     }
 
     /**
-     * Sync one Plaid item. The item's access token returns transactions for all of its
-     * accounts, so each transaction is assigned to the account Plaid reports for it.
+     * Sync one Plaid item using /transactions/sync. Starting from the item's stored cursor,
+     * Plaid returns everything added, modified or removed since the last sync (the first sync
+     * returns the full available history). Each transaction is assigned to the account Plaid
+     * reports for it. Returns the newly added transactions.
      */
     public List<Transaction> syncItem(PlaidItem item) {
         long startTime = System.currentTimeMillis();
@@ -97,61 +109,130 @@ public class TransactionService {
             return List.of();
         }
 
-        try {
-            // Fetch transactions from Plaid (last 30 days)
-            LocalDate endDate = LocalDate.now();
-            LocalDate startDate = endDate.minusDays(30);
+        SyncChanges changes = fetchChanges(item);
 
-            TransactionsGetRequest request = new TransactionsGetRequest()
-                    .accessToken(item.getAccessToken())
-                    .startDate(startDate)
-                    .endDate(endDate);
-
-            Response<TransactionsGetResponse> response = plaidClient
-                    .transactionsGet(request)
-                    .execute();
-
-            if (!response.isSuccessful() || response.body() == null) {
-                String errorMsg = response.errorBody() != null
-                        ? response.errorBody().string()
-                        : "Unknown error";
-                throw new PlaidIntegrationException("Failed to fetch transactions: " + errorMsg);
+        // Save transactions
+        List<Transaction> savedTransactions = new ArrayList<>();
+        for (com.plaid.client.model.Transaction plaidTx : changes.added()) {
+            BankAccount bankAccount = accountsByPlaidId.get(plaidTx.getAccountId());
+            if (bankAccount == null) {
+                continue; // account was disconnected or never linked
+            }
+            if (transactionRepository.existsByPlaidTransactionId(plaidTx.getTransactionId())) {
+                continue;
             }
 
-            // Save transactions
-            List<Transaction> savedTransactions = new ArrayList<>();
-            for (com.plaid.client.model.Transaction plaidTx : response.body().getTransactions()) {
-                BankAccount bankAccount = accountsByPlaidId.get(plaidTx.getAccountId());
-                if (bankAccount == null) {
-                    continue; // account was disconnected or never linked
-                }
-                if (transactionRepository.existsByPlaidTransactionId(plaidTx.getTransactionId())) {
-                    continue;
-                }
-
-                Transaction transaction = convertPlaidTransaction(plaidTx, bankAccount);
-                Transaction saved = transactionRepository.save(transaction);
-                savedTransactions.add(saved);
-                vectorStoreService.indexTransaction(saved);
-            }
-
-            // Track metrics
-            metricsService.recordTransactionsSynced(savedTransactions.size());
-            long duration = System.currentTimeMillis() - startTime;
-            metricsService.recordTransactionSyncDuration(duration);
-
-            // Update last synced time
-            for (BankAccount bankAccount : accountsByPlaidId.values()) {
-                bankAccount.setLastSyncedAt(LocalDateTime.now());
-                bankAccountRepository.save(bankAccount);
-            }
-
-            return savedTransactions;
-
-        } catch (IOException e) {
-            throw new PlaidIntegrationException("Network error syncing transactions", e);
+            Transaction transaction = convertPlaidTransaction(plaidTx, bankAccount);
+            Transaction saved = transactionRepository.save(transaction);
+            savedTransactions.add(saved);
+            vectorStoreService.indexTransaction(saved);
         }
+
+        // Update changed transactions (e.g. amount or merchant corrected) and re-index them
+        for (com.plaid.client.model.Transaction plaidTx : changes.modified()) {
+            BankAccount bankAccount = accountsByPlaidId.get(plaidTx.getAccountId());
+            if (bankAccount == null) {
+                continue;
+            }
+            transactionRepository.findByPlaidTransactionId(plaidTx.getTransactionId()).ifPresent(existing -> {
+                applyPlaidFields(existing, plaidTx, bankAccount);
+                Transaction saved = transactionRepository.save(existing);
+                vectorStoreService.removeTransaction(saved.getPlaidTransactionId());
+                vectorStoreService.indexTransaction(saved);
+            });
+        }
+
+        // Remove deleted transactions - including pending ones replaced by their posted version
+        for (RemovedTransaction removed : changes.removed()) {
+            transactionRepository.findByPlaidTransactionId(removed.getTransactionId()).ifPresent(existing -> {
+                transactionRepository.delete(existing);
+                vectorStoreService.removeTransaction(existing.getPlaidTransactionId());
+            });
+        }
+
+        // Only advance the cursor once every change is applied, so a failure replays them next time
+        item.setTransactionsCursor(changes.nextCursor());
+        plaidItemRepository.save(item);
+
+        // Track metrics
+        metricsService.recordTransactionsSynced(savedTransactions.size());
+        long duration = System.currentTimeMillis() - startTime;
+        metricsService.recordTransactionSyncDuration(duration);
+
+        // Update last synced time
+        for (BankAccount bankAccount : accountsByPlaidId.values()) {
+            bankAccount.setLastSyncedAt(LocalDateTime.now());
+            bankAccountRepository.save(bankAccount);
+        }
+
+        logger.info("Synced item {} - added: {}, modified: {}, removed: {}",
+                item.getId(), savedTransactions.size(), changes.modified().size(), changes.removed().size());
+
+        return savedTransactions;
     }
+
+    /**
+     * Page through /transactions/sync until has_more is false. If the data changes while
+     * paginating, Plaid asks us to restart from the original cursor.
+     */
+    private SyncChanges fetchChanges(PlaidItem item) {
+        for (int attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt++) {
+            List<com.plaid.client.model.Transaction> added = new ArrayList<>();
+            List<com.plaid.client.model.Transaction> modified = new ArrayList<>();
+            List<RemovedTransaction> removed = new ArrayList<>();
+            String cursor = item.getTransactionsCursor();
+            boolean hasMore = true;
+            boolean restart = false;
+
+            try {
+                while (hasMore) {
+                    TransactionsSyncRequest request = new TransactionsSyncRequest()
+                            .accessToken(item.getAccessToken())
+                            .count(SYNC_PAGE_SIZE);
+                    if (cursor != null) {
+                        request.cursor(cursor);
+                    }
+
+                    Response<TransactionsSyncResponse> response = plaidClient
+                            .transactionsSync(request)
+                            .execute();
+
+                    if (!response.isSuccessful() || response.body() == null) {
+                        String errorMsg = response.errorBody() != null
+                                ? response.errorBody().string()
+                                : "Unknown error";
+                        if (errorMsg.contains("TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION")) {
+                            restart = true;
+                            break;
+                        }
+                        throw new PlaidIntegrationException("Failed to fetch transactions: " + errorMsg);
+                    }
+
+                    TransactionsSyncResponse body = response.body();
+                    added.addAll(body.getAdded());
+                    modified.addAll(body.getModified());
+                    removed.addAll(body.getRemoved());
+                    cursor = body.getNextCursor();
+                    hasMore = Boolean.TRUE.equals(body.getHasMore());
+                }
+            } catch (IOException e) {
+                throw new PlaidIntegrationException("Network error syncing transactions", e);
+            }
+
+            if (!restart) {
+                return new SyncChanges(added, modified, removed, cursor);
+            }
+            logger.warn("Transactions changed during pagination for item {}, restarting (attempt {})",
+                    item.getId(), attempt);
+        }
+
+        throw new PlaidIntegrationException("Transactions kept changing during sync, try again later");
+    }
+
+    private record SyncChanges(List<com.plaid.client.model.Transaction> added,
+                               List<com.plaid.client.model.Transaction> modified,
+                               List<RemovedTransaction> removed,
+                               String nextCursor) {}
 
     /**
      * Get transactions for a user with optional filters
@@ -176,10 +257,18 @@ public class TransactionService {
     private Transaction convertPlaidTransaction(com.plaid.client.model.Transaction plaidTx,
                                                 BankAccount bankAccount) {
         Transaction transaction = new Transaction();
+        transaction.setPlaidTransactionId(plaidTx.getTransactionId());
+        applyPlaidFields(transaction, plaidTx, bankAccount);
+        return transaction;
+    }
 
+    /**
+     * Copy Plaid's fields onto our Transaction entity
+     */
+    private void applyPlaidFields(Transaction transaction, com.plaid.client.model.Transaction plaidTx,
+                                  BankAccount bankAccount) {
         transaction.setUserId(bankAccount.getUserId());
         transaction.setAccountId(bankAccount.getId());
-        transaction.setPlaidTransactionId(plaidTx.getTransactionId());
 
         // Date
         transaction.setDate(plaidTx.getDate());
@@ -216,7 +305,5 @@ public class TransactionService {
             transaction.setLocationCity(plaidTx.getLocation().getCity());
             transaction.setLocationRegion(plaidTx.getLocation().getRegion());
         }
-
-        return transaction;
     }
 }
