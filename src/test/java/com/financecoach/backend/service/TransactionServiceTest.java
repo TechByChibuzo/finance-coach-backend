@@ -200,6 +200,30 @@ class TransactionServiceTest {
     }
 
     @Test
+    void syncItem_refreshesBalancesAfterSyncing() throws Exception {
+        stubItemAccounts(checking);
+        stubPlaidTransactions();
+
+        transactionService.syncItem(item);
+
+        verify(plaidService).refreshBalances(item);
+    }
+
+    @Test
+    void syncItem_whenBalanceRefreshFails_stillSavesTransactions() throws Exception {
+        stubItemAccounts(checking);
+        stubPlaidTransactions(plaidTx("tx-1", "plaid-checking"));
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        org.mockito.Mockito.doThrow(new com.financecoach.backend.exception.PlaidIntegrationException("down"))
+                .when(plaidService).refreshBalances(item);
+
+        List<Transaction> saved = transactionService.syncItem(item);
+
+        assertThat(saved).hasSize(1);
+        assertThat(item.getTransactionsCursor()).isEqualTo("cursor-1");
+    }
+
+    @Test
     void syncTransactions_returnsOnlyTheRequestedAccountsTransactions() throws Exception {
         when(bankAccountRepository.findById(savings.getId())).thenReturn(Optional.of(savings));
         when(plaidService.getItem(savings)).thenReturn(item);

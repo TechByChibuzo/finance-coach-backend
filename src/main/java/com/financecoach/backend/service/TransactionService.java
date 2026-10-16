@@ -154,6 +154,14 @@ public class TransactionService {
         item.setTransactionsCursor(changes.nextCursor());
         plaidItemRepository.save(item);
 
+        // Keep balances current for cash, credit and net worth figures
+        try {
+            plaidService.refreshBalances(item);
+        } catch (PlaidIntegrationException e) {
+            logger.warn("Transactions synced but balance refresh failed for item {}: {}",
+                    item.getId(), e.getMessage());
+        }
+
         // Track metrics
         metricsService.recordTransactionsSynced(savedTransactions.size());
         long duration = System.currentTimeMillis() - startTime;

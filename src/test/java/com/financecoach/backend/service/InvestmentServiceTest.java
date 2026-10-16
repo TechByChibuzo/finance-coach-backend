@@ -75,6 +75,7 @@ class InvestmentServiceTest {
 
         // One Plaid call for the item, and exactly one row per holding
         verify(plaidService, times(1)).getHoldings("access-item");
+        verify(plaidService).applyBalances(any(), any());
         ArgumentCaptor<Holding> saved = ArgumentCaptor.forClass(Holding.class);
         verify(holdingRepository, times(2)).save(saved.capture());
         assertThat(saved.getAllValues())

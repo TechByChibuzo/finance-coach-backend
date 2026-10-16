@@ -101,6 +101,9 @@ public class InvestmentService {
                         holding.getCurrentValue());
             }
 
+            // The holdings response includes current balances for the item's investment accounts
+            plaidService.applyBalances(accountsByPlaidId, response.getAccounts());
+
             // Update last synced timestamp
             for (BankAccount account : accountsByPlaidId.values()) {
                 account.setLastSyncedAt(LocalDateTime.now());

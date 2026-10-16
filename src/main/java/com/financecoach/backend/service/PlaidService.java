@@ -288,6 +288,54 @@ public class PlaidService {
     }
 
     /**
+     * Refresh current/available balances for all of an item's accounts via /accounts/get.
+     * Balances were otherwise only written when the account was first linked.
+     */
+    public void refreshBalances(PlaidItem item) {
+        try {
+            Response<AccountsGetResponse> response = plaidClient
+                    .accountsGet(new AccountsGetRequest().accessToken(item.getAccessToken()))
+                    .execute();
+
+            if (!response.isSuccessful() || response.body() == null) {
+                String errorMsg = response.errorBody() != null ? response.errorBody().string() : "Unknown error";
+                throw new PlaidIntegrationException("Failed to get balances: " + errorMsg);
+            }
+
+            applyBalances(getActiveAccountsByPlaidId(item), response.body().getAccounts());
+
+        } catch (IOException e) {
+            throw new PlaidIntegrationException("Network error getting balances", e);
+        }
+    }
+
+    /**
+     * Copy balances from Plaid's account objects onto our accounts
+     */
+    public void applyBalances(Map<String, BankAccount> accountsByPlaidId, List<AccountBase> plaidAccounts) {
+        if (plaidAccounts == null) {
+            return;
+        }
+
+        for (AccountBase plaidAccount : plaidAccounts) {
+            BankAccount account = accountsByPlaidId.get(plaidAccount.getAccountId());
+            if (account == null || plaidAccount.getBalances() == null) {
+                continue;
+            }
+
+            AccountBalance balances = plaidAccount.getBalances();
+            account.setCurrentBalance(balances.getCurrent() != null
+                    ? BigDecimal.valueOf(balances.getCurrent()) : null);
+            account.setAvailableBalance(balances.getAvailable() != null
+                    ? BigDecimal.valueOf(balances.getAvailable()) : null);
+            if (balances.getIsoCurrencyCode() != null) {
+                account.setCurrencyCode(balances.getIsoCurrencyCode());
+            }
+            bankAccountRepository.save(account);
+        }
+    }
+
+    /**
      * Get all bank accounts for a user
      */
     public List<BankAccount> getUserBankAccounts(UUID userId) {
