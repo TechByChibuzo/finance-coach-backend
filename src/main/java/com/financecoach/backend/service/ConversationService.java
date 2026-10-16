@@ -5,6 +5,7 @@ import com.financecoach.backend.repository.ConversationMessageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
@@ -46,6 +47,8 @@ public class ConversationService {
                 .toList();
     }
 
+    // Derived deleteBy... queries load and remove entities, which needs an active transaction
+    @Transactional
     public void clearSession(UUID userId, String sessionId) {
         conversationRepository.deleteByUserIdAndSessionId(userId, sessionId);
         logger.debug("Cleared session {} for user {}", sessionId, userId);
