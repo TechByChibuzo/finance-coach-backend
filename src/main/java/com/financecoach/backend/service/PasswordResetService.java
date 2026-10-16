@@ -4,6 +4,8 @@ import com.financecoach.backend.model.PasswordResetToken;
 import com.financecoach.backend.model.User;
 import com.financecoach.backend.repository.PasswordResetTokenRepository;
 import com.financecoach.backend.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -14,6 +16,8 @@ import java.util.UUID;
 
 @Service
 public class PasswordResetService {
+
+    private static final Logger logger = LoggerFactory.getLogger(PasswordResetService.class);
 
     private static final int TOKEN_EXPIRATION_HOURS = 1;
     private static final int RATE_LIMIT_MINUTES = 15;
@@ -54,9 +58,11 @@ public class PasswordResetService {
         LocalDateTime rateLimitTime = LocalDateTime.now().minusMinutes(RATE_LIMIT_MINUTES);
         long recentRequests = tokenRepository.countRecentTokensByUserId(user.getId(), rateLimitTime);
 
+        // Over the per-account limit: quietly skip sending. Returning an error here would
+        // reveal that the email has an account (unknown emails always "succeed").
         if (recentRequests >= MAX_REQUESTS_PER_PERIOD) {
-            throw new RuntimeException("Too many password reset requests. Please try again in " +
-                    RATE_LIMIT_MINUTES + " minutes.");
+            logger.warn("Password reset limit reached for user {}, not sending another email", user.getId());
+            return;
         }
 
         // Generate secure token

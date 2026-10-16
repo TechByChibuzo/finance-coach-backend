@@ -29,6 +29,23 @@ class PasswordResetServiceTest {
     @InjectMocks
     private PasswordResetService passwordResetService;
 
+    @Mock private MetricsService metricsService;
+
+    @Test
+    void initiatePasswordReset_overTheLimit_quietlySendsNothing() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        user.setEmail("jane@example.com");
+        when(userRepository.findByEmailIgnoreCase("jane@example.com")).thenReturn(Optional.of(user));
+        when(tokenRepository.countRecentTokensByUserId(org.mockito.ArgumentMatchers.eq(user.getId()),
+                org.mockito.ArgumentMatchers.any())).thenReturn(3L);
+
+        // No exception: the response must look the same as for an unknown email
+        passwordResetService.initiatePasswordReset("Jane@example.com");
+
+        org.mockito.Mockito.verifyNoInteractions(emailService);
+    }
+
     @Test
     void resetPassword_invalidatesAllExistingLoginTokens() {
         User user = new User();
