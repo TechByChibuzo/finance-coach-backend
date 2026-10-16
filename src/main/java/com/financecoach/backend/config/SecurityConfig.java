@@ -2,6 +2,7 @@
 package com.financecoach.backend.config;
 
 import com.financecoach.backend.security.JwtAuthenticationFilter;
+import com.financecoach.backend.security.MetricsAccessManager;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,6 +25,9 @@ public class SecurityConfig {
     @Autowired
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
+    @Autowired
+    private MetricsAccessManager metricsAccessManager;
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -33,7 +37,9 @@ public class SecurityConfig {
                         // Public endpoints
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/users/health").permitAll()
-                        .requestMatchers("/actuator/**").permitAll()
+                        // Health/info stay public for load balancer checks; metrics need the scrape token
+                        .requestMatchers("/actuator/health", "/actuator/health/**", "/actuator/info").permitAll()
+                        .requestMatchers("/actuator/**").access(metricsAccessManager)
 
                         // Swagger/OpenAPI endpoints (PUBLIC)
                         .requestMatchers(

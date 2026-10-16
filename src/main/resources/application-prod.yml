@@ -90,6 +90,10 @@ stripe:
 # ============================================
 app:
   frontend-url: ${APP_FRONTEND_URL}
+  metrics:
+    # Scrapers must send "Authorization: Bearer ${METRICS_TOKEN}"; without a token, metrics are unreachable
+    token: ${METRICS_TOKEN:}
+    allow-anonymous: false
 
 jasypt:
   encryptor:
