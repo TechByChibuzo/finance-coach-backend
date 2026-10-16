@@ -79,10 +79,12 @@ public class SpendingAnomaly {
      * show it to the user again even if they had already reviewed it.
      */
     public void refresh(BigDecimal currentSpend, BigDecimal averageSpend,
-                        BigDecimal standardDeviation, BigDecimal zScore, String severity) {
+                        BigDecimal standardDeviation, BigDecimal zScore, String severity,
+                        LocalDate periodEnd) {
         if (severityRank(severity) > severityRank(this.severity)) {
             this.isReviewed = false;
         }
+        this.periodEnd = periodEnd;
         this.currentSpend = currentSpend;
         this.averageSpend = averageSpend;
         this.standardDeviation = standardDeviation;

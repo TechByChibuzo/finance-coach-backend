@@ -17,7 +17,6 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -119,13 +118,21 @@ public class AnomalyDetectionService {
                 String severity = determineSeverity(zScoreDouble);
 
                 // One anomaly per category per month - update it if it already exists
-                Optional<SpendingAnomaly> existing = anomalyRepository
-                        .findByUserIdAndCategoryAndPeriodStart(userId, category, currentMonthStart);
+                List<SpendingAnomaly> existing = anomalyRepository
+                        .findByUserIdAndCategoryAndPeriodStartOrderByDetectedAtDesc(
+                                userId, category, currentMonthStart);
 
-                if (existing.isPresent()) {
-                    SpendingAnomaly anomaly = existing.get();
-                    anomaly.refresh(currentSpend, mean, stdDev, zScore, severity);
+                if (!existing.isEmpty()) {
+                    SpendingAnomaly anomaly = existing.get(0);
+                    anomaly.refresh(currentSpend, mean, stdDev, zScore, severity, currentMonthEnd);
                     anomalies.add(anomalyRepository.save(anomaly));
+
+                    // Clean up duplicates left by the old per-day period key
+                    if (existing.size() > 1) {
+                        anomalyRepository.deleteAll(existing.subList(1, existing.size()));
+                        logger.info("Removed {} duplicate anomalies for user {} in category {}",
+                                existing.size() - 1, userId, category);
+                    }
                 } else {
                     SpendingAnomaly anomaly = new SpendingAnomaly(
                             userId, category, currentSpend, mean,

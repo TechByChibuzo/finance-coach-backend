@@ -53,8 +53,9 @@ class AnomalyDetectionServiceTest {
     @Test
     void detectAnomalies_storesTheAnomalyForTheWholeMonth() {
         stubSpending(new BigDecimal("400.00"));
-        when(anomalyRepository.findByUserIdAndCategoryAndPeriodStart(ownerId, "FOOD_AND_DRINK", monthStart()))
-                .thenReturn(Optional.empty());
+        when(anomalyRepository.findByUserIdAndCategoryAndPeriodStartOrderByDetectedAtDesc(
+                ownerId, "FOOD_AND_DRINK", monthStart()))
+                .thenReturn(List.of());
         when(anomalyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         List<SpendingAnomaly> anomalies = anomalyDetectionService.detectAnomalies(ownerId);
@@ -72,8 +73,9 @@ class AnomalyDetectionServiceTest {
                 new BigDecimal("16.33"), new BigDecimal("2.45"), "MEDIUM",
                 monthStart(), monthStart().withDayOfMonth(monthStart().lengthOfMonth()));
         stubSpending(new BigDecimal("400.00"));
-        when(anomalyRepository.findByUserIdAndCategoryAndPeriodStart(ownerId, "FOOD_AND_DRINK", monthStart()))
-                .thenReturn(Optional.of(existing));
+        when(anomalyRepository.findByUserIdAndCategoryAndPeriodStartOrderByDetectedAtDesc(
+                ownerId, "FOOD_AND_DRINK", monthStart()))
+                .thenReturn(List.of(existing));
         when(anomalyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         anomalyDetectionService.detectAnomalies(ownerId);
@@ -93,13 +95,36 @@ class AnomalyDetectionServiceTest {
                 monthStart(), monthStart().withDayOfMonth(monthStart().lengthOfMonth()));
         existing.markAsReviewed();
         stubSpending(new BigDecimal("400.00"));
-        when(anomalyRepository.findByUserIdAndCategoryAndPeriodStart(ownerId, "FOOD_AND_DRINK", monthStart()))
-                .thenReturn(Optional.of(existing));
+        when(anomalyRepository.findByUserIdAndCategoryAndPeriodStartOrderByDetectedAtDesc(
+                ownerId, "FOOD_AND_DRINK", monthStart()))
+                .thenReturn(List.of(existing));
         when(anomalyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         anomalyDetectionService.detectAnomalies(ownerId);
 
         assertThat(existing.getIsReviewed()).isFalse();
+    }
+
+    @Test
+    void detectAnomalies_withLegacyDuplicates_keepsTheNewestAndDeletesTheRest() {
+        LocalDate legacyEnd = LocalDate.now().plusDays(1);
+        SpendingAnomaly newest = new SpendingAnomaly(
+                ownerId, "FOOD_AND_DRINK", new BigDecimal("240.00"), new BigDecimal("200.00"),
+                new BigDecimal("16.33"), new BigDecimal("2.45"), "MEDIUM", monthStart(), legacyEnd);
+        SpendingAnomaly older = new SpendingAnomaly(
+                ownerId, "FOOD_AND_DRINK", new BigDecimal("230.00"), new BigDecimal("200.00"),
+                new BigDecimal("16.33"), new BigDecimal("1.84"), "LOW", monthStart(), legacyEnd.minusDays(1));
+        stubSpending(new BigDecimal("400.00"));
+        when(anomalyRepository.findByUserIdAndCategoryAndPeriodStartOrderByDetectedAtDesc(
+                ownerId, "FOOD_AND_DRINK", monthStart()))
+                .thenReturn(List.of(newest, older));
+        when(anomalyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        List<SpendingAnomaly> anomalies = anomalyDetectionService.detectAnomalies(ownerId);
+
+        assertThat(anomalies).containsExactly(newest);
+        assertThat(newest.getPeriodEnd()).isEqualTo(monthStart().withDayOfMonth(monthStart().lengthOfMonth()));
+        verify(anomalyRepository).deleteAll(List.of(older));
     }
 
     // --- markAsReviewed ---

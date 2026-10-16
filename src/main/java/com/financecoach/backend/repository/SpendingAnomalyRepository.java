@@ -6,7 +6,6 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -20,7 +19,8 @@ public interface SpendingAnomalyRepository extends JpaRepository<SpendingAnomaly
             UUID userId, String category
     );
 
-    Optional<SpendingAnomaly> findByUserIdAndCategoryAndPeriodStart(
+    // A list, not Optional: rows created before anomalies were keyed by month can be duplicated
+    List<SpendingAnomaly> findByUserIdAndCategoryAndPeriodStartOrderByDetectedAtDesc(
             UUID userId, String category, LocalDate periodStart
     );
 
