@@ -114,8 +114,9 @@ public class PasswordResetService {
         User user = userRepository.findById(resetToken.getUserId())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // Update password
+        // Update password, and log out every existing session by invalidating issued tokens
         user.setPasswordHash(passwordEncoder.encode(newPassword));
+        user.setTokenVersion(user.getTokenVersion() + 1);
         userRepository.save(user);
 
         // Mark token as used

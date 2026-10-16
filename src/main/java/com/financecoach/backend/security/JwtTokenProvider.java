@@ -25,14 +25,17 @@ public class JwtTokenProvider {
         return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
     }
 
-    // Generate JWT token from user ID and email
-    public String generateToken(UUID userId, String email) {
+    private static final String TOKEN_VERSION_CLAIM = "ver";
+
+    // Generate JWT token from user ID, email and the user's current token version
+    public String generateToken(UUID userId, String email, int tokenVersion) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtExpirationMs);
 
         return Jwts.builder()
                 .subject(userId.toString())  // User ID as subject
                 .claim("email", email)       // Additional claim
+                .claim(TOKEN_VERSION_CLAIM, tokenVersion)
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(getSigningKey())
@@ -59,6 +62,18 @@ public class JwtTokenProvider {
                 .getPayload();
 
         return claims.get("email", String.class);
+    }
+
+    // Get the token version the token was issued with (tokens issued before versions existed count as 0)
+    public int getTokenVersionFromToken(String token) {
+        Claims claims = Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload();
+
+        Integer version = claims.get(TOKEN_VERSION_CLAIM, Integer.class);
+        return version != null ? version : 0;
     }
 
     // Validate JWT token

@@ -98,7 +98,7 @@ public class AuthController {
             @Valid @RequestBody UserRegistrationRequest request) {
 
         UserResponse user = userService.registerUser(request);
-        String token = jwtTokenProvider.generateToken(user.getId(), user.getEmail());
+        String token = jwtTokenProvider.generateToken(user.getId(), user.getEmail(), User.INITIAL_TOKEN_VERSION);
         LoginResponse response = new LoginResponse(token, user);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
@@ -143,7 +143,7 @@ public class AuthController {
             @Valid @RequestBody LoginRequest request) {
 
         User user = userService.authenticate(request.getEmail(), request.getPassword());
-        String token = jwtTokenProvider.generateToken(user.getId(), user.getEmail());
+        String token = jwtTokenProvider.generateToken(user.getId(), user.getEmail(), user.getTokenVersion());
 
         UserResponse userResponse = new UserResponse(
                 user.getId(),

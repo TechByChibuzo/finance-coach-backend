@@ -22,40 +22,46 @@ class JwtTokenProviderTest {
 
     @Test
     void generateToken_returnsNonNullToken() {
-        String token = jwtTokenProvider.generateToken(UUID.randomUUID(), "test@example.com");
+        String token = jwtTokenProvider.generateToken(UUID.randomUUID(), "test@example.com", 0);
         assertThat(token).isNotNull().isNotEmpty();
     }
 
     @Test
     void getUserIdFromToken_returnsCorrectUserId() {
         UUID userId = UUID.randomUUID();
-        String token = jwtTokenProvider.generateToken(userId, "test@example.com");
+        String token = jwtTokenProvider.generateToken(userId, "test@example.com", 0);
         assertThat(jwtTokenProvider.getUserIdFromToken(token)).isEqualTo(userId);
     }
 
     @Test
     void getEmailFromToken_returnsCorrectEmail() {
         UUID userId = UUID.randomUUID();
-        String token = jwtTokenProvider.generateToken(userId, "test@example.com");
-        assertThat(jwtTokenProvider.getEmailFromToken(token)).isEqualTo("test@example.com");
+        String token = jwtTokenProvider.generateToken(userId, "test@example.com", 0);
+        assertThat(jwtTokenProvider.getEmailFromToken(token)).isEqualTo("test@example.com", 0);
+    }
+
+    @Test
+    void getTokenVersionFromToken_returnsTheVersionTheTokenWasIssuedWith() {
+        String token = jwtTokenProvider.generateToken(UUID.randomUUID(), "test@example.com", 3);
+        assertThat(jwtTokenProvider.getTokenVersionFromToken(token)).isEqualTo(3);
     }
 
     @Test
     void validateToken_returnsTrueForValidToken() {
-        String token = jwtTokenProvider.generateToken(UUID.randomUUID(), "test@example.com");
+        String token = jwtTokenProvider.generateToken(UUID.randomUUID(), "test@example.com", 0);
         assertThat(jwtTokenProvider.validateToken(token)).isTrue();
     }
 
     @Test
     void validateToken_returnsFalseForTamperedToken() {
-        String token = jwtTokenProvider.generateToken(UUID.randomUUID(), "test@example.com");
+        String token = jwtTokenProvider.generateToken(UUID.randomUUID(), "test@example.com", 0);
         assertThat(jwtTokenProvider.validateToken(token + "tampered")).isFalse();
     }
 
     @Test
     void validateToken_returnsFalseForExpiredToken() {
         ReflectionTestUtils.setField(jwtTokenProvider, "jwtExpirationMs", -1000L);
-        String token = jwtTokenProvider.generateToken(UUID.randomUUID(), "test@example.com");
+        String token = jwtTokenProvider.generateToken(UUID.randomUUID(), "test@example.com", 0);
         assertThat(jwtTokenProvider.validateToken(token)).isFalse();
     }
 
