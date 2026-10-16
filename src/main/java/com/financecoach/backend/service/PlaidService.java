@@ -220,6 +220,9 @@ public class PlaidService {
     private PlaidItem saveItem(UUID userId, String plaidItemId, String accessToken,
                                String institutionId, String institutionName) {
         PlaidItem item = plaidItemRepository.findByPlaidItemId(plaidItemId).orElseGet(PlaidItem::new);
+        if (item.getUserId() != null && !item.getUserId().equals(userId)) {
+            throw new UnauthorizedAccessException("Plaid item");
+        }
         item.setUserId(userId);
         item.setPlaidItemId(plaidItemId);
         item.setAccessToken(accessToken);
@@ -234,9 +237,13 @@ public class PlaidService {
      */
     public PlaidItem getItem(BankAccount account) {
         if (account.getItemId() != null) {
-            return plaidItemRepository.findById(account.getItemId())
+            PlaidItem item = plaidItemRepository.findById(account.getItemId())
                     .orElseThrow(() -> new PlaidIntegrationException(
                             "Plaid item not found for account: " + account.getId()));
+            if (!item.getUserId().equals(account.getUserId())) {
+                throw new UnauthorizedAccessException("Plaid item");
+            }
+            return item;
         }
 
         try {
@@ -302,7 +309,7 @@ public class PlaidService {
                 throw new PlaidIntegrationException("Failed to get balances: " + errorMsg);
             }
 
-            applyBalances(getActiveAccountsByPlaidId(item), response.body().getAccounts());
+            applyBalances(item, response.body().getAccounts());
 
         } catch (IOException e) {
             throw new PlaidIntegrationException("Network error getting balances", e);
@@ -310,13 +317,15 @@ public class PlaidService {
     }
 
     /**
-     * Copy balances from Plaid's account objects onto our accounts
+     * Copy balances from Plaid's account objects onto the item's own accounts.
+     * Only values Plaid actually sends are written, so a missing field never wipes a stored balance.
      */
-    public void applyBalances(Map<String, BankAccount> accountsByPlaidId, List<AccountBase> plaidAccounts) {
+    void applyBalances(PlaidItem item, List<AccountBase> plaidAccounts) {
         if (plaidAccounts == null) {
             return;
         }
 
+        Map<String, BankAccount> accountsByPlaidId = getActiveAccountsByPlaidId(item);
         for (AccountBase plaidAccount : plaidAccounts) {
             BankAccount account = accountsByPlaidId.get(plaidAccount.getAccountId());
             if (account == null || plaidAccount.getBalances() == null) {
@@ -324,10 +333,12 @@ public class PlaidService {
             }
 
             AccountBalance balances = plaidAccount.getBalances();
-            account.setCurrentBalance(balances.getCurrent() != null
-                    ? BigDecimal.valueOf(balances.getCurrent()) : null);
-            account.setAvailableBalance(balances.getAvailable() != null
-                    ? BigDecimal.valueOf(balances.getAvailable()) : null);
+            if (balances.getCurrent() != null) {
+                account.setCurrentBalance(BigDecimal.valueOf(balances.getCurrent()));
+            }
+            if (balances.getAvailable() != null) {
+                account.setAvailableBalance(BigDecimal.valueOf(balances.getAvailable()));
+            }
             if (balances.getIsoCurrencyCode() != null) {
                 account.setCurrencyCode(balances.getIsoCurrencyCode());
             }

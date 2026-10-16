@@ -22,7 +22,6 @@ import retrofit2.Response;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -87,13 +86,36 @@ class PlaidServiceTest {
 
     @Test
     void applyBalances_ignoresAccountsWeDontTrack() {
-        plaidService.applyBalances(Map.of("plaid-checking", checking), List.of(
+        when(bankAccountRepository.findByItemIdAndIsActive(item.getId(), true)).thenReturn(List.of(checking));
+
+        plaidService.applyBalances(item, List.of(
                 plaidAccount("plaid-checking", 99.99, 99.99),
                 plaidAccount("plaid-unlinked", 5000.00, 5000.00)));
 
         assertThat(checking.getCurrentBalance()).isEqualByComparingTo("99.99");
         verify(bankAccountRepository).save(checking);
         verify(bankAccountRepository, org.mockito.Mockito.times(1)).save(any());
+    }
+
+    @Test
+    void applyBalances_whenPlaidOmitsABalance_keepsTheStoredValue() {
+        checking.setAvailableBalance(new BigDecimal("80.00"));
+        when(bankAccountRepository.findByItemIdAndIsActive(item.getId(), true)).thenReturn(List.of(checking));
+
+        plaidService.applyBalances(item, List.of(plaidAccount("plaid-checking", null, null)));
+
+        assertThat(checking.getCurrentBalance()).isEqualByComparingTo("100.00");
+        assertThat(checking.getAvailableBalance()).isEqualByComparingTo("80.00");
+    }
+
+    @Test
+    void getItem_belongingToAnotherUser_isRejected() {
+        item.setUserId(UUID.randomUUID());
+        checking.setUserId(UUID.randomUUID());
+        when(plaidItemRepository.findById(item.getId())).thenReturn(java.util.Optional.of(item));
+
+        assertThatThrownBy(() -> plaidService.getItem(checking))
+                .isInstanceOf(com.financecoach.backend.exception.UnauthorizedAccessException.class);
     }
 
     private BankAccount account(String plaidAccountId, String balance) {

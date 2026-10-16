@@ -102,7 +102,7 @@ public class InvestmentService {
             }
 
             // The holdings response includes current balances for the item's investment accounts
-            plaidService.applyBalances(accountsByPlaidId, response.getAccounts());
+            plaidService.applyBalances(item, response.getAccounts());
 
             // Update last synced timestamp
             for (BankAccount account : accountsByPlaidId.values()) {
