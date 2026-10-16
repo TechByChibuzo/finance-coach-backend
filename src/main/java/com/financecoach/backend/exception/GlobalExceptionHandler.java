@@ -326,6 +326,27 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handle AI provider failures (Bedrock unavailable, throttled or empty response)
+     */
+    @ExceptionHandler(AiServiceUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleAiServiceUnavailableException(
+            AiServiceUnavailableException ex,
+            HttpServletRequest request) {
+
+        logger.error("AI service unavailable: {}", ex.getMessage(), ex.getCause());
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.SERVICE_UNAVAILABLE.value(),
+                "Service Unavailable",
+                "The AI coach is temporarily unavailable. Please try again in a moment.",
+                ex.getErrorCode()
+        );
+        error.setPath(request.getRequestURI());
+
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(error);
+    }
+
+    /**
      * Handle anomaly not found exceptions
      */
     @ExceptionHandler(AnomalyNotFoundException.class)

@@ -1,5 +1,6 @@
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.exception.AiServiceUnavailableException;
 import com.financecoach.backend.model.Transaction;
 import com.financecoach.backend.repository.TransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,6 +19,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -111,6 +113,19 @@ class AICoachServiceTest {
         aiCoachService.chat(userId, "My question", "session-abc");
 
         verify(conversationService).saveMessage(userId, "session-abc", "My question", "Claude reply");
+    }
+
+    @Test
+    void chat_whenClaudeIsUnavailable_doesNotSaveAFakeReply() {
+        when(vectorStoreService.retrieveRelevantContext(any(), any())).thenReturn(List.of());
+        when(conversationService.getHistory(any(), any())).thenReturn(List.of());
+        when(claudeService.chat(anyString(), anyString(), anyList()))
+                .thenThrow(new AiServiceUnavailableException("Bedrock down"));
+
+        assertThatThrownBy(() -> aiCoachService.chat(userId, "My question", "session-abc"))
+                .isInstanceOf(AiServiceUnavailableException.class);
+
+        verify(conversationService, never()).saveMessage(any(), any(), any(), any());
     }
 
     @Test

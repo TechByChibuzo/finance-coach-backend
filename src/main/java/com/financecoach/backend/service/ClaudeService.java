@@ -1,8 +1,10 @@
 package com.financecoach.backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.financecoach.backend.exception.AiServiceUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
@@ -27,15 +29,21 @@ public class ClaudeService {
     private final String model;
     private final int maxTokens;
 
+    @Autowired
     public ClaudeService(@Value("${claude.model:anthropic.claude-sonnet-4-5-20250929-v1:0}") String model,
                          @Value("${claude.max-tokens:4096}") int maxTokens) {
+        this(BedrockRuntimeClient.builder()
+                        .region(Region.US_EAST_1)
+                        .credentialsProvider(DefaultCredentialsProvider.create())
+                        .build(),
+                model, maxTokens);
+    }
+
+    ClaudeService(BedrockRuntimeClient bedrockClient, String model, int maxTokens) {
+        this.bedrockClient = bedrockClient;
         this.model = model;
         this.maxTokens = maxTokens;
         this.objectMapper = new ObjectMapper();
-        this.bedrockClient = BedrockRuntimeClient.builder()
-                .region(Region.US_EAST_1)
-                .credentialsProvider(DefaultCredentialsProvider.create())
-                .build();
     }
 
     public String chat(String userMessage, String systemPrompt) {
@@ -46,6 +54,12 @@ public class ClaudeService {
         return chat(userMessage, null, List.of());
     }
 
+    /**
+     * Send a conversation to Claude and return its reply.
+     *
+     * @throws AiServiceUnavailableException if Bedrock fails or returns no text, so callers
+     *         don't store or count a failed reply as a real answer
+     */
     public String chat(String userMessage, String systemPrompt,
                        List<ConversationTurn> history) {
         try {
@@ -94,15 +108,17 @@ public class ClaudeService {
             Map<String, Object> responseMap = objectMapper.readValue(responseBody, Map.class);
             List<Map<String, Object>> content = (List<Map<String, Object>>) responseMap.get("content");
 
-            if (content != null && !content.isEmpty()) {
+            if (content != null && !content.isEmpty() && content.get(0).get("text") != null) {
                 return (String) content.get(0).get("text");
             }
 
-            return "I apologize, but I couldn't generate a response. Please try again.";
+            throw new AiServiceUnavailableException("Bedrock returned no text content");
 
+        } catch (AiServiceUnavailableException e) {
+            throw e;
         } catch (Exception e) {
             logger.error("Error calling Bedrock API: {}", e.getMessage());
-            return "I'm having trouble connecting right now. Please try again later.";
+            throw new AiServiceUnavailableException("Error calling Bedrock API", e);
         }
     }
 
