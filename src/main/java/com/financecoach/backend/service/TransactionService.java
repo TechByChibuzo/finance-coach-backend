@@ -7,6 +7,7 @@ import com.financecoach.backend.exception.UnauthorizedAccessException;
 import com.plaid.client.model.*;
 import com.plaid.client.request.PlaidApi;
 import com.financecoach.backend.model.BankAccount;
+import com.financecoach.backend.model.PlaidItem;
 import com.financecoach.backend.model.Transaction;
 import com.financecoach.backend.repository.BankAccountRepository;
 import com.financecoach.backend.repository.TransactionRepository;
@@ -20,6 +21,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -31,41 +33,77 @@ public class TransactionService {
     @Autowired
     private MetricsService metricsService;
     private final VectorStoreService vectorStoreService;
+    private final PlaidService plaidService;
 
     @Autowired
     public TransactionService(PlaidApi plaidClient,
                               TransactionRepository transactionRepository,
                               BankAccountRepository bankAccountRepository,
-                              VectorStoreService vectorStoreService) {
+                              VectorStoreService vectorStoreService,
+                              PlaidService plaidService) {
         this.plaidClient = plaidClient;
         this.transactionRepository = transactionRepository;
         this.bankAccountRepository = bankAccountRepository;
         this.vectorStoreService = vectorStoreService;
+        this.plaidService = plaidService;
     }
 
     /**
-     * Sync transactions for a specific bank account
+     * Sync transactions for a specific bank account.
+     * Plaid returns transactions per item (bank login), so this syncs the account's whole item
+     * and returns the new transactions for this account.
      */
     public List<Transaction> syncTransactions(UUID accountId, UUID userId) {
+        BankAccount bankAccount = bankAccountRepository.findById(accountId)
+                .orElseThrow(() -> new BankAccountNotFoundException(accountId));
+
+        // Verify ownership
+        if (!bankAccount.getUserId().equals(userId)) {
+            throw new UnauthorizedAccessException("bank account");
+        }
+
+        return syncItem(plaidService.getItem(bankAccount)).stream()
+                .filter(t -> t.getAccountId().equals(accountId))
+                .toList();
+    }
+
+    /**
+     * Sync transactions for all user's bank accounts
+     */
+    public List<Transaction> syncAllTransactions(UUID userId) {
+        List<BankAccount> accounts = bankAccountRepository.findByUserIdAndIsActive(userId, true);
+
+        if (accounts.isEmpty()) {
+            throw new BankAccountNotFoundException("No active bank accounts found");
+        }
+
+        List<Transaction> allTransactions = new ArrayList<>();
+        for (PlaidItem item : plaidService.getItems(accounts)) {
+            allTransactions.addAll(syncItem(item));
+        }
+
+        return allTransactions;
+    }
+
+    /**
+     * Sync one Plaid item. The item's access token returns transactions for all of its
+     * accounts, so each transaction is assigned to the account Plaid reports for it.
+     */
+    public List<Transaction> syncItem(PlaidItem item) {
         long startTime = System.currentTimeMillis();
 
+        Map<String, BankAccount> accountsByPlaidId = plaidService.getActiveAccountsByPlaidId(item);
+        if (accountsByPlaidId.isEmpty()) {
+            return List.of();
+        }
+
         try {
-            // Get bank account
-            BankAccount bankAccount = bankAccountRepository.findById(accountId)
-                    .orElseThrow(() -> new BankAccountNotFoundException(accountId));
-
-
-            // Verify ownership
-            if (!bankAccount.getUserId().equals(userId)) {
-                throw new UnauthorizedAccessException("bank account");
-            }
-
             // Fetch transactions from Plaid (last 30 days)
             LocalDate endDate = LocalDate.now();
             LocalDate startDate = endDate.minusDays(30);
 
             TransactionsGetRequest request = new TransactionsGetRequest()
-                    .accessToken(bankAccount.getPlaidAccessToken())
+                    .accessToken(item.getAccessToken())
                     .startDate(startDate)
                     .endDate(endDate);
 
@@ -83,6 +121,10 @@ public class TransactionService {
             // Save transactions
             List<Transaction> savedTransactions = new ArrayList<>();
             for (com.plaid.client.model.Transaction plaidTx : response.body().getTransactions()) {
+                BankAccount bankAccount = accountsByPlaidId.get(plaidTx.getAccountId());
+                if (bankAccount == null) {
+                    continue; // account was disconnected or never linked
+                }
                 if (transactionRepository.existsByPlaidTransactionId(plaidTx.getTransactionId())) {
                     continue;
                 }
@@ -99,41 +141,16 @@ public class TransactionService {
             metricsService.recordTransactionSyncDuration(duration);
 
             // Update last synced time
-            bankAccount.setLastSyncedAt(LocalDateTime.now());
-            bankAccountRepository.save(bankAccount);
+            for (BankAccount bankAccount : accountsByPlaidId.values()) {
+                bankAccount.setLastSyncedAt(LocalDateTime.now());
+                bankAccountRepository.save(bankAccount);
+            }
 
             return savedTransactions;
 
         } catch (IOException e) {
             throw new PlaidIntegrationException("Network error syncing transactions", e);
         }
-    }
-
-
-    /**
-     * Sync transactions for all user's bank accounts
-     */
-    public List<Transaction> syncAllTransactions(UUID userId) {
-        List<BankAccount> accounts = bankAccountRepository.findByUserIdAndIsActive(userId, true);
-
-        if (accounts.isEmpty()) {
-            throw new BankAccountNotFoundException("No active bank accounts found");
-        }
-
-        List<Transaction> allTransactions = new ArrayList<>();
-
-        for (BankAccount account : accounts) {
-            try {
-                List<Transaction> transactions = syncTransactions(account.getId(), userId);
-                allTransactions.addAll(transactions);
-            } catch (PlaidIntegrationException e) {
-                // Log error but continue with other accounts
-                // Exception will be logged by GlobalExceptionHandler
-                throw e; // Re-throw to notify user
-            }
-        }
-
-        return allTransactions;
     }
 
     /**

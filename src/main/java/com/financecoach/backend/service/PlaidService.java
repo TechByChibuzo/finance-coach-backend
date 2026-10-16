@@ -7,7 +7,9 @@ import com.financecoach.backend.exception.UnauthorizedAccessException;
 import com.plaid.client.model.*;
 import com.plaid.client.request.PlaidApi;
 import com.financecoach.backend.model.BankAccount;
+import com.financecoach.backend.model.PlaidItem;
 import com.financecoach.backend.repository.BankAccountRepository;
+import com.financecoach.backend.repository.PlaidItemRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,7 +21,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -29,13 +33,17 @@ public class PlaidService {
 
     private final PlaidApi plaidClient;
     private final BankAccountRepository bankAccountRepository;
+    private final PlaidItemRepository plaidItemRepository;
     @Autowired
     private MetricsService metricsService;
 
     @Autowired
-    public PlaidService(PlaidApi plaidClient, BankAccountRepository bankAccountRepository) {
+    public PlaidService(PlaidApi plaidClient,
+                        BankAccountRepository bankAccountRepository,
+                        PlaidItemRepository plaidItemRepository) {
         this.plaidClient = plaidClient;
         this.bankAccountRepository = bankAccountRepository;
+        this.plaidItemRepository = plaidItemRepository;
     }
 
     /**
@@ -103,7 +111,8 @@ public class PlaidService {
             }
 
             String accessToken = exchangeResponse.body().getAccessToken();
-            logger.debug("Access token obtained for user: {}", userId);
+            String plaidItemId = exchangeResponse.body().getItemId();
+            logger.debug("Access token obtained for user: {}, item: {}", userId, plaidItemId);
 
             // Get account details
             AccountsGetRequest accountsRequest = new AccountsGetRequest()
@@ -143,6 +152,9 @@ public class PlaidService {
                 }
             }
 
+            // One item per bank login; it owns the access token for all of its accounts
+            PlaidItem item = saveItem(userId, plaidItemId, accessToken, institutionId, institutionName);
+
             // Save accounts to database
             List<BankAccount> savedAccounts = new ArrayList<>();
             int accountCount = 0;
@@ -156,6 +168,7 @@ public class PlaidService {
 
                 BankAccount bankAccount = new BankAccount();
                 bankAccount.setUserId(userId);
+                bankAccount.setItemId(item.getId());
                 bankAccount.setPlaidAccountId(account.getAccountId());
                 bankAccount.setPlaidAccessToken(accessToken);
                 bankAccount.setInstitutionName(institutionName);
@@ -201,6 +214,76 @@ public class PlaidService {
             logger.error("Network error exchanging token for user: {}", userId, e);
             throw new PlaidIntegrationException("Network error exchanging token", e);
         }
+    }
+
+    private PlaidItem saveItem(UUID userId, String plaidItemId, String accessToken,
+                               String institutionId, String institutionName) {
+        PlaidItem item = plaidItemRepository.findByPlaidItemId(plaidItemId).orElseGet(PlaidItem::new);
+        item.setUserId(userId);
+        item.setPlaidItemId(plaidItemId);
+        item.setAccessToken(accessToken);
+        item.setInstitutionId(institutionId);
+        item.setInstitutionName(institutionName);
+        return plaidItemRepository.save(item);
+    }
+
+    /**
+     * Get the Plaid item an account belongs to. Accounts linked before items were stored
+     * have no itemId, so look the item up from Plaid once and attach it.
+     */
+    public PlaidItem getItem(BankAccount account) {
+        if (account.getItemId() != null) {
+            return plaidItemRepository.findById(account.getItemId())
+                    .orElseThrow(() -> new PlaidIntegrationException(
+                            "Plaid item not found for account: " + account.getId()));
+        }
+
+        try {
+            Response<ItemGetResponse> response = plaidClient
+                    .itemGet(new ItemGetRequest().accessToken(account.getPlaidAccessToken()))
+                    .execute();
+
+            if (!response.isSuccessful() || response.body() == null) {
+                String errorMsg = response.errorBody() != null ? response.errorBody().string() : "Unknown error";
+                throw new PlaidIntegrationException("Failed to get Plaid item: " + errorMsg);
+            }
+
+            PlaidItem item = plaidItemRepository.findByPlaidItemId(response.body().getItem().getItemId())
+                    .orElseGet(() -> saveItem(account.getUserId(), response.body().getItem().getItemId(),
+                            account.getPlaidAccessToken(), account.getInstitutionId(),
+                            account.getInstitutionName()));
+
+            account.setItemId(item.getId());
+            bankAccountRepository.save(account);
+            logger.info("Attached Plaid item {} to account {}", item.getId(), account.getId());
+            return item;
+
+        } catch (IOException e) {
+            throw new PlaidIntegrationException("Network error getting Plaid item", e);
+        }
+    }
+
+    /**
+     * Distinct items for a set of accounts, so each bank login is synced once
+     */
+    public List<PlaidItem> getItems(List<BankAccount> accounts) {
+        Map<UUID, PlaidItem> items = new LinkedHashMap<>();
+        for (BankAccount account : accounts) {
+            PlaidItem item = getItem(account);
+            items.putIfAbsent(item.getId(), item);
+        }
+        return new ArrayList<>(items.values());
+    }
+
+    /**
+     * Active accounts of an item, keyed by Plaid account ID
+     */
+    public Map<String, BankAccount> getActiveAccountsByPlaidId(PlaidItem item) {
+        Map<String, BankAccount> accounts = new LinkedHashMap<>();
+        for (BankAccount account : bankAccountRepository.findByItemIdAndIsActive(item.getId(), true)) {
+            accounts.put(account.getPlaidAccountId(), account);
+        }
+        return accounts;
     }
 
     /**

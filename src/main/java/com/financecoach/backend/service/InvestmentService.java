@@ -5,6 +5,7 @@ import com.financecoach.backend.exception.PlaidIntegrationException;
 import com.financecoach.backend.exception.UnauthorizedAccessException;
 import com.financecoach.backend.model.BankAccount;
 import com.financecoach.backend.model.Holding;
+import com.financecoach.backend.model.PlaidItem;
 import com.financecoach.backend.model.PortfolioSnapshot;
 import com.financecoach.backend.repository.BankAccountRepository;
 import com.financecoach.backend.repository.HoldingRepository;
@@ -65,9 +66,19 @@ public class InvestmentService {
             return;
         }
 
+        syncHoldingsForItem(plaidService.getItem(account));
+    }
+
+    /**
+     * Sync holdings for one Plaid item. The holdings response covers every account in the
+     * item, so each holding is saved under the account Plaid reports for it.
+     */
+    private void syncHoldingsForItem(PlaidItem item) {
+        Map<String, BankAccount> accountsByPlaidId = plaidService.getActiveAccountsByPlaidId(item);
+
         try {
             // Fetch holdings from Plaid
-            InvestmentsHoldingsGetResponse response = plaidService.getHoldings(account.getPlaidAccessToken());
+            InvestmentsHoldingsGetResponse response = plaidService.getHoldings(item.getAccessToken());
             int processedCount = 0;
 
             // Get securities list
@@ -75,6 +86,11 @@ public class InvestmentService {
 
             // Process each holding
             for (com.plaid.client.model.Holding plaidHolding : response.getHoldings()) {
+                BankAccount account = accountsByPlaidId.get(plaidHolding.getAccountId());
+                if (account == null) {
+                    continue; // account was disconnected or never linked
+                }
+
                 Holding holding = saveOrUpdateHolding(account, plaidHolding, securities);
                 processedCount ++;
 
@@ -86,14 +102,16 @@ public class InvestmentService {
             }
 
             // Update last synced timestamp
-            account.setLastSyncedAt(LocalDateTime.now());
-            bankAccountRepository.save(account);
+            for (BankAccount account : accountsByPlaidId.values()) {
+                account.setLastSyncedAt(LocalDateTime.now());
+                bankAccountRepository.save(account);
+            }
 
-            logger.info("Holdings sync completed - Account: {}, Holdings processed: {}",
-                    accountId, processedCount);
+            logger.info("Holdings sync completed - Item: {}, Holdings processed: {}",
+                    item.getId(), processedCount);
 
         } catch (PlaidIntegrationException e) {
-            logger.error("Failed to sync holdings from Plaid for account: {}", accountId, e);
+            logger.error("Failed to sync holdings from Plaid for item: {}", item.getId(), e);
             throw e;
         }
     }
@@ -116,12 +134,12 @@ public class InvestmentService {
         int successCount = 0;
         int failureCount = 0;
 
-        for (BankAccount account : investmentAccounts) {
+        for (PlaidItem item : plaidService.getItems(investmentAccounts)) {
             try {
-                syncHoldingsForAccount(account.getId(), userId);
+                syncHoldingsForItem(item);
                 successCount++;
             } catch (Exception e) {
-                logger.error("Failed to sync holdings for account: {}", account.getId(), e);
+                logger.error("Failed to sync holdings for item: {}", item.getId(), e);
                 failureCount++;
             }
         }

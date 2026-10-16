@@ -21,6 +21,10 @@ public class BankAccount {
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
+    // The Plaid item (bank login) this account was linked through
+    @Column(name = "item_id")
+    private UUID itemId;
+
     @Column(name = "plaid_account_id", nullable = false)
     private String plaidAccountId;
 

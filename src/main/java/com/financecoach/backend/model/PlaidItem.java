@@ -1,0 +1,46 @@
+package com.financecoach.backend.model;
+
+import com.financecoach.backend.security.EncryptedStringConverter;
+import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
+
+import java.time.LocalDateTime;
+import java.util.UUID;
+
+/**
+ * A Plaid Item: one login at one institution. It owns the access token, and
+ * every BankAccount linked through that login belongs to it. Plaid APIs that take
+ * an access token (transactions, holdings) return data for all of the item's accounts.
+ */
+@Getter
+@Setter
+@Entity
+@Table(name = "plaid_items", indexes = {
+        @Index(name = "idx_plaid_items_user", columnList = "user_id")
+})
+public class PlaidItem {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(name = "user_id", nullable = false)
+    private UUID userId;
+
+    @Column(name = "plaid_item_id", nullable = false, unique = true)
+    private String plaidItemId;
+
+    @Column(name = "access_token", nullable = false)
+    @Convert(converter = EncryptedStringConverter.class)
+    private String accessToken;
+
+    @Column(name = "institution_id")
+    private String institutionId;
+
+    @Column(name = "institution_name")
+    private String institutionName;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt = LocalDateTime.now();
+}
