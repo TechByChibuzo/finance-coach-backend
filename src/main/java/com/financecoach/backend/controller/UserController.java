@@ -9,7 +9,6 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -40,26 +39,6 @@ public class UserController {
     public ResponseEntity<UserResponse> getCurrentUser() {
         UUID userId = getCurrentUserId();
         UserResponse user = userService.getUserById(userId);
-        return ResponseEntity.ok(user);
-    }
-
-    /**
-     * Get all users (admin only in future)
-     * GET /api/users
-     */
-    @GetMapping
-    public ResponseEntity<List<UserResponse>> getAllUsers() {
-        List<UserResponse> users = userService.getAllUsers();
-        return ResponseEntity.ok(users);
-    }
-
-    /**
-     * Get user by ID
-     * GET /api/users/{id}
-     */
-    @GetMapping("/{id}")
-    public ResponseEntity<UserResponse> getUserById(@PathVariable UUID id) {
-        UserResponse user = userService.getUserById(id);
         return ResponseEntity.ok(user);
     }
 
