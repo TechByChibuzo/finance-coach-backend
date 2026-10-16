@@ -15,11 +15,13 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.UriUtils;
 
 import java.io.IOException;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.Map;
@@ -83,9 +85,10 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Match the path the way a client could vary it: drop ";params", collapse "//",
-     * ignore a trailing "/" and case. (Spring Security's firewall rejects most of these
-     * anyway; normalizing means the limit can't be skipped even if that changes.)
+     * Match the path the way a client could vary it: drop ";params", decode percent-escapes
+     * (Spring routes "/api/auth/log%69n" to the login handler), collapse "//", ignore a
+     * trailing "/" and case. Spring Security's firewall rejects some of these; normalizing
+     * here means the limit can't be skipped either way.
      */
     private String normalizePath(HttpServletRequest request) {
         String path = request.getRequestURI();
@@ -95,6 +98,11 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
         int semicolon = path.indexOf(';');
         if (semicolon >= 0) {
             path = path.substring(0, semicolon);
+        }
+        try {
+            path = UriUtils.decode(path, StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            // Malformed escape: Spring won't route it to a handler either, keep the raw path
         }
         path = path.replaceAll("/{2,}", "/");
         if (path.length() > 1 && path.endsWith("/")) {

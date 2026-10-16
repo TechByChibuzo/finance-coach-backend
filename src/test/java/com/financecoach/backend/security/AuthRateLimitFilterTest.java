@@ -71,7 +71,7 @@ class AuthRateLimitFilterTest {
     @Test
     void pathVariants_shareTheSameLimit() throws Exception {
         String[] variants = {"/api/auth/login", "/api/auth/login/", "//api/auth//login",
-                "/api/auth/login;jsessionid=x", "/API/Auth/Login"};
+                "/api/auth/login;jsessionid=x", "/API/Auth/Login", "/api/auth/log%69n", "/api%2Fauth/login"};
         for (int i = 0; i < 10; i++) {
             assertThat(post(variants[i % variants.length], "1.2.3.4").getStatus()).isEqualTo(200);
         }
