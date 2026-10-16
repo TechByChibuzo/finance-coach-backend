@@ -36,7 +36,7 @@ class PasswordResetServiceTest {
         User user = new User();
         user.setId(UUID.randomUUID());
         user.setEmail("jane@example.com");
-        when(userRepository.findByEmailIgnoreCase("jane@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.lookupByEmail("jane@example.com")).thenReturn(Optional.of(user));
         when(tokenRepository.countRecentTokensByUserId(org.mockito.ArgumentMatchers.eq(user.getId()),
                 org.mockito.ArgumentMatchers.any())).thenReturn(3L);
 

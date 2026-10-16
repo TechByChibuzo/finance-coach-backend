@@ -78,7 +78,7 @@ public class UserService {
         logger.debug("Authentication attempt for email: {}", email);
 
         // Find user by email
-        User user = userRepository.findByEmailIgnoreCase(normalizeEmail(email))
+        User user = userRepository.lookupByEmail(normalizeEmail(email))
                 .orElseThrow(InvalidCredentialsException::new);
 
         // Check password
@@ -114,7 +114,7 @@ public class UserService {
      * Throws UserNotFoundException if not found
      */
     public UserResponse getUserByEmail(String email) {
-        User user = userRepository.findByEmailIgnoreCase(normalizeEmail(email))
+        User user = userRepository.lookupByEmail(normalizeEmail(email))
                 .orElseThrow(() -> new UserNotFoundException(email));
         return convertToResponse(user);
     }

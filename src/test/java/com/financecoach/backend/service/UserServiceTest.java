@@ -79,7 +79,7 @@ class UserServiceTest {
         user.setId(UUID.randomUUID());
         user.setEmail("jane@example.com");
         user.setPasswordHash("hash");
-        when(userRepository.findByEmailIgnoreCase("jane@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.lookupByEmail("jane@example.com")).thenReturn(Optional.of(user));
         when(passwordEncoder.matches("password123", "hash")).thenReturn(true);
 
         User result = userService.authenticate(" Jane@Example.com", "password123");
