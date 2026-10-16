@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -19,8 +20,8 @@ public interface SpendingAnomalyRepository extends JpaRepository<SpendingAnomaly
             UUID userId, String category
     );
 
-    boolean existsByUserIdAndCategoryAndPeriodStartAndPeriodEnd(
-            UUID userId, String category, LocalDate periodStart, LocalDate periodEnd
+    Optional<SpendingAnomaly> findByUserIdAndCategoryAndPeriodStart(
+            UUID userId, String category, LocalDate periodStart
     );
 
     long countByUserIdAndIsReviewedFalse(UUID userId);

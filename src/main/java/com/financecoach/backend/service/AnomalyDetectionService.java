@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -47,12 +48,14 @@ public class AnomalyDetectionService {
     }
 
     /**
-     * Detect anomalies for the current month compared to historical average
+     * Detect anomalies for the current month compared to historical average.
+     * There is at most one anomaly per user, category and month: running detection again
+     * updates it with the latest figures instead of creating another one.
      */
     public List<SpendingAnomaly> detectAnomalies(UUID userId) {
         LocalDate today = LocalDate.now();
         LocalDate currentMonthStart = today.withDayOfMonth(1);
-        LocalDate currentMonthEnd = today.plusDays(1);
+        LocalDate currentMonthEnd = currentMonthStart.withDayOfMonth(currentMonthStart.lengthOfMonth());
 
         // Get 6 months of historical data for baseline
         LocalDate historyStart = currentMonthStart.minusMonths(6);
@@ -63,7 +66,7 @@ public class AnomalyDetectionService {
 
         // Get all transactions
         List<Transaction> currentTransactions = transactionRepository
-                .findByUserIdAndDateBetween(userId, currentMonthStart, currentMonthEnd);
+                .findByUserIdAndDateBetween(userId, currentMonthStart, today);
 
         List<Transaction> historicalTransactions = transactionRepository
                 .findByUserIdAndDateBetween(userId, historyStart, historyEnd);
@@ -115,13 +118,15 @@ public class AnomalyDetectionService {
             if (zScoreDouble >= Z_SCORE_THRESHOLD_LOW) {
                 String severity = determineSeverity(zScoreDouble);
 
-                // Avoid duplicate anomalies for same period
-                boolean exists = anomalyRepository
-                        .existsByUserIdAndCategoryAndPeriodStartAndPeriodEnd(
-                                userId, category, currentMonthStart, currentMonthEnd
-                        );
+                // One anomaly per category per month - update it if it already exists
+                Optional<SpendingAnomaly> existing = anomalyRepository
+                        .findByUserIdAndCategoryAndPeriodStart(userId, category, currentMonthStart);
 
-                if (!exists) {
+                if (existing.isPresent()) {
+                    SpendingAnomaly anomaly = existing.get();
+                    anomaly.refresh(currentSpend, mean, stdDev, zScore, severity);
+                    anomalies.add(anomalyRepository.save(anomaly));
+                } else {
                     SpendingAnomaly anomaly = new SpendingAnomaly(
                             userId, category, currentSpend, mean,
                             stdDev, zScore, severity,

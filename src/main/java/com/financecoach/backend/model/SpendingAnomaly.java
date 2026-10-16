@@ -73,4 +73,27 @@ public class SpendingAnomaly {
     public void markAsReviewed() {
         this.isReviewed = true;
     }
+
+    /**
+     * Update the figures as the month progresses. If the anomaly got more severe,
+     * show it to the user again even if they had already reviewed it.
+     */
+    public void refresh(BigDecimal currentSpend, BigDecimal averageSpend,
+                        BigDecimal standardDeviation, BigDecimal zScore, String severity) {
+        if (severityRank(severity) > severityRank(this.severity)) {
+            this.isReviewed = false;
+        }
+        this.currentSpend = currentSpend;
+        this.averageSpend = averageSpend;
+        this.standardDeviation = standardDeviation;
+        this.zScore = zScore;
+        this.severity = severity;
+    }
+
+    private static int severityRank(String severity) {
+        if ("HIGH".equals(severity)) return 3;
+        if ("MEDIUM".equals(severity)) return 2;
+        if ("LOW".equals(severity)) return 1;
+        return 0;
+    }
 }

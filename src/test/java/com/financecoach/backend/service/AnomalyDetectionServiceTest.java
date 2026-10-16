@@ -3,17 +3,20 @@ package com.financecoach.backend.service;
 import com.financecoach.backend.exception.AnomalyNotFoundException;
 import com.financecoach.backend.exception.UnauthorizedAccessException;
 import com.financecoach.backend.model.SpendingAnomaly;
+import com.financecoach.backend.model.Transaction;
 import com.financecoach.backend.repository.SpendingAnomalyRepository;
 import com.financecoach.backend.repository.TransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -43,6 +46,60 @@ class AnomalyDetectionServiceTest {
     void setUp() {
         ownerId = UUID.randomUUID();
         anomalyId = UUID.randomUUID();
+    }
+
+    // --- detectAnomalies ---
+
+    @Test
+    void detectAnomalies_storesTheAnomalyForTheWholeMonth() {
+        stubSpending(new BigDecimal("400.00"));
+        when(anomalyRepository.findByUserIdAndCategoryAndPeriodStart(ownerId, "FOOD_AND_DRINK", monthStart()))
+                .thenReturn(Optional.empty());
+        when(anomalyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        List<SpendingAnomaly> anomalies = anomalyDetectionService.detectAnomalies(ownerId);
+
+        assertThat(anomalies).hasSize(1);
+        assertThat(anomalies.get(0).getPeriodStart()).isEqualTo(monthStart());
+        assertThat(anomalies.get(0).getPeriodEnd()).isEqualTo(monthStart().withDayOfMonth(monthStart().lengthOfMonth()));
+        assertThat(anomalies.get(0).getSeverity()).isEqualTo("HIGH");
+    }
+
+    @Test
+    void detectAnomalies_runAgain_updatesTheExistingAnomalyInsteadOfDuplicating() {
+        SpendingAnomaly existing = new SpendingAnomaly(
+                ownerId, "FOOD_AND_DRINK", new BigDecimal("240.00"), new BigDecimal("200.00"),
+                new BigDecimal("16.33"), new BigDecimal("2.45"), "MEDIUM",
+                monthStart(), monthStart().withDayOfMonth(monthStart().lengthOfMonth()));
+        stubSpending(new BigDecimal("400.00"));
+        when(anomalyRepository.findByUserIdAndCategoryAndPeriodStart(ownerId, "FOOD_AND_DRINK", monthStart()))
+                .thenReturn(Optional.of(existing));
+        when(anomalyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        anomalyDetectionService.detectAnomalies(ownerId);
+
+        ArgumentCaptor<SpendingAnomaly> saved = ArgumentCaptor.forClass(SpendingAnomaly.class);
+        verify(anomalyRepository).save(saved.capture());
+        assertThat(saved.getValue()).isSameAs(existing);
+        assertThat(existing.getCurrentSpend()).isEqualByComparingTo("400.00");
+        assertThat(existing.getSeverity()).isEqualTo("HIGH");
+    }
+
+    @Test
+    void detectAnomalies_whenSeverityIncreases_showsAReviewedAnomalyAgain() {
+        SpendingAnomaly existing = new SpendingAnomaly(
+                ownerId, "FOOD_AND_DRINK", new BigDecimal("240.00"), new BigDecimal("200.00"),
+                new BigDecimal("16.33"), new BigDecimal("2.45"), "MEDIUM",
+                monthStart(), monthStart().withDayOfMonth(monthStart().lengthOfMonth()));
+        existing.markAsReviewed();
+        stubSpending(new BigDecimal("400.00"));
+        when(anomalyRepository.findByUserIdAndCategoryAndPeriodStart(ownerId, "FOOD_AND_DRINK", monthStart()))
+                .thenReturn(Optional.of(existing));
+        when(anomalyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        anomalyDetectionService.detectAnomalies(ownerId);
+
+        assertThat(existing.getIsReviewed()).isFalse();
     }
 
     // --- markAsReviewed ---
@@ -76,6 +133,34 @@ class AnomalyDetectionServiceTest {
 
         assertThatThrownBy(() -> anomalyDetectionService.markAsReviewed(anomalyId, ownerId))
                 .isInstanceOf(AnomalyNotFoundException.class);
+    }
+
+    private LocalDate monthStart() {
+        return LocalDate.now().withDayOfMonth(1);
+    }
+
+    /** Three past months of ~$200 food spending, and the given amount so far this month */
+    private void stubSpending(BigDecimal currentMonthSpend) {
+        LocalDate monthStart = monthStart();
+        List<Transaction> history = List.of(
+                food(monthStart.minusMonths(1).withDayOfMonth(10), "200.00"),
+                food(monthStart.minusMonths(2).withDayOfMonth(10), "220.00"),
+                food(monthStart.minusMonths(3).withDayOfMonth(10), "180.00"));
+
+        when(transactionRepository.findByUserIdAndDateBetween(ownerId, monthStart, LocalDate.now()))
+                .thenReturn(List.of(food(LocalDate.now(), currentMonthSpend.toPlainString())));
+        when(transactionRepository.findByUserIdAndDateBetween(
+                ownerId, monthStart.minusMonths(6), monthStart.minusDays(1)))
+                .thenReturn(history);
+    }
+
+    private Transaction food(LocalDate date, String amount) {
+        Transaction t = new Transaction();
+        t.setUserId(ownerId);
+        t.setCategory("FOOD_AND_DRINK");
+        t.setAmount(new BigDecimal(amount));
+        t.setDate(date);
+        return t;
     }
 
     private SpendingAnomaly anomalyOwnedBy(UUID userId) {
