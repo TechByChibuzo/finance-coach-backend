@@ -170,7 +170,7 @@ public class AnomalyDetectionService {
     private Map<String, BigDecimal> groupByCategory(List<Transaction> transactions) {
         return transactions.stream()
                 .filter(t -> t.getCategory() != null)
-                .filter(t -> t.getAmount().compareTo(BigDecimal.ZERO) > 0) // only expenses
+                .filter(TransactionFilters::isSpending)
                 .collect(Collectors.groupingBy(
                         Transaction::getCategory,
                         Collectors.reducing(BigDecimal.ZERO, Transaction::getAmount, BigDecimal::add)
@@ -183,7 +183,7 @@ public class AnomalyDetectionService {
         // Group by category, then sum per month
         Map<String, Map<String, BigDecimal>> byCategoryAndMonth = transactions.stream()
                 .filter(t -> t.getCategory() != null)
-                .filter(t -> t.getAmount().compareTo(BigDecimal.ZERO) > 0)
+                .filter(TransactionFilters::isSpending)
                 .collect(Collectors.groupingBy(
                         Transaction::getCategory,
                         Collectors.groupingBy(

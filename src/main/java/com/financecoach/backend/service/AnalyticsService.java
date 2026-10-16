@@ -29,7 +29,7 @@ public class AnalyticsService {
                 .findByUserIdAndDateBetween(userId, startDate, endDate);
 
         return transactions.stream()
-                .filter(t -> t.getAmount().compareTo(BigDecimal.ZERO) > 0) // Only expenses (positive amounts)
+                .filter(TransactionFilters::isSpending)
                 .collect(Collectors.groupingBy(
                         t -> t.getCategory() != null ? t.getCategory() : "Uncategorized",
                         Collectors.reducing(
@@ -48,8 +48,8 @@ public class AnalyticsService {
                 .findByUserIdAndDateBetween(userId, startDate, endDate);
 
         return transactions.stream()
-                .map(Transaction::getAmount) // Only expenses
-                .filter(amount -> amount.compareTo(BigDecimal.ZERO) > 0)
+                .filter(TransactionFilters::isSpending)
+                .map(Transaction::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
@@ -61,7 +61,7 @@ public class AnalyticsService {
                 .findByUserIdAndDateBetween(userId, startDate, endDate);
 
         return transactions.stream()
-                .filter(t -> t.getAmount().compareTo(BigDecimal.ZERO) < 0) // Only income (negative amounts in Plaid)
+                .filter(TransactionFilters::isIncome)
                 .map(t -> t.getAmount().abs()) // Use BigDecimal.abs()
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
@@ -74,7 +74,7 @@ public class AnalyticsService {
                 .findByUserIdAndDateBetween(userId, startDate, endDate);
 
         return transactions.stream()
-                .filter(t -> t.getAmount().compareTo(BigDecimal.ZERO) > 0)
+                .filter(TransactionFilters::isSpending)
                 .collect(Collectors.groupingBy(
                         t -> t.getMerchantName() != null ? t.getMerchantName() : t.getName(),
                         Collectors.reducing(
@@ -102,7 +102,7 @@ public class AnalyticsService {
                 .findByUserIdAndDateBetween(userId, startDate, endDate);
 
         return transactions.stream()
-                .filter(t -> t.getAmount().compareTo(BigDecimal.ZERO) > 0)
+                .filter(TransactionFilters::isSpending)
                 .collect(Collectors.groupingBy(
                         Transaction::getDate,
                         Collectors.reducing(

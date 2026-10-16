@@ -40,6 +40,65 @@ class AnalyticsServiceTest {
         endDate = LocalDate.of(2026, 1, 31);
     }
 
+    // --- transfers between the user's own accounts ---
+
+    @Test
+    void getTotalSpending_excludesTransfersAndCreditCardPayments() {
+        Transaction cardPayment = expense("LOAN_PAYMENTS", 500.00);
+        cardPayment.setSubcategory("LOAN_PAYMENTS_CREDIT_CARD_PAYMENT");
+        when(transactionRepository.findByUserIdAndDateBetween(userId, startDate, endDate))
+                .thenReturn(List.of(
+                        expense("FOOD_AND_DRINK", 120.00),
+                        expense("TRANSFER_OUT", 1000.00),
+                        cardPayment));
+
+        BigDecimal total = analyticsService.getTotalSpending(userId, startDate, endDate);
+
+        assertThat(total).isEqualByComparingTo("120.00");
+    }
+
+    @Test
+    void getTotalSpending_keepsOtherLoanPayments() {
+        Transaction mortgage = expense("LOAN_PAYMENTS", 1800.00);
+        mortgage.setSubcategory("LOAN_PAYMENTS_MORTGAGE_PAYMENT");
+        when(transactionRepository.findByUserIdAndDateBetween(userId, startDate, endDate))
+                .thenReturn(List.of(mortgage));
+
+        assertThat(analyticsService.getTotalSpending(userId, startDate, endDate))
+                .isEqualByComparingTo("1800.00");
+    }
+
+    @Test
+    void getTotalIncome_excludesTransfersIn() {
+        Transaction transferIn = expense("TRANSFER_IN", -2000.00);
+        when(transactionRepository.findByUserIdAndDateBetween(userId, startDate, endDate))
+                .thenReturn(List.of(income(3000.00), transferIn));
+
+        assertThat(analyticsService.getTotalIncome(userId, startDate, endDate))
+                .isEqualByComparingTo("3000.00");
+    }
+
+    @Test
+    void getSpendingByCategory_omitsTransferCategories() {
+        when(transactionRepository.findByUserIdAndDateBetween(userId, startDate, endDate))
+                .thenReturn(List.of(expense("FOOD_AND_DRINK", 50.00), expense("TRANSFER_OUT", 400.00)));
+
+        Map<String, BigDecimal> result = analyticsService.getSpendingByCategory(userId, startDate, endDate);
+
+        assertThat(result).containsOnlyKeys("FOOD_AND_DRINK");
+    }
+
+    @Test
+    void getTotalSpending_excludesLegacyPlaidTransferCategories() {
+        Transaction legacyCardPayment = expense("Payment", 300.00);
+        legacyCardPayment.setSubcategory("Credit Card");
+        when(transactionRepository.findByUserIdAndDateBetween(userId, startDate, endDate))
+                .thenReturn(List.of(expense("Transfer", 250.00), legacyCardPayment, expense("Shops", 40.00)));
+
+        assertThat(analyticsService.getTotalSpending(userId, startDate, endDate))
+                .isEqualByComparingTo("40.00");
+    }
+
     // --- helpers ---
 
     private Transaction expense(String category, double amount) {
