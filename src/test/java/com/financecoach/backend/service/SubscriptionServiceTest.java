@@ -1,11 +1,15 @@
 package com.financecoach.backend.service;
 
 import com.financecoach.backend.model.BillingCycle;
+import com.financecoach.backend.model.FeatureFlag;
 import com.financecoach.backend.model.SubscriptionPlan;
 import com.financecoach.backend.model.SubscriptionStatus;
+import com.financecoach.backend.model.UsageTracking;
 import com.financecoach.backend.model.User;
 import com.financecoach.backend.model.UserSubscription;
+import com.financecoach.backend.repository.FeatureFlagRepository;
 import com.financecoach.backend.repository.SubscriptionPlanRepository;
+import com.financecoach.backend.repository.UsageTrackingRepository;
 import com.financecoach.backend.repository.UserRepository;
 import com.financecoach.backend.repository.UserSubscriptionRepository;
 import com.stripe.Stripe;
@@ -57,6 +61,12 @@ class SubscriptionServiceTest {
 
     @Mock
     private StripeService stripeService;
+
+    @Mock
+    private FeatureFlagRepository featureFlagRepository;
+
+    @Mock
+    private UsageTrackingRepository usageRepository;
 
     @InjectMocks
     private SubscriptionService subscriptionService;
@@ -189,6 +199,38 @@ class SubscriptionServiceTest {
         assertThat(previous.getStatus()).isEqualTo(SubscriptionStatus.CANCELLED);
     }
 
+    // --- feature limits (names must match the seeded feature_flags) ---
+
+    @Test
+    void canUseFeature_aiCoach_freePlanAllowsFiveMessagesPerMonth() {
+        stubFlag("ai_coach", "FREE");
+        stubCurrentPlan("FREE");
+        stubUsage("ai_coach", 4);
+        assertThat(subscriptionService.canUseFeature(userId, "ai_coach")).isTrue();
+
+        stubUsage("ai_coach", 5);
+        assertThat(subscriptionService.canUseFeature(userId, "ai_coach")).isFalse();
+    }
+
+    @Test
+    void canUseFeature_aiCoach_paidPlanIsUnlimited() {
+        stubFlag("ai_coach", "FREE");
+        stubCurrentPlan("PREMIUM");
+
+        assertThat(subscriptionService.canUseFeature(userId, "ai_coach")).isTrue();
+    }
+
+    @Test
+    void hasFeatureAccess_exportReports_requiresPremium() {
+        stubFlag("export_reports", "PREMIUM");
+
+        stubCurrentPlan("FREE");
+        assertThat(subscriptionService.hasFeatureAccess(userId, "export_reports")).isFalse();
+
+        stubCurrentPlan("PRO");
+        assertThat(subscriptionService.hasFeatureAccess(userId, "export_reports")).isTrue();
+    }
+
     // --- handleStripeWebhook ---
 
     @Test
@@ -309,6 +351,33 @@ class SubscriptionServiceTest {
     }
 
     // --- helpers ---
+
+    private void stubFlag(String featureName, String requiredPlan) {
+        FeatureFlag flag = new FeatureFlag();
+        flag.setFeatureName(featureName);
+        flag.setIsEnabled(true);
+        flag.setRequiredPlan(requiredPlan);
+        when(featureFlagRepository.findByFeatureName(featureName)).thenReturn(Optional.of(flag));
+    }
+
+    private void stubCurrentPlan(String planName) {
+        if ("FREE".equals(planName)) {
+            when(subscriptionRepository.findActiveByUserId(userId)).thenReturn(Optional.empty());
+            when(planRepository.findByName("FREE")).thenReturn(Optional.of(plan("FREE")));
+        } else {
+            UserSubscription sub = activeSubscription("sub_1");
+            sub.setPlan(plan(planName));
+            when(subscriptionRepository.findActiveByUserId(userId)).thenReturn(Optional.of(sub));
+            when(planRepository.findByName("FREE")).thenReturn(Optional.of(plan("FREE")));
+        }
+    }
+
+    private void stubUsage(String featureName, int count) {
+        UsageTracking usage = new UsageTracking();
+        usage.setUsageCount(count);
+        when(usageRepository.findByUserIdAndFeatureNameAndPeriod(any(), any(), any(), any()))
+                .thenReturn(Optional.of(usage));
+    }
 
     private void stubPlans() {
         SubscriptionPlan premium = plan("PREMIUM");

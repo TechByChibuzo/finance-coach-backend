@@ -1,6 +1,8 @@
 // src/main/java/com/financecoach/backend/controller/AICoachController.java
 package com.financecoach.backend.controller;
 
+import com.financecoach.backend.annotation.RequiresFeature;
+import com.financecoach.backend.annotation.TrackUsage;
 import com.financecoach.backend.dto.ChatRequest;
 import com.financecoach.backend.dto.SavingsGoalRequest;
 import com.financecoach.backend.exception.ValidationException;
@@ -32,6 +34,8 @@ public class AICoachController {
      * Chat with AI coach
      * POST /api/ai-coach/chat
      */
+    @RequiresFeature(value = "ai_coach", message = "AI coach is not available on your plan")
+    @TrackUsage(feature = "ai_coach")
     @PostMapping("/chat")
     public ResponseEntity<Map<String, String>> chat(@Valid @RequestBody ChatRequest request) {
         UUID userId = getCurrentUserId();
@@ -50,6 +54,8 @@ public class AICoachController {
      * Get weekly summary
      * GET /api/ai-coach/weekly-summary
      */
+    @RequiresFeature(value = "ai_coach", message = "AI coach is not available on your plan")
+    @TrackUsage(feature = "ai_coach")
     @GetMapping("/weekly-summary")
     public ResponseEntity<Map<String, String>> getWeeklySummary() {
         UUID userId = getCurrentUserId();
@@ -61,6 +67,8 @@ public class AICoachController {
      * Get monthly report
      * GET /api/ai-coach/monthly-report
      */
+    @RequiresFeature(value = "ai_coach", message = "AI coach is not available on your plan")
+    @TrackUsage(feature = "ai_coach")
     @GetMapping("/monthly-report")
     public ResponseEntity<Map<String, String>> getMonthlyReport() {
         UUID userId = getCurrentUserId();
@@ -72,6 +80,8 @@ public class AICoachController {
      * Analyze category spending
      * GET /api/ai-coach/analyze-category/{category}
      */
+    @RequiresFeature(value = "ai_coach", message = "AI coach is not available on your plan")
+    @TrackUsage(feature = "ai_coach")
     @GetMapping("/analyze-category/{category}")
     public ResponseEntity<Map<String, String>> analyzeCategory(@PathVariable String category) {
         UUID userId = getCurrentUserId();
@@ -84,6 +94,8 @@ public class AICoachController {
      * POST /api/ai-coach/savings-recommendations
      * ✅ UPDATED: Now uses BigDecimal and proper DTO
      */
+    @RequiresFeature(value = "ai_coach", message = "AI coach is not available on your plan")
+    @TrackUsage(feature = "ai_coach")
     @PostMapping("/savings-recommendations")
     public ResponseEntity<Map<String, String>> getSavingsRecommendations(
             @Valid @RequestBody SavingsGoalRequest request) {

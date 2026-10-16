@@ -1,5 +1,6 @@
 package com.financecoach.backend.controller;
 
+import com.financecoach.backend.annotation.RequiresFeature;
 import com.financecoach.backend.service.ExportService;
 import com.financecoach.backend.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,6 +22,7 @@ public class ExportController {
     @Autowired
     private UserService userService;
 
+    @RequiresFeature(value = "export_reports", message = "Upgrade to Premium to export your transactions")
     @GetMapping("/transactions")
     public ResponseEntity<?> exportTransactions(Authentication authentication) {
         UUID userId = getCurrentUserId();

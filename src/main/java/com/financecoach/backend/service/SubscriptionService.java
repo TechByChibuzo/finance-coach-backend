@@ -702,11 +702,12 @@ public class SubscriptionService {
     private Integer getFeatureLimit(SubscriptionPlan plan, String featureName) {
         // Parse limits JSON and get specific feature limit
         // This is simplified - in real app, parse the actual JSON
+        // Keys must match feature_flags.feature_name
         return switch (featureName) {
-            case "ai_coach_message" -> plan.isFree() ? 5 : -1;
+            case "ai_coach" -> plan.isFree() ? 5 : -1;
             case "budget_create" -> plan.isFree() ? 3 : -1;
             case "bank_account" -> plan.isFree() ? 1 : (plan.isPremium() ? 5 : -1);
-            case "report_export" -> plan.isFree() ? 0 : -1;
+            case "export_reports" -> plan.isFree() ? 0 : -1;
             default -> -1; // Unlimited by default
         };
     }
