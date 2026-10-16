@@ -74,7 +74,8 @@ public class AnomalyDetectionController {
      */
     @PutMapping("/{anomalyId}/review")
     public ResponseEntity<Void> markAsReviewed(@PathVariable UUID anomalyId) {
-        anomalyDetectionService.markAsReviewed(anomalyId);
+        UUID userId = getCurrentUserId();
+        anomalyDetectionService.markAsReviewed(anomalyId, userId);
         return ResponseEntity.noContent().build();
     }
 

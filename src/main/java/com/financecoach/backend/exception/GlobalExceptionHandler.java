@@ -326,6 +326,27 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handle anomaly not found exceptions
+     */
+    @ExceptionHandler(AnomalyNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleAnomalyNotFoundException(
+            AnomalyNotFoundException ex,
+            HttpServletRequest request) {
+
+        logger.warn("Anomaly not found: {}", ex.getMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.NOT_FOUND.value(),
+                "Not Found",
+                ex.getMessage(),
+                ex.getErrorCode()
+        );
+        error.setPath(request.getRequestURI());
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+    }
+
+    /**
      * Handle no previous budgets exception
      */
     @ExceptionHandler(NoPreviousBudgetsException.class)

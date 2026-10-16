@@ -1,5 +1,7 @@
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.exception.AnomalyNotFoundException;
+import com.financecoach.backend.exception.UnauthorizedAccessException;
 import com.financecoach.backend.model.SpendingAnomaly;
 import com.financecoach.backend.model.Transaction;
 import com.financecoach.backend.repository.SpendingAnomalyRepository;
@@ -149,11 +151,18 @@ public class AnomalyDetectionService {
         return anomalyRepository.countByUserIdAndIsReviewedFalse(userId);
     }
 
-    public void markAsReviewed(UUID anomalyId) {
-        anomalyRepository.findById(anomalyId).ifPresent(anomaly -> {
-            anomaly.markAsReviewed();
-            anomalyRepository.save(anomaly);
-        });
+    public void markAsReviewed(UUID anomalyId, UUID userId) {
+        SpendingAnomaly anomaly = anomalyRepository.findById(anomalyId)
+                .orElseThrow(() -> new AnomalyNotFoundException(anomalyId));
+
+        // Verify ownership
+        if (!anomaly.getUserId().equals(userId)) {
+            logger.warn("Unauthorized attempt to review anomaly: {} by user: {}", anomalyId, userId);
+            throw new UnauthorizedAccessException("anomaly");
+        }
+
+        anomaly.markAsReviewed();
+        anomalyRepository.save(anomaly);
     }
 
     // ==================== HELPER METHODS ====================
