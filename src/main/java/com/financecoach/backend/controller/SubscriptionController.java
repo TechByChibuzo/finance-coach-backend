@@ -123,7 +123,14 @@ public class SubscriptionController {
         UUID userId = getCurrentUserId();
 
         try {
-            subscriptionService.cancelSubscription(userId);
+            UserSubscription subscription = subscriptionService.cancelSubscription(userId);
+
+            if (subscription.getStatus() == SubscriptionStatus.ACTIVE && subscription.getEndDate() != null) {
+                return ResponseEntity.ok(Map.of(
+                        "message", "Subscription cancelled. You'll keep access until the end of your billing period.",
+                        "accessUntil", subscription.getEndDate().toString()
+                ));
+            }
             return ResponseEntity.ok(Map.of("message", "Subscription cancelled successfully"));
         } catch (Exception e) {
             return ResponseEntity.badRequest()

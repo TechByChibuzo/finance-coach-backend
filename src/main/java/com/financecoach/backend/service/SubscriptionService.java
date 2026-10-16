@@ -16,8 +16,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -328,22 +330,25 @@ public class SubscriptionService {
     // ============================================
 
     /**
-     * Create or upgrade subscription
+     * Create or upgrade subscription from a paid Stripe subscription
      */
     @Transactional
-    public void createSubscription(UUID userId, String planName, BillingCycle cycle) {
-        logger.info("Creating subscription - User: {}, Plan: {}, Cycle: {}",
-                userId, planName, cycle);
+    public void createSubscription(UUID userId, SubscriptionPlan plan, BillingCycle cycle,
+                                   Subscription stripeSubscription) {
+        logger.info("Creating subscription - User: {}, Plan: {}, Cycle: {}, StripeSubscription: {}",
+                userId, plan.getName(), cycle, stripeSubscription.getId());
 
-        // Get plan
-        SubscriptionPlan plan = planRepository.findByName(planName)
-                .orElseThrow(() -> {
-                    logger.error("Plan not found: {}", planName);
-                    return new RuntimeException("Plan not found: " + planName);
-                });
+        Optional<UserSubscription> current = getUserSubscription(userId);
+
+        // Already recorded (e.g. Stripe retried the webhook) - don't cancel the subscription we just created
+        if (current.isPresent()
+                && stripeSubscription.getId().equals(current.get().getStripeSubscriptionId())) {
+            logger.info("Stripe subscription {} already recorded, skipping", stripeSubscription.getId());
+            return;
+        }
 
         // Cancel existing subscription
-        getUserSubscription(userId).ifPresent(existing -> {
+        current.ifPresent(existing -> {
             logger.info("Cancelling existing subscription: {}", existing.getId());
             try {
                 if (existing.getStripeSubscriptionId() != null) {
@@ -365,14 +370,8 @@ public class SubscriptionService {
         subscription.setStatus(SubscriptionStatus.ACTIVE);
         subscription.setBillingCycle(cycle);
         subscription.setStartDate(LocalDateTime.now());
-
-        // Set end date based on cycle
-        if (cycle == BillingCycle.MONTHLY) {
-            subscription.setEndDate(LocalDateTime.now().plusMonths(1));
-        } else if (cycle == BillingCycle.YEARLY) {
-            subscription.setEndDate(LocalDateTime.now().plusYears(1));
-        }
-
+        subscription.setStripeSubscriptionId(stripeSubscription.getId());
+        subscription.setEndDate(getCurrentPeriodEnd(stripeSubscription, cycle));
         subscription.setAutoRenew(true);
         subscriptionRepository.save(subscription);
 
@@ -403,10 +402,13 @@ public class SubscriptionService {
     }
 
     /**
-     * Cancel subscription
+     * Cancel subscription.
+     * Paid subscriptions are cancelled in Stripe at the end of the billing period, so the user
+     * keeps access until endDate and is not charged again. If the Stripe call fails, nothing is
+     * changed locally and the error is returned to the caller.
      */
     @Transactional
-    public void cancelSubscription(UUID userId) {
+    public UserSubscription cancelSubscription(UUID userId) {
         logger.info("Cancelling subscription for user: {}", userId);
 
         UserSubscription subscription = getUserSubscription(userId)
@@ -415,22 +417,58 @@ public class SubscriptionService {
                     return new RuntimeException("No active subscription");
                 });
 
-        // Cancel in Stripe if exists
-        if (subscription.getStripeSubscriptionId() != null) {
-            try {
-                stripeService.cancelSubscription(subscription.getStripeSubscriptionId());
-                subscription.setStatus(SubscriptionStatus.CANCELLED);
-                subscription.setCancelledAt(LocalDateTime.now());
-                subscription.setAutoRenew(false);
-            } catch (StripeException e) {
-                // Log error but don't fail
-                System.err.println("Failed to cancel Stripe subscription: " + e.getMessage());
+        // Older rows never stored the Stripe subscription ID - look it up via the Stripe customer
+        List<String> stripeSubscriptionIds = subscription.getStripeSubscriptionId() != null
+                ? List.of(subscription.getStripeSubscriptionId())
+                : findBillableStripeSubscriptionIds(userId);
+
+        try {
+            for (String stripeSubscriptionId : stripeSubscriptionIds) {
+                stripeService.cancelSubscriptionAtPeriodEnd(stripeSubscriptionId);
+                logger.info("Stripe subscription {} set to cancel at period end", stripeSubscriptionId);
             }
+        } catch (StripeException e) {
+            logger.error("Failed to cancel Stripe subscription for user: {}", userId, e);
+            throw new RuntimeException("Could not cancel your subscription. Please try again.", e);
         }
 
-        subscriptionRepository.save(subscription);
-        logger.info("Subscription cancelled successfully for user: {}", userId);
+        if (stripeSubscriptionIds.isEmpty()) {
+            // Nothing billed in Stripe (e.g. trial) - end access now
+            subscription.setStatus(SubscriptionStatus.CANCELLED);
+        } else if (subscription.getStripeSubscriptionId() == null) {
+            subscription.setStripeSubscriptionId(stripeSubscriptionIds.get(0));
+        }
 
+        subscription.setCancelledAt(LocalDateTime.now());
+        subscription.setAutoRenew(false);
+
+        UserSubscription saved = subscriptionRepository.save(subscription);
+        logger.info("Subscription cancelled successfully for user: {}", userId);
+        return saved;
+    }
+
+    /**
+     * Stripe subscriptions for this user that will still bill
+     */
+    private List<String> findBillableStripeSubscriptionIds(UUID userId) {
+        String stripeCustomerId = userRepository.findById(userId)
+                .map(User::getStripeCustomerId)
+                .orElse(null);
+
+        if (stripeCustomerId == null) {
+            return List.of();
+        }
+
+        try {
+            return stripeService.listSubscriptions(stripeCustomerId).stream()
+                    .filter(s -> List.of("active", "trialing", "past_due").contains(s.getStatus()))
+                    .filter(s -> !Boolean.TRUE.equals(s.getCancelAtPeriodEnd()))
+                    .map(Subscription::getId)
+                    .toList();
+        } catch (StripeException e) {
+            logger.error("Failed to list Stripe subscriptions for customer: {}", stripeCustomerId, e);
+            throw new RuntimeException("Could not cancel your subscription. Please try again.", e);
+        }
     }
 
     // ============================================
@@ -535,7 +573,7 @@ public class SubscriptionService {
 
             logger.info("Creating subscription from webhook - User: {}, Plan: {}, Cycle: {}",
                     userId, plan.getName(), billingCycle);
-            createSubscription(userId, plan.getName(), billingCycle);
+            createSubscription(userId, plan, billingCycle, stripeSubscription);
             logger.info("Checkout completed successfully processed");
 
         } catch (Exception e) {
@@ -561,6 +599,21 @@ public class SubscriptionService {
     // ============================================
     // HELPER METHODS
     // ============================================
+
+    /**
+     * End of the current billing period, from Stripe's subscription item
+     */
+    private LocalDateTime getCurrentPeriodEnd(Subscription stripeSubscription, BillingCycle cycle) {
+        Long periodEnd = stripeSubscription.getItems().getData().get(0).getCurrentPeriodEnd();
+
+        if (periodEnd == null) {
+            return cycle == BillingCycle.YEARLY
+                    ? LocalDateTime.now().plusYears(1)
+                    : LocalDateTime.now().plusMonths(1);
+        }
+
+        return LocalDateTime.ofInstant(Instant.ofEpochSecond(periodEnd), ZoneId.systemDefault());
+    }
 
     private SubscriptionPlan getFreePlan() {
         return planRepository.findByName("FREE")

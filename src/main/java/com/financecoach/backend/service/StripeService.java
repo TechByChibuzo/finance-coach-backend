@@ -11,6 +11,8 @@ import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
 
+import java.util.List;
+
 @Service
 public class StripeService {
 
@@ -79,6 +81,31 @@ public class StripeService {
     public Subscription cancelSubscription(String subscriptionId) throws StripeException {
         Subscription subscription = Subscription.retrieve(subscriptionId);
         return subscription.cancel();
+    }
+
+    /**
+     * Cancel subscription at the end of the current billing period.
+     * The customer keeps access until then and is not charged again.
+     */
+    public Subscription cancelSubscriptionAtPeriodEnd(String subscriptionId) throws StripeException {
+        Subscription subscription = Subscription.retrieve(subscriptionId);
+        return subscription.update(
+                SubscriptionUpdateParams.builder()
+                        .setCancelAtPeriodEnd(true)
+                        .build()
+        );
+    }
+
+    /**
+     * List a customer's subscriptions (all statuses)
+     */
+    public List<Subscription> listSubscriptions(String customerId) throws StripeException {
+        SubscriptionListParams params = SubscriptionListParams.builder()
+                .setCustomer(customerId)
+                .setStatus(SubscriptionListParams.Status.ALL)
+                .build();
+
+        return Subscription.list(params).getData();
     }
 
     /**
