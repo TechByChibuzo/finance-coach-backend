@@ -17,8 +17,13 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.net.Inet6Address;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.time.Duration;
+import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * Per-IP rate limits on the public auth endpoints, to slow down password guessing,
@@ -31,6 +36,9 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     private static final Logger logger = LoggerFactory.getLogger(AuthRateLimitFilter.class);
 
     private record Limit(int requests, Duration window) {}
+
+    private static final Pattern IPV4 = Pattern.compile("^\\d{1,3}(\\.\\d{1,3}){3}$");
+    private static final Pattern IPV6 = Pattern.compile("^[0-9a-fA-F:.]+$");
 
     private static final Map<String, Limit> LIMITS = Map.of(
             "/api/auth/login", new Limit(10, Duration.ofMinutes(5)),
@@ -53,14 +61,14 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !"POST".equalsIgnoreCase(request.getMethod()) || !LIMITS.containsKey(request.getRequestURI());
+        return !"POST".equalsIgnoreCase(request.getMethod()) || !LIMITS.containsKey(normalizePath(request));
     }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        String path = request.getRequestURI();
+        String path = normalizePath(request);
         Limit limit = LIMITS.get(path);
         String clientIp = getClientIp(request);
 
@@ -75,16 +83,65 @@ public class AuthRateLimitFilter extends OncePerRequestFilter {
     }
 
     /**
-     * The ALB appends the address it received the request from to X-Forwarded-For, so the
-     * last entry is the one we can trust; earlier entries can be set by the client.
+     * Match the path the way a client could vary it: drop ";params", collapse "//",
+     * ignore a trailing "/" and case. (Spring Security's firewall rejects most of these
+     * anyway; normalizing means the limit can't be skipped even if that changes.)
+     */
+    private String normalizePath(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        if (path == null) {
+            return "";
+        }
+        int semicolon = path.indexOf(';');
+        if (semicolon >= 0) {
+            path = path.substring(0, semicolon);
+        }
+        path = path.replaceAll("/{2,}", "/");
+        if (path.length() > 1 && path.endsWith("/")) {
+            path = path.substring(0, path.length() - 1);
+        }
+        return path.toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * X-Forwarded-For is only trusted when the request comes from a private-network address,
+     * i.e. our load balancer inside the VPC. The ALB appends the address it received the
+     * request from, so the last entry is the one to use; earlier entries are client-supplied.
+     * Requests that reach the app directly are keyed by their own address.
      */
     private String getClientIp(HttpServletRequest request) {
+        String remoteAddr = request.getRemoteAddr();
         String forwardedFor = request.getHeader("X-Forwarded-For");
-        if (StringUtils.hasText(forwardedFor)) {
+
+        if (StringUtils.hasText(forwardedFor) && isPrivateAddress(remoteAddr)) {
             String[] hops = forwardedFor.split(",");
-            return hops[hops.length - 1].trim();
+            String clientIp = hops[hops.length - 1].trim();
+            if (isIpLiteral(clientIp)) {
+                return clientIp;
+            }
         }
-        return request.getRemoteAddr();
+        return remoteAddr;
+    }
+
+    private boolean isIpLiteral(String value) {
+        return IPV4.matcher(value).matches() || (value.contains(":") && IPV6.matcher(value).matches());
+    }
+
+    private boolean isPrivateAddress(String address) {
+        // Only parse literals so InetAddress never does a DNS lookup
+        if (address == null || !isIpLiteral(address)) {
+            return false;
+        }
+        try {
+            InetAddress inet = InetAddress.getByName(address);
+            if (inet.isLoopbackAddress() || inet.isSiteLocalAddress() || inet.isLinkLocalAddress()) {
+                return true;
+            }
+            // IPv6 unique local addresses (fc00::/7)
+            return inet instanceof Inet6Address && (inet.getAddress()[0] & 0xfe) == 0xfc;
+        } catch (UnknownHostException e) {
+            return false;
+        }
     }
 
     private void writeTooManyRequests(HttpServletRequest request, HttpServletResponse response,

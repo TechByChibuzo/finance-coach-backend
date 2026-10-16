@@ -41,4 +41,20 @@ class RateLimiterTest {
         assertThat(rateLimiter.tryAcquire("a", 3, Duration.ofMinutes(1))).isPositive();
         assertThat(rateLimiter.tryAcquire("b", 3, Duration.ofMinutes(1))).isZero();
     }
+
+    @Test
+    void cleanupByAShortWindowCaller_doesNotResetLongerWindows() {
+        // Use up an hourly limit
+        for (int i = 0; i < 5; i++) {
+            rateLimiter.tryAcquire("register|1.2.3.4", 5, Duration.ofHours(1));
+        }
+
+        // 10 minutes later, enough short-window traffic to trigger cleanup
+        now.addAndGet(Duration.ofMinutes(10).toMillis());
+        for (int i = 0; i <= 10_000; i++) {
+            rateLimiter.tryAcquire("login|" + i, 10, Duration.ofMinutes(5));
+        }
+
+        assertThat(rateLimiter.tryAcquire("register|1.2.3.4", 5, Duration.ofHours(1))).isPositive();
+    }
 }

@@ -50,6 +50,36 @@ class AuthRateLimitFilterTest {
     }
 
     @Test
+    void forwardedFor_isIgnoredWhenTheRequestDidNotComeThroughOurProxy() throws Exception {
+        // A client hitting the app directly (public address) can't pick its own identity
+        for (int i = 0; i < 10; i++) {
+            postFrom("/api/auth/login", "203.0.113.7", "10.0.0." + i);
+        }
+
+        assertThat(postFrom("/api/auth/login", "203.0.113.7", "10.0.0.99").getStatus()).isEqualTo(429);
+    }
+
+    @Test
+    void forwardedFor_thatIsNotAnIp_fallsBackToTheProxyAddress() throws Exception {
+        for (int i = 0; i < 10; i++) {
+            postFrom("/api/auth/login", "10.0.1.5", "not-an-ip-" + i);
+        }
+
+        assertThat(postFrom("/api/auth/login", "10.0.1.5", "still-not-an-ip").getStatus()).isEqualTo(429);
+    }
+
+    @Test
+    void pathVariants_shareTheSameLimit() throws Exception {
+        String[] variants = {"/api/auth/login", "/api/auth/login/", "//api/auth//login",
+                "/api/auth/login;jsessionid=x", "/API/Auth/Login"};
+        for (int i = 0; i < 10; i++) {
+            assertThat(post(variants[i % variants.length], "1.2.3.4").getStatus()).isEqualTo(200);
+        }
+
+        assertThat(post("/api/auth/login/", "1.2.3.4").getStatus()).isEqualTo(429);
+    }
+
+    @Test
     void endpointsWithoutALimit_areNotFiltered() throws Exception {
         for (int i = 0; i < 20; i++) {
             assertThat(post("/api/budgets", "1.2.3.4").getStatus()).isEqualTo(200);
@@ -64,6 +94,16 @@ class AuthRateLimitFilterTest {
         return response;
     }
 
+    private MockHttpServletResponse postFrom(String path, String remoteAddr, String forwardedFor) throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
+        request.setRemoteAddr(remoteAddr);
+        request.addHeader("X-Forwarded-For", forwardedFor);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request, response, new MockFilterChain());
+        return response;
+    }
+
+    // Default remote address is 127.0.0.1, i.e. coming through a trusted local proxy
     private MockHttpServletResponse postVia(String path, String forwardedFor) throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", path);
         request.addHeader("X-Forwarded-For", forwardedFor);

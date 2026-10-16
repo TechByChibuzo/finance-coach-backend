@@ -36,12 +36,13 @@ public class RateLimiter {
         long now = clockMillis.getAsLong();
         long windowMillis = window.toMillis();
 
+        // Each entry expires on its own window, so a short-window caller can't reset longer windows
         if (windows.size() > CLEANUP_THRESHOLD) {
-            windows.values().removeIf(w -> now - w.start >= windowMillis);
+            windows.values().removeIf(w -> now - w.start >= w.windowMillis);
         }
 
         Window current = windows.compute(key, (k, w) ->
-                w == null || now - w.start >= windowMillis ? new Window(now) : w.increment());
+                w == null || now - w.start >= w.windowMillis ? new Window(now, windowMillis) : w.increment());
 
         if (current.count <= limit) {
             return 0;
@@ -51,19 +52,21 @@ public class RateLimiter {
 
     private static final class Window {
         private final long start;
+        private final long windowMillis;
         private final int count;
 
-        private Window(long start) {
-            this(start, 1);
+        private Window(long start, long windowMillis) {
+            this(start, windowMillis, 1);
         }
 
-        private Window(long start, int count) {
+        private Window(long start, long windowMillis, int count) {
             this.start = start;
+            this.windowMillis = windowMillis;
             this.count = count;
         }
 
         private Window increment() {
-            return new Window(start, count + 1);
+            return new Window(start, windowMillis, count + 1);
         }
     }
 }
