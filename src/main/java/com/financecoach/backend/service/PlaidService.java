@@ -253,7 +253,6 @@ public class PlaidService {
                 logger.error("Status Code: {}", response.code());
                 logger.error("Status Message: {}", response.message());
                 logger.error("Error Body: {}", errorBody);
-                logger.error("Access Token: {}", accessToken);
                 logger.error("=====================");
 
                 throw new PlaidIntegrationException(
