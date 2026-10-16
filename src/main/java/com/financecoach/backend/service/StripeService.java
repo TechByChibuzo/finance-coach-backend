@@ -1,6 +1,7 @@
 package com.financecoach.backend.service;
 
 import com.stripe.Stripe;
+import com.stripe.exception.InvalidRequestException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.*;
 import com.stripe.model.checkout.Session;
@@ -101,6 +102,21 @@ public class StripeService {
                         .setCancelAtPeriodEnd(true)
                         .build()
         );
+    }
+
+    /**
+     * Permanently delete a customer (and their stored email, name and payment methods).
+     * Stripe also cancels any of the customer's subscriptions immediately.
+     * A customer that no longer exists counts as deleted.
+     */
+    public void deleteCustomer(String customerId) throws StripeException {
+        try {
+            Customer.retrieve(customerId).delete();
+        } catch (InvalidRequestException e) {
+            if (!"resource_missing".equals(e.getCode())) {
+                throw e;
+            }
+        }
     }
 
     /**

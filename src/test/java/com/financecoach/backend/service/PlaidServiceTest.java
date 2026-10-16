@@ -139,13 +139,30 @@ class PlaidServiceTest {
 
         int removed = plaidService.removeAllItemsForUser(userId);
 
-        // Both tokens are attempted; an item Plaid no longer knows about doesn't block deletion
+        // Both tokens are attempted; an item Plaid no longer knows about counts as revoked
         org.mockito.ArgumentCaptor<com.plaid.client.model.ItemRemoveRequest> requests =
                 org.mockito.ArgumentCaptor.forClass(com.plaid.client.model.ItemRemoveRequest.class);
         verify(plaidClient, org.mockito.Mockito.times(2)).itemRemove(requests.capture());
         assertThat(requests.getAllValues()).extracting(com.plaid.client.model.ItemRemoveRequest::getAccessToken)
                 .containsExactly("access-item", "access-legacy");
-        assertThat(removed).isEqualTo(1);
+        assertThat(removed).isEqualTo(2);
+    }
+
+    @Test
+    void removeAllItemsForUser_whenPlaidIsUnavailable_throwsSoDeletionCanBeRetried() throws Exception {
+        UUID userId = UUID.randomUUID();
+        item.setUserId(userId);
+        when(plaidItemRepository.findByUserId(userId)).thenReturn(List.of(item));
+        when(bankAccountRepository.findByUserId(userId)).thenReturn(List.of());
+
+        @SuppressWarnings("unchecked")
+        Call<com.plaid.client.model.ItemRemoveResponse> outage = mock(Call.class);
+        when(outage.execute()).thenReturn(Response.error(500, ResponseBody.create(
+                "{\"error_code\": \"INTERNAL_SERVER_ERROR\"}", MediaType.get("application/json"))));
+        when(plaidClient.itemRemove(any())).thenReturn(outage);
+
+        assertThatThrownBy(() -> plaidService.removeAllItemsForUser(userId))
+                .isInstanceOf(PlaidIntegrationException.class);
     }
 
     private BankAccount account(String plaidAccountId, String balance) {

@@ -24,8 +24,10 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -457,20 +459,47 @@ public class SubscriptionService {
      * Throws if Stripe can't be reached, so an account is never deleted while still being billed.
      */
     public void cancelAllForAccountDeletion(UUID userId) {
-        // Includes subscriptions already set to cancel at period end: the account is going away now
-        List<String> stripeSubscriptionIds = findBillableStripeSubscriptionIds(userId, true);
+        String stripeCustomerId = userRepository.findById(userId)
+                .map(User::getStripeCustomerId)
+                .orElse(null);
 
         try {
-            for (String stripeSubscriptionId : stripeSubscriptionIds) {
+            // Subscriptions under the customer, plus any recorded locally (covers rows whose
+            // user never got a stripeCustomerId stored)
+            Set<String> candidateIds = new LinkedHashSet<>();
+            if (stripeCustomerId != null) {
+                stripeService.listSubscriptions(stripeCustomerId).stream()
+                        .filter(s -> STILL_RUNNING_STATUSES.contains(s.getStatus()))
+                        .forEach(s -> candidateIds.add(s.getId()));
+            }
+            for (UserSubscription local : subscriptionRepository.findByUserIdOrderByCreatedAtDesc(userId)) {
+                String id = local.getStripeSubscriptionId();
+                if (id != null && !candidateIds.contains(id)
+                        && STILL_RUNNING_STATUSES.contains(stripeService.retrieveSubscription(id).getStatus())) {
+                    candidateIds.add(id);
+                }
+            }
+
+            for (String stripeSubscriptionId : candidateIds) {
                 stripeService.cancelSubscription(stripeSubscriptionId);
                 logger.info("Cancelled Stripe subscription {} for deleted user {}", stripeSubscriptionId, userId);
             }
+
+            // Remove the customer record (email, name, payment methods) from Stripe as well
+            if (stripeCustomerId != null) {
+                stripeService.deleteCustomer(stripeCustomerId);
+                logger.info("Deleted Stripe customer {} for deleted user {}", stripeCustomerId, userId);
+            }
         } catch (StripeException e) {
-            logger.error("Failed to cancel Stripe subscription for user being deleted: {}", userId, e);
+            logger.error("Failed to cancel Stripe billing for user being deleted: {}", userId, e);
             throw new RuntimeException("Could not cancel your subscription, so your account was not deleted. "
                     + "Please try again.", e);
         }
     }
+
+    // Every Stripe subscription status that isn't final (can still bill or resume)
+    private static final Set<String> STILL_RUNNING_STATUSES =
+            Set.of("active", "trialing", "past_due", "unpaid", "incomplete", "paused");
 
     /**
      * Stripe subscriptions for this user that are still running

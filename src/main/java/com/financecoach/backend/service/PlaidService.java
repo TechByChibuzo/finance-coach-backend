@@ -348,12 +348,17 @@ public class PlaidService {
         }
     }
 
+    // Plaid errors meaning the item is already gone or the token no longer works
+    private static final Set<String> ALREADY_REVOKED_ERRORS =
+            Set.of("ITEM_NOT_FOUND", "INVALID_ACCESS_TOKEN", "INVALID_ITEM_ID");
+
     /**
      * Revoke every Plaid item (bank login) the user has linked, so Plaid stops billing for them
-     * and their access tokens stop working. Best effort: an item that is already invalid at Plaid
-     * can't be removed, which shouldn't block deleting the account.
+     * and their access tokens stop working. Items Plaid reports as already gone count as removed.
      *
-     * @return the number of items Plaid confirmed as removed
+     * @return the number of items revoked
+     * @throws PlaidIntegrationException on any other failure (network, rate limit, Plaid outage),
+     *         so account deletion stops and can be retried instead of leaving access live
      */
     public int removeAllItemsForUser(UUID userId) {
         // Items, plus tokens of accounts linked before items were stored
@@ -369,17 +374,23 @@ public class PlaidService {
                 Response<ItemRemoveResponse> response = plaidClient
                         .itemRemove(new ItemRemoveRequest().accessToken(accessToken))
                         .execute();
-                if (response.isSuccessful()) {
-                    removed++;
-                } else {
-                    logger.warn("Plaid item removal failed for user {}: HTTP {}", userId, response.code());
+
+                if (!response.isSuccessful()) {
+                    String errorBody = response.errorBody() != null ? response.errorBody().string() : "";
+                    boolean alreadyRevoked = ALREADY_REVOKED_ERRORS.stream().anyMatch(errorBody::contains);
+                    if (!alreadyRevoked) {
+                        throw new PlaidIntegrationException(
+                                "Failed to revoke Plaid item (HTTP " + response.code() + ")");
+                    }
+                    logger.info("Plaid item for user {} was already revoked", userId);
                 }
+                removed++;
             } catch (IOException e) {
-                logger.warn("Network error removing Plaid item for user {}", userId, e);
+                throw new PlaidIntegrationException("Network error revoking Plaid item", e);
             }
         }
 
-        logger.info("Removed {}/{} Plaid items for user {}", removed, accessTokens.size(), userId);
+        logger.info("Revoked {} Plaid items for user {}", removed, userId);
         return removed;
     }
 

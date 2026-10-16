@@ -172,6 +172,22 @@ class SubscriptionServiceTest {
         verify(stripeService).cancelSubscription("sub_live");
         verify(stripeService).cancelSubscription("sub_ending");
         verify(stripeService, never()).cancelSubscription("sub_old");
+        verify(stripeService).deleteCustomer("cus_1");
+    }
+
+    @Test
+    void cancelAllForAccountDeletion_alsoCancelsLocallyRecordedSubscriptions_andUnpaidOnes() throws Exception {
+        when(userRepository.findById(userId)).thenReturn(Optional.of(new User())); // no Stripe customer stored
+        when(subscriptionRepository.findByUserIdOrderByCreatedAtDesc(userId))
+                .thenReturn(List.of(activeSubscription("sub_local"), activeSubscription("sub_done")));
+        when(stripeService.retrieveSubscription("sub_local")).thenReturn(stripeSubscription("sub_local", "unpaid", false));
+        when(stripeService.retrieveSubscription("sub_done")).thenReturn(stripeSubscription("sub_done", "canceled", false));
+
+        subscriptionService.cancelAllForAccountDeletion(userId);
+
+        verify(stripeService).cancelSubscription("sub_local");
+        verify(stripeService, never()).cancelSubscription("sub_done");
+        verify(stripeService, never()).deleteCustomer(anyString());
     }
 
     @Test

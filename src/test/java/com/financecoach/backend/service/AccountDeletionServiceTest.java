@@ -1,5 +1,6 @@
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.exception.PlaidIntegrationException;
 import com.financecoach.backend.exception.UserNotFoundException;
 import com.financecoach.backend.repository.*;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,10 +11,15 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
+
 import java.util.UUID;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -43,6 +49,7 @@ class AccountDeletionServiceTest {
     @Mock private PasswordResetTokenRepository passwordResetTokenRepository;
     @Mock private UserSubscriptionRepository userSubscriptionRepository;
     @Mock private PaymentRepository paymentRepository;
+    @Mock private TransactionTemplate transactionTemplate;
 
     @InjectMocks
     private AccountDeletionService accountDeletionService;
@@ -57,6 +64,7 @@ class AccountDeletionServiceTest {
     @Test
     void deleteAccount_cancelsBilling_revokesBanks_thenDeletesEverything() {
         when(userRepository.existsById(userId)).thenReturn(true);
+        runTransactionCallbacks();
 
         accountDeletionService.deleteAccount(userId);
 
@@ -97,11 +105,32 @@ class AccountDeletionServiceTest {
     }
 
     @Test
+    void deleteAccount_whenPlaidRevocationFails_deletesNothingLocally() {
+        when(userRepository.existsById(userId)).thenReturn(true);
+        doThrow(new PlaidIntegrationException("Plaid down"))
+                .when(plaidService).removeAllItemsForUser(userId);
+
+        assertThatThrownBy(() -> accountDeletionService.deleteAccount(userId))
+                .isInstanceOf(PlaidIntegrationException.class);
+
+        verifyNoInteractions(transactionTemplate, transactionRepository, bankAccountRepository);
+        verify(userRepository, never()).deleteById(any());
+    }
+
+    @Test
     void deleteAccount_forUnknownUser_throwsNotFound() {
         when(userRepository.existsById(userId)).thenReturn(false);
 
         assertThatThrownBy(() -> accountDeletionService.deleteAccount(userId))
                 .isInstanceOf(UserNotFoundException.class);
         verifyNoInteractions(subscriptionService, plaidService);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void runTransactionCallbacks() {
+        doAnswer(inv -> {
+            ((Consumer<TransactionStatus>) inv.getArgument(0)).accept(null);
+            return null;
+        }).when(transactionTemplate).executeWithoutResult(any());
     }
 }

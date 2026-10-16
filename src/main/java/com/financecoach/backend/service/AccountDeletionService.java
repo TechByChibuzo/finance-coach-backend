@@ -5,7 +5,7 @@ import com.financecoach.backend.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.UUID;
 
@@ -13,9 +13,12 @@ import java.util.UUID;
  * Deletes a user's account and everything tied to it.
  *
  * Tables reference users by a plain user_id column with no foreign keys, so nothing
- * cascades: every table has to be cleared explicitly. External services are handled
- * first: Stripe billing is cancelled (deletion stops if that fails, so nobody is charged
- * for a deleted account) and Plaid items are revoked (best effort).
+ * cascades: every table has to be cleared explicitly.
+ *
+ * External services are handled first, outside the database transaction: Stripe billing is
+ * cancelled and the customer deleted, then Plaid items are revoked. If either fails, nothing
+ * is deleted locally and the request can simply be retried; every step is idempotent
+ * (already-cancelled subscriptions, deleted customers and revoked items are skipped).
  */
 @Service
 public class AccountDeletionService {
@@ -41,6 +44,7 @@ public class AccountDeletionService {
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final UserSubscriptionRepository userSubscriptionRepository;
     private final PaymentRepository paymentRepository;
+    private final TransactionTemplate transactionTemplate;
 
     public AccountDeletionService(UserRepository userRepository,
                                   SubscriptionService subscriptionService,
@@ -60,7 +64,8 @@ public class AccountDeletionService {
                                   UsageTrackingRepository usageTrackingRepository,
                                   PasswordResetTokenRepository passwordResetTokenRepository,
                                   UserSubscriptionRepository userSubscriptionRepository,
-                                  PaymentRepository paymentRepository) {
+                                  PaymentRepository paymentRepository,
+                                  TransactionTemplate transactionTemplate) {
         this.userRepository = userRepository;
         this.subscriptionService = subscriptionService;
         this.plaidService = plaidService;
@@ -80,9 +85,9 @@ public class AccountDeletionService {
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.userSubscriptionRepository = userSubscriptionRepository;
         this.paymentRepository = paymentRepository;
+        this.transactionTemplate = transactionTemplate;
     }
 
-    @Transactional
     public void deleteAccount(UUID userId) {
         logger.info("Deleting account for user: {}", userId);
 
@@ -90,13 +95,19 @@ public class AccountDeletionService {
             throw new UserNotFoundException(userId);
         }
 
-        // 1. Stop billing. Throws (and deletes nothing) if Stripe can't be reached.
+        // 1. Stop billing and remove the Stripe customer. Throws (deleting nothing) on failure.
         subscriptionService.cancelAllForAccountDeletion(userId);
 
-        // 2. Revoke bank connections at Plaid (best effort)
+        // 2. Revoke bank connections at Plaid. Throws (deleting nothing) on failure.
         plaidService.removeAllItemsForUser(userId);
 
-        // 3. Delete the user's data, then the user
+        // 3. Delete the user's data, then the user, in one short transaction
+        transactionTemplate.executeWithoutResult(status -> purgeLocalData(userId));
+
+        logger.info("Account deleted for user: {}", userId);
+    }
+
+    private void purgeLocalData(UUID userId) {
         transactionEmbeddingRepository.deleteAllByUserId(userId);
         transactionRepository.deleteAllByUserId(userId);
         holdingRepository.deleteAllByUserId(userId);
@@ -114,7 +125,5 @@ public class AccountDeletionService {
         userSubscriptionRepository.deleteAllByUserId(userId);
         paymentRepository.deleteAllByUserId(userId);
         userRepository.deleteById(userId);
-
-        logger.info("Account deleted for user: {}", userId);
     }
 }
