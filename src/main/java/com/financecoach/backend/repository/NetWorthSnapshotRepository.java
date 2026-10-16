@@ -2,6 +2,9 @@ package com.financecoach.backend.repository;
 
 import com.financecoach.backend.model.NetWorthSnapshot;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
@@ -21,4 +24,9 @@ public interface NetWorthSnapshotRepository extends JpaRepository<NetWorthSnapsh
             UUID userId,
             LocalDate startDate
     );
+
+    // Account deletion: remove all of the user's rows in one statement
+    @Modifying
+    @Query("DELETE FROM NetWorthSnapshot n WHERE n.userId = :userId")
+    int deleteAllByUserId(@Param("userId") UUID userId);
 }

@@ -2,7 +2,9 @@ package com.financecoach.backend.repository;
 
 import com.financecoach.backend.model.ManualLiability;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigDecimal;
@@ -16,4 +18,9 @@ public interface ManualLiabilityRepository extends JpaRepository<ManualLiability
 
     @Query("SELECT COALESCE(SUM(l.balance), 0) FROM ManualLiability l WHERE l.userId = :userId")
     BigDecimal getTotalBalanceByUserId(UUID userId);
+
+    // Account deletion: remove all of the user's rows in one statement
+    @Modifying
+    @Query("DELETE FROM ManualLiability m WHERE m.userId = :userId")
+    int deleteAllByUserId(@Param("userId") UUID userId);
 }

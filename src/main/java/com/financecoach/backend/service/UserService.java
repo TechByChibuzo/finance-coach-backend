@@ -120,18 +120,6 @@ public class UserService {
     }
 
     /**
-     * Delete user
-     * Throws UserNotFoundException if not found
-     */
-    public void deleteUser(UUID id) {
-        logger.info("Attempting to delete user: {}", id);
-        if (!userRepository.existsById(id)) {
-            throw new UserNotFoundException(id);
-        }
-        userRepository.deleteById(id);
-    }
-
-    /**
      * Canonical form of an email address: trimmed and lower-cased, so "Foo@X.com " and
      * "foo@x.com" are the same account.
      */

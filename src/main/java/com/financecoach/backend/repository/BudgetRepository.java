@@ -3,6 +3,7 @@ package com.financecoach.backend.repository;
 
 import com.financecoach.backend.model.Budget;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -59,4 +60,9 @@ public interface BudgetRepository extends JpaRepository<Budget, UUID> {
     List<Budget> findByUserIdAndMonthBetween(@Param("userId") UUID userId,
                                              @Param("startMonth") LocalDate startMonth,
                                              @Param("endMonth") LocalDate endMonth);
+
+    // Account deletion: remove all of the user's rows in one statement
+    @Modifying
+    @Query("DELETE FROM Budget b WHERE b.userId = :userId")
+    int deleteAllByUserId(@Param("userId") UUID userId);
 }

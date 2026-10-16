@@ -3,6 +3,7 @@ package com.financecoach.backend.repository;
 
 import com.financecoach.backend.model.Transaction;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -27,4 +28,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
     @Query("SELECT t FROM Transaction t WHERE t.userId = :userId AND t.category = :category")
     List<Transaction> findByUserIdAndCategory(@Param("userId") UUID userId, @Param("category") String category);
+
+    // Account deletion: remove all of the user's rows in one statement
+    @Modifying
+    @Query("DELETE FROM Transaction t WHERE t.userId = :userId")
+    int deleteAllByUserId(@Param("userId") UUID userId);
 }

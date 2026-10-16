@@ -22,8 +22,10 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -344,6 +346,41 @@ public class PlaidService {
             }
             bankAccountRepository.save(account);
         }
+    }
+
+    /**
+     * Revoke every Plaid item (bank login) the user has linked, so Plaid stops billing for them
+     * and their access tokens stop working. Best effort: an item that is already invalid at Plaid
+     * can't be removed, which shouldn't block deleting the account.
+     *
+     * @return the number of items Plaid confirmed as removed
+     */
+    public int removeAllItemsForUser(UUID userId) {
+        // Items, plus tokens of accounts linked before items were stored
+        Set<String> accessTokens = new LinkedHashSet<>();
+        plaidItemRepository.findByUserId(userId).forEach(item -> accessTokens.add(item.getAccessToken()));
+        bankAccountRepository.findByUserId(userId).stream()
+                .filter(account -> account.getItemId() == null)
+                .forEach(account -> accessTokens.add(account.getPlaidAccessToken()));
+
+        int removed = 0;
+        for (String accessToken : accessTokens) {
+            try {
+                Response<ItemRemoveResponse> response = plaidClient
+                        .itemRemove(new ItemRemoveRequest().accessToken(accessToken))
+                        .execute();
+                if (response.isSuccessful()) {
+                    removed++;
+                } else {
+                    logger.warn("Plaid item removal failed for user {}: HTTP {}", userId, response.code());
+                }
+            } catch (IOException e) {
+                logger.warn("Network error removing Plaid item for user {}", userId, e);
+            }
+        }
+
+        logger.info("Removed {}/{} Plaid items for user {}", removed, accessTokens.size(), userId);
+        return removed;
     }
 
     /**

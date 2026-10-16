@@ -3,6 +3,7 @@ package com.financecoach.backend.repository;
 import com.financecoach.backend.model.UserSubscription;
 import com.financecoach.backend.model.SubscriptionStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -62,4 +63,9 @@ public interface UserSubscriptionRepository extends JpaRepository<UserSubscripti
      * Find any subscription for user (active or not)
      */
     Optional<UserSubscription> findByUserId(UUID userId);
+
+    // Account deletion: remove all of the user's rows in one statement
+    @Modifying
+    @Query("DELETE FROM UserSubscription u WHERE u.userId = :userId")
+    int deleteAllByUserId(@Param("userId") UUID userId);
 }

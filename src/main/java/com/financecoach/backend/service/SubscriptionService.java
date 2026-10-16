@@ -425,7 +425,7 @@ public class SubscriptionService {
         // Older rows never stored the Stripe subscription ID - look it up via the Stripe customer
         List<String> stripeSubscriptionIds = subscription.getStripeSubscriptionId() != null
                 ? List.of(subscription.getStripeSubscriptionId())
-                : findBillableStripeSubscriptionIds(userId);
+                : findBillableStripeSubscriptionIds(userId, false);
 
         try {
             for (String stripeSubscriptionId : stripeSubscriptionIds) {
@@ -453,9 +453,31 @@ public class SubscriptionService {
     }
 
     /**
-     * Stripe subscriptions for this user that will still bill
+     * Cancel all of the user's Stripe subscriptions immediately, for account deletion.
+     * Throws if Stripe can't be reached, so an account is never deleted while still being billed.
      */
-    private List<String> findBillableStripeSubscriptionIds(UUID userId) {
+    public void cancelAllForAccountDeletion(UUID userId) {
+        // Includes subscriptions already set to cancel at period end: the account is going away now
+        List<String> stripeSubscriptionIds = findBillableStripeSubscriptionIds(userId, true);
+
+        try {
+            for (String stripeSubscriptionId : stripeSubscriptionIds) {
+                stripeService.cancelSubscription(stripeSubscriptionId);
+                logger.info("Cancelled Stripe subscription {} for deleted user {}", stripeSubscriptionId, userId);
+            }
+        } catch (StripeException e) {
+            logger.error("Failed to cancel Stripe subscription for user being deleted: {}", userId, e);
+            throw new RuntimeException("Could not cancel your subscription, so your account was not deleted. "
+                    + "Please try again.", e);
+        }
+    }
+
+    /**
+     * Stripe subscriptions for this user that are still running
+     *
+     * @param includeEndingAtPeriodEnd also include subscriptions already set to cancel at period end
+     */
+    private List<String> findBillableStripeSubscriptionIds(UUID userId, boolean includeEndingAtPeriodEnd) {
         String stripeCustomerId = userRepository.findById(userId)
                 .map(User::getStripeCustomerId)
                 .orElse(null);
@@ -467,7 +489,7 @@ public class SubscriptionService {
         try {
             return stripeService.listSubscriptions(stripeCustomerId).stream()
                     .filter(s -> List.of("active", "trialing", "past_due").contains(s.getStatus()))
-                    .filter(s -> !Boolean.TRUE.equals(s.getCancelAtPeriodEnd()))
+                    .filter(s -> includeEndingAtPeriodEnd || !Boolean.TRUE.equals(s.getCancelAtPeriodEnd()))
                     .map(Subscription::getId)
                     .toList();
         } catch (StripeException e) {

@@ -157,6 +157,35 @@ class SubscriptionServiceTest {
                 .hasMessageContaining("No active subscription");
     }
 
+    @Test
+    void cancelAllForAccountDeletion_cancelsImmediately_includingSubscriptionsEndingAtPeriodEnd() throws Exception {
+        User user = new User();
+        user.setStripeCustomerId("cus_1");
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(stripeService.listSubscriptions("cus_1")).thenReturn(List.of(
+                stripeSubscription("sub_live", "active", false),
+                stripeSubscription("sub_ending", "active", true),
+                stripeSubscription("sub_old", "canceled", false)));
+
+        subscriptionService.cancelAllForAccountDeletion(userId);
+
+        verify(stripeService).cancelSubscription("sub_live");
+        verify(stripeService).cancelSubscription("sub_ending");
+        verify(stripeService, never()).cancelSubscription("sub_old");
+    }
+
+    @Test
+    void cancelAllForAccountDeletion_whenStripeFails_throws() throws Exception {
+        User user = new User();
+        user.setStripeCustomerId("cus_1");
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(stripeService.listSubscriptions("cus_1")).thenReturn(List.of(stripeSubscription("sub_live", "active", false)));
+        when(stripeService.cancelSubscription("sub_live")).thenThrow(new ApiConnectionException("down"));
+
+        assertThatThrownBy(() -> subscriptionService.cancelAllForAccountDeletion(userId))
+                .hasMessageContaining("not deleted");
+    }
+
     // --- createSubscription ---
 
     @Test

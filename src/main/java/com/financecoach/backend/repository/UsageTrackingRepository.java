@@ -2,6 +2,7 @@ package com.financecoach.backend.repository;
 
 import com.financecoach.backend.model.UsageTracking;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -64,4 +65,9 @@ public interface UsageTrackingRepository extends JpaRepository<UsageTracking, UU
             @Param("featureName") String featureName,
             @Param("startDate") LocalDate startDate
     );
+
+    // Account deletion: remove all of the user's rows in one statement
+    @Modifying
+    @Query("DELETE FROM UsageTracking u WHERE u.userId = :userId")
+    int deleteAllByUserId(@Param("userId") UUID userId);
 }

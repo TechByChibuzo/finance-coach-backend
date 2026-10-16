@@ -2,6 +2,7 @@
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.dto.UserResponse;
+import com.financecoach.backend.service.AccountDeletionService;
 import com.financecoach.backend.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -16,10 +17,12 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
+    private final AccountDeletionService accountDeletionService;
 
     @Autowired
-    public UserController(UserService userService) {
+    public UserController(UserService userService, AccountDeletionService accountDeletionService) {
         this.userService = userService;
+        this.accountDeletionService = accountDeletionService;
     }
 
     /**
@@ -43,13 +46,13 @@ public class UserController {
     }
 
     /**
-     * Delete current user
+     * Delete current user and all of their data
      * DELETE /api/users/me
      */
     @DeleteMapping("/me")
     public ResponseEntity<Void> deleteCurrentUser() {
         UUID userId = getCurrentUserId();
-        userService.deleteUser(userId);
+        accountDeletionService.deleteAccount(userId);
         return ResponseEntity.noContent().build();
     }
 
