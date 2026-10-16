@@ -51,8 +51,12 @@ public class AICoachService {
         // RAG — retrieve relevant transactions
         List<String> relevantContext = vectorStoreService.retrieveRelevantContext(userId, userMessage);
 
-        // Build system prompt with RAG context
-        String systemPrompt = buildSystemPrompt(relevantContext);
+        // Exact totals from all transactions. Retrieved rows are only a sample, so Claude
+        // must not add them up to answer "how much did I spend on X" questions.
+        String financialSummary = buildUserFinancialContext(userId);
+
+        // Build system prompt with the summary and RAG context
+        String systemPrompt = buildSystemPrompt(financialSummary, relevantContext);
 
         // Load conversation history for this session
         List<ClaudeService.ConversationTurn> history = conversationService.getHistory(userId, sessionId);
@@ -73,7 +77,7 @@ public class AICoachService {
         conversationService.clearSession(userId, sessionId);
     }
 
-    private String buildSystemPrompt(List<String> relevantTransactions) {
+    private String buildSystemPrompt(String financialSummary, List<String> relevantTransactions) {
         String contextBlock = relevantTransactions.isEmpty()
                 ? "No transaction data available yet. Encourage the user to connect their bank account."
                 : String.join("\n", relevantTransactions);
@@ -82,12 +86,19 @@ public class AICoachService {
         You are a friendly and knowledgeable personal finance coach.
         You help users understand their spending, save money, and make better financial decisions.
         
-        Be conversational, supportive, and specific. Use the user's actual transaction data below
-        to give personalized advice. Don't make up numbers — only reference what's in the context.
+        Be conversational, supportive, and specific. Use the user's actual data below to give
+        personalized advice. Don't make up numbers — only reference what's in the context.
+        
+        For totals, sums, averages and comparisons, use the FINANCIAL SUMMARY: it is computed from
+        all of the user's transactions. The RELEVANT TRANSACTIONS are only a sample of individual
+        transactions related to the question - use them for examples and details, never add them
+        up to produce a total. If the user asks about a period the summary doesn't cover, say so.
         
         Keep responses concise (2-3 paragraphs max) unless the user asks for detailed analysis.
         
-        RELEVANT TRANSACTION CONTEXT (retrieved based on the user's question):
+        """ + financialSummary + """
+        
+        RELEVANT TRANSACTIONS (sample retrieved based on the user's question):
         """ + contextBlock;
     }
 
@@ -295,30 +306,50 @@ public class AICoachService {
     // ==================== HELPER METHODS ====================
 
     /**
-     * Build financial context for the user
+     * Build financial context for the user: exact totals for this month so far and last month
      */
     private String buildUserFinancialContext(UUID userId) {
-        LocalDate endDate = LocalDate.now();
-        LocalDate startDate = endDate.minusDays(30);
+        LocalDate today = LocalDate.now();
+        LocalDate thisMonthStart = today.withDayOfMonth(1);
+        LocalDate lastMonthStart = thisMonthStart.minusMonths(1);
+        LocalDate lastMonthEnd = thisMonthStart.minusDays(1);
 
-        BigDecimal totalSpending = analyticsService.getTotalSpending(userId, startDate, endDate);
-        Map<String, BigDecimal> categoryBreakdown = analyticsService.getSpendingByCategory(userId, startDate, endDate);
-        Map<String, BigDecimal> topMerchants = analyticsService.getTopMerchants(userId, startDate, endDate, 5);
+        return "FINANCIAL SUMMARY (exact totals from all transactions; transfers between the user's "
+                + "own accounts are excluded):\n\n"
+                + summarizePeriod(userId, "This month to date", thisMonthStart, today)
+                + "\n"
+                + summarizePeriod(userId, "Last month", lastMonthStart, lastMonthEnd);
+    }
+
+    private String summarizePeriod(UUID userId, String label, LocalDate start, LocalDate end) {
+        BigDecimal spending = analyticsService.getTotalSpending(userId, start, end);
+        BigDecimal income = analyticsService.getTotalIncome(userId, start, end);
+        Map<String, BigDecimal> categories = analyticsService.getSpendingByCategory(userId, start, end);
+        Map<String, BigDecimal> merchants = analyticsService.getTopMerchants(userId, start, end, 5);
 
         return String.format("""
-            User's Financial Context (Last 30 days):
-            Total Spending: $%.2f
-            
-            Spending by Category:
+            %s (%s to %s):
+            Total spending: %s
+            Total income: %s
+            Spending by category:
             %s
-            
-            Top Merchants:
+            Top merchants:
             %s
             """,
-                totalSpending,
-                formatCategoryBreakdown(categoryBreakdown),
-                formatTopMerchants(topMerchants)
+                label, start, end,
+                formatMoney(spending),
+                formatMoney(income),
+                orNone(formatCategoryBreakdown(categories)),
+                orNone(formatTopMerchants(merchants))
         );
+    }
+
+    private String formatMoney(BigDecimal amount) {
+        return String.format("$%.2f", amount != null ? amount : BigDecimal.ZERO);
+    }
+
+    private String orNone(String lines) {
+        return lines == null || lines.isBlank() ? "- none" : lines;
     }
 
     /**

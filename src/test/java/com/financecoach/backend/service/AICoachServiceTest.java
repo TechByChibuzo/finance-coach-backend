@@ -91,6 +91,30 @@ class AICoachServiceTest {
     }
 
     @Test
+    void chat_givesClaudeExactTotalsForAggregateQuestions() {
+        LocalDate monthStart = LocalDate.now().withDayOfMonth(1);
+        when(vectorStoreService.retrieveRelevantContext(any(), any())).thenReturn(List.of("Starbucks $5.00"));
+        when(conversationService.getHistory(any(), any())).thenReturn(List.of());
+        when(analyticsService.getTotalSpending(eq(userId), eq(monthStart), any())).thenReturn(new BigDecimal("642.50"));
+        when(analyticsService.getSpendingByCategory(eq(userId), eq(monthStart), any()))
+                .thenReturn(Map.of("FOOD_AND_DRINK", new BigDecimal("318.20")));
+        when(claudeService.chat(anyString(), anyString(), anyList())).thenReturn("advice");
+
+        aiCoachService.chat(userId, "How much did I spend on food this month?", "s1");
+
+        ArgumentCaptor<String> systemPromptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(claudeService).chat(anyString(), systemPromptCaptor.capture(), anyList());
+        assertThat(systemPromptCaptor.getValue())
+                .contains("FINANCIAL SUMMARY")
+                .contains("This month to date")
+                .contains("Total spending: $642.50")
+                .contains("- FOOD_AND_DRINK: $318.20")
+                .contains("Last month")
+                .contains("never add them")
+                .contains("Starbucks $5.00");
+    }
+
+    @Test
     void chat_usesFallbackPromptWhenNoContextAvailable() {
         when(vectorStoreService.retrieveRelevantContext(any(), any())).thenReturn(List.of());
         when(conversationService.getHistory(any(), any())).thenReturn(List.of());
