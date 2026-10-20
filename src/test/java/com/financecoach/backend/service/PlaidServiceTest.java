@@ -5,6 +5,7 @@ import com.financecoach.backend.model.BankAccount;
 import com.financecoach.backend.model.PlaidItem;
 import com.financecoach.backend.repository.BankAccountRepository;
 import com.financecoach.backend.repository.PlaidItemRepository;
+import com.financecoach.backend.repository.UserRepository;
 import com.plaid.client.model.AccountBalance;
 import com.plaid.client.model.AccountBase;
 import com.plaid.client.model.AccountsGetRequest;
@@ -17,6 +18,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import retrofit2.Call;
 import retrofit2.Response;
 
@@ -39,6 +42,8 @@ class PlaidServiceTest {
     @Mock private BankAccountRepository bankAccountRepository;
     @Mock private PlaidItemRepository plaidItemRepository;
     @Mock private SubscriptionService subscriptionService;
+    @Mock private UserRepository userRepository;
+    @Mock private PlatformTransactionManager transactionManager;
 
     private PlaidService plaidService;
     private PlaidItem item;
@@ -47,7 +52,8 @@ class PlaidServiceTest {
 
     @BeforeEach
     void setUp() {
-        plaidService = new PlaidService(plaidClient, bankAccountRepository, plaidItemRepository, subscriptionService);
+        plaidService = new PlaidService(plaidClient, bankAccountRepository, plaidItemRepository, subscriptionService,
+                userRepository, new TransactionTemplate(transactionManager));
 
         item = new PlaidItem();
         item.setId(UUID.randomUUID());

@@ -31,6 +31,15 @@ public interface BankAccountRepository extends JpaRepository<BankAccount, UUID> 
             + "WHERE a.userId = :userId AND a.isActive = true AND a.itemId IS NOT NULL")
     long countConnectedItems(@Param("userId") UUID userId);
 
+    // Active connections linked before items were stored (no itemId): one per access token
+    @Query("SELECT COUNT(DISTINCT a.plaidAccessToken) FROM BankAccount a "
+            + "WHERE a.userId = :userId AND a.isActive = true AND a.itemId IS NULL")
+    long countLegacyConnections(@Param("userId") UUID userId);
+
+    default long countBankConnections(UUID userId) {
+        return countConnectedItems(userId) + countLegacyConnections(userId);
+    }
+
     // Touches only last_synced_at, so it can't overwrite balances refreshed in the meantime
     @Transactional
     @Modifying

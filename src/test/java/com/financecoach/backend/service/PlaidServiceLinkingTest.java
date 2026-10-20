@@ -7,6 +7,7 @@ import com.financecoach.backend.model.BankAccount;
 import com.financecoach.backend.model.PlaidItem;
 import com.financecoach.backend.repository.BankAccountRepository;
 import com.financecoach.backend.repository.PlaidItemRepository;
+import com.financecoach.backend.repository.UserRepository;
 import com.plaid.client.model.AccountBalance;
 import com.plaid.client.model.AccountBase;
 import com.plaid.client.model.AccountSubtype;
@@ -33,6 +34,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import retrofit2.Call;
 import retrofit2.Response;
 
@@ -63,6 +66,8 @@ class PlaidServiceLinkingTest {
     @Mock private BankAccountRepository bankAccountRepository;
     @Mock private PlaidItemRepository plaidItemRepository;
     @Mock private SubscriptionService subscriptionService;
+    @Mock private UserRepository userRepository;
+    @Mock private PlatformTransactionManager transactionManager;
     @Mock private MetricsService metricsService;
 
     private PlaidService plaidService;
@@ -70,7 +75,8 @@ class PlaidServiceLinkingTest {
 
     @BeforeEach
     void setUp() {
-        plaidService = new PlaidService(plaidClient, bankAccountRepository, plaidItemRepository, subscriptionService);
+        plaidService = new PlaidService(plaidClient, bankAccountRepository, plaidItemRepository, subscriptionService,
+                userRepository, new TransactionTemplate(transactionManager));
         ReflectionTestUtils.setField(plaidService, "metricsService", metricsService);
         userId = UUID.randomUUID();
         // Unlimited bank connections unless a test says otherwise
@@ -109,7 +115,7 @@ class PlaidServiceLinkingTest {
     @Test
     void createLinkToken_atTheBankConnectionLimit_isRefusedBeforePlaidLinkOpens() throws Exception {
         when(subscriptionService.getLimit(userId, "bank_account")).thenReturn(1);
-        when(bankAccountRepository.countConnectedItems(userId)).thenReturn(1L);
+        when(bankAccountRepository.countBankConnections(userId)).thenReturn(1L);
 
         assertThatThrownBy(() -> plaidService.createLinkToken(userId, "user"))
                 .isInstanceOf(com.financecoach.backend.exception.FeatureNotAvailableException.class)
@@ -120,7 +126,7 @@ class PlaidServiceLinkingTest {
     @Test
     void createLinkToken_underTheLimit_isAllowed() throws Exception {
         when(subscriptionService.getLimit(userId, "bank_account")).thenReturn(5);
-        when(bankAccountRepository.countConnectedItems(userId)).thenReturn(4L);
+        when(bankAccountRepository.countBankConnections(userId)).thenReturn(4L);
         when(plaidClient.linkTokenCreate(any())).thenReturn(ok(new LinkTokenCreateResponse().linkToken("link-123")));
 
         assertThat(plaidService.createLinkToken(userId, "user")).isEqualTo("link-123");
@@ -129,11 +135,43 @@ class PlaidServiceLinkingTest {
     @Test
     void exchangePublicToken_atTheLimit_isRefusedWithoutExchanging() throws Exception {
         when(subscriptionService.getLimit(userId, "bank_account")).thenReturn(1);
-        when(bankAccountRepository.countConnectedItems(userId)).thenReturn(1L);
+        when(bankAccountRepository.countBankConnections(userId)).thenReturn(1L);
 
         assertThatThrownBy(() -> plaidService.exchangePublicToken(userId, "public-token"))
                 .hasMessageContaining("Upgrade to connect more banks");
         verify(plaidClient, never()).itemPublicTokenExchange(any());
+    }
+
+    @Test
+    void exchangePublicToken_whenAnotherConnectionFinishedFirst_isRefusedUnderTheLock_andRevokesTheNewItem() throws Exception {
+        when(subscriptionService.getLimit(userId, "bank_account")).thenReturn(1);
+        // Free when the request starts; taken by a concurrent connection by the time it saves
+        when(bankAccountRepository.countBankConnections(userId)).thenReturn(0L, 1L);
+        stubExchange("access-2", "item-2");
+        when(plaidClient.accountsGet(any())).thenReturn(ok(new AccountsGetResponse()
+                .item(new Item())
+                .accounts(List.of(plaidAccount("acc-1", AccountType.DEPOSITORY, null, null, null)))));
+        when(plaidItemRepository.findByPlaidItemId("item-2")).thenReturn(Optional.empty());
+        when(plaidClient.itemRemove(any())).thenReturn(ok(new com.plaid.client.model.ItemRemoveResponse()));
+
+        assertThatThrownBy(() -> plaidService.exchangePublicToken(userId, "public-token"))
+                .hasMessageContaining("Upgrade to connect more banks");
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(userRepository, bankAccountRepository);
+        order.verify(userRepository).lockById(userId);
+        order.verify(bankAccountRepository).countBankConnections(userId);
+        verify(plaidItemRepository, never()).save(any());
+        verify(bankAccountRepository, never()).save(any());
+        verify(plaidClient).itemRemove(any());
+    }
+
+    @Test
+    void countBankConnections_includesAccountsLinkedBeforeItemsWereStored() {
+        BankAccountRepository repository = mock(BankAccountRepository.class, org.mockito.Mockito.CALLS_REAL_METHODS);
+        org.mockito.Mockito.doReturn(1L).when(repository).countConnectedItems(userId);
+        org.mockito.Mockito.doReturn(2L).when(repository).countLegacyConnections(userId);
+
+        assertThat(repository.countBankConnections(userId)).isEqualTo(3L);
     }
 
     // --- public token exchange ---

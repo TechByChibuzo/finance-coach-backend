@@ -11,10 +11,12 @@ import com.financecoach.backend.model.BankAccount;
 import com.financecoach.backend.model.PlaidItem;
 import com.financecoach.backend.repository.BankAccountRepository;
 import com.financecoach.backend.repository.PlaidItemRepository;
+import com.financecoach.backend.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 import retrofit2.Response;
 
 import java.io.IOException;
@@ -38,6 +40,8 @@ public class PlaidService {
     private final BankAccountRepository bankAccountRepository;
     private final PlaidItemRepository plaidItemRepository;
     private final SubscriptionService subscriptionService;
+    private final UserRepository userRepository;
+    private final TransactionTemplate transactionTemplate;
     @Autowired
     private MetricsService metricsService;
 
@@ -45,11 +49,15 @@ public class PlaidService {
     public PlaidService(PlaidApi plaidClient,
                         BankAccountRepository bankAccountRepository,
                         PlaidItemRepository plaidItemRepository,
-                        SubscriptionService subscriptionService) {
+                        SubscriptionService subscriptionService,
+                        UserRepository userRepository,
+                        TransactionTemplate transactionTemplate) {
         this.plaidClient = plaidClient;
         this.bankAccountRepository = bankAccountRepository;
         this.plaidItemRepository = plaidItemRepository;
         this.subscriptionService = subscriptionService;
+        this.userRepository = userRepository;
+        this.transactionTemplate = transactionTemplate;
     }
 
     /**
@@ -164,55 +172,29 @@ public class PlaidService {
                 }
             }
 
-            // One item per bank login; it owns the access token for all of its accounts
-            PlaidItem item = saveItem(userId, plaidItemId, accessToken, institutionId, institutionName);
+            List<AccountBase> plaidAccounts = accountsResponse.body().getAccounts();
+            String bankName = institutionName;
+            boolean newItem = plaidItemRepository.findByPlaidItemId(plaidItemId).isEmpty();
 
-            // Save accounts to database
-            List<BankAccount> savedAccounts = new ArrayList<>();
-            int accountCount = 0;
-
-            for (AccountBase account : accountsResponse.body().getAccounts()) {
-                // Check if account already exists
-                if (bankAccountRepository.existsByPlaidAccountId(account.getAccountId())) {
-                    logger.debug("Account already exists, skipping: {}", account.getAccountId());
-                    continue;
+            // Re-check the limit and save under a lock on the user row, so two connections
+            // finishing at the same time can't both pass the check above
+            List<BankAccount> savedAccounts;
+            try {
+                savedAccounts = transactionTemplate.execute(status -> {
+                    userRepository.lockById(userId);
+                    ensureCanConnectAnotherBank(userId);
+                    PlaidItem item = saveItem(userId, plaidItemId, accessToken, institutionId, bankName);
+                    return saveNewAccounts(userId, item, accessToken, institutionId, bankName, plaidAccounts);
+                });
+            } catch (FeatureNotAvailableException e) {
+                if (newItem) {
+                    revokeQuietly(accessToken); // don't leave a bank link we won't use
                 }
-
-                BankAccount bankAccount = new BankAccount();
-                bankAccount.setUserId(userId);
-                bankAccount.setItemId(item.getId());
-                bankAccount.setPlaidAccountId(account.getAccountId());
-                bankAccount.setPlaidAccessToken(accessToken);
-                bankAccount.setInstitutionName(institutionName);
-                bankAccount.setInstitutionId(institutionId);
-                bankAccount.setAccountName(account.getName());
-                bankAccount.setAccountType(account.getType().toString());
-                bankAccount.setAccountSubtype(account.getSubtype() != null ?
-                        account.getSubtype().toString() : null);
-
-                // Set balances
-                if (account.getBalances() != null) {
-                    Double currentBalance = account.getBalances().getCurrent();
-                    if (currentBalance != null) {
-                        bankAccount.setCurrentBalance(BigDecimal.valueOf(currentBalance));
-                    }
-                    Double availableBalance = account.getBalances().getAvailable();
-                    if (availableBalance != null) {
-                        bankAccount.setAvailableBalance(BigDecimal.valueOf(availableBalance));
-                    }
-                    if (account.getBalances().getIsoCurrencyCode() != null) {
-                        bankAccount.setCurrencyCode(account.getBalances().getIsoCurrencyCode());
-                    }
-                }
-
-                bankAccount.setLastSyncedAt(LocalDateTime.now());
-                bankAccount.setIsActive(true);
-
-                savedAccounts.add(bankAccountRepository.save(bankAccount));
-                accountCount++;
-
-                metricsService.recordBankAccountConnected();
+                throw e;
             }
+
+            savedAccounts.forEach(account -> metricsService.recordBankAccountConnected());
+            int accountCount = savedAccounts.size();
 
             long duration = System.currentTimeMillis() - startTime;
             metricsService.recordPlaidApiDuration(duration);
@@ -228,13 +210,69 @@ public class PlaidService {
         }
     }
 
+    private List<BankAccount> saveNewAccounts(UUID userId, PlaidItem item, String accessToken,
+                                              String institutionId, String institutionName,
+                                              List<AccountBase> plaidAccounts) {
+        List<BankAccount> savedAccounts = new ArrayList<>();
+
+        for (AccountBase account : plaidAccounts) {
+            // Check if account already exists
+            if (bankAccountRepository.existsByPlaidAccountId(account.getAccountId())) {
+                logger.debug("Account already exists, skipping: {}", account.getAccountId());
+                continue;
+            }
+
+            BankAccount bankAccount = new BankAccount();
+            bankAccount.setUserId(userId);
+            bankAccount.setItemId(item.getId());
+            bankAccount.setPlaidAccountId(account.getAccountId());
+            bankAccount.setPlaidAccessToken(accessToken);
+            bankAccount.setInstitutionName(institutionName);
+            bankAccount.setInstitutionId(institutionId);
+            bankAccount.setAccountName(account.getName());
+            bankAccount.setAccountType(account.getType().toString());
+            bankAccount.setAccountSubtype(account.getSubtype() != null ?
+                    account.getSubtype().toString() : null);
+
+            // Set balances
+            if (account.getBalances() != null) {
+                Double currentBalance = account.getBalances().getCurrent();
+                if (currentBalance != null) {
+                    bankAccount.setCurrentBalance(BigDecimal.valueOf(currentBalance));
+                }
+                Double availableBalance = account.getBalances().getAvailable();
+                if (availableBalance != null) {
+                    bankAccount.setAvailableBalance(BigDecimal.valueOf(availableBalance));
+                }
+                if (account.getBalances().getIsoCurrencyCode() != null) {
+                    bankAccount.setCurrencyCode(account.getBalances().getIsoCurrencyCode());
+                }
+            }
+
+            bankAccount.setLastSyncedAt(LocalDateTime.now());
+            bankAccount.setIsActive(true);
+
+            savedAccounts.add(bankAccountRepository.save(bankAccount));
+        }
+
+        return savedAccounts;
+    }
+
+    private void revokeQuietly(String accessToken) {
+        try {
+            plaidClient.itemRemove(new ItemRemoveRequest().accessToken(accessToken)).execute();
+        } catch (Exception e) {
+            logger.warn("Failed to revoke Plaid item refused by the plan limit", e);
+        }
+    }
+
     /**
      * Plan limits count bank connections (Plaid items), not accounts: one bank login
      * usually brings several accounts (checking, savings, card...).
      */
     private void ensureCanConnectAnotherBank(UUID userId) {
         int limit = subscriptionService.getLimit(userId, "bank_account");
-        if (limit >= 0 && bankAccountRepository.countConnectedItems(userId) >= limit) {
+        if (limit >= 0 && bankAccountRepository.countBankConnections(userId) >= limit) {
             throw new FeatureNotAvailableException("Your plan allows " + limit
                     + (limit == 1 ? " bank connection" : " bank connections")
                     + ". Upgrade to connect more banks.");

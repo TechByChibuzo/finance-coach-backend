@@ -2,8 +2,10 @@
 package com.financecoach.backend.repository;
 
 import com.financecoach.backend.model.User;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -52,4 +54,9 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     // Checked on every authenticated request, so only load the one column
     @Query("SELECT u.tokenVersion FROM User u WHERE u.id = :id")
     Optional<Integer> findTokenVersionById(@Param("id") UUID id);
+
+    // Row lock that serialises per-user checks such as plan limits (call inside a transaction)
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT u FROM User u WHERE u.id = :id")
+    Optional<User> lockById(@Param("id") UUID id);
 }
