@@ -22,6 +22,11 @@ spring:
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
 
+  # Run schema.sql (enables pgvector) on startup, before Hibernate touches the tables
+  sql:
+    init:
+      mode: always
+
   jpa:
     hibernate:
       ddl-auto: update  # Creates tables automatically
