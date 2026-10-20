@@ -32,9 +32,18 @@ jobs:
           cache: maven
 
       # contextLoads boots the whole app and needs a real database and secrets,
-      # so it is excluded until it runs against Testcontainers
-      - name: Run tests
-        run: ./mvnw -B test -Dtest='!UserServiceApplicationTests'
+      # so it is excluded until it runs against Testcontainers.
+      # verify also enforces the service-layer coverage gate (JaCoCo, see pom.xml).
+      - name: Run tests and check coverage
+        run: ./mvnw -B verify -Dtest='!UserServiceApplicationTests'
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-report
+          path: target/site/jacoco/
+          retention-days: 14
 
   deploy:
     # Only deploy pushes to main, and only if every test passed
