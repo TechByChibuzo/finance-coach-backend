@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -166,10 +167,18 @@ public class GlobalExceptionHandler {
 
         logger.warn("Validation failed: {}", fieldErrors);
 
+        // Clients show "message", so put the actual reasons in it (fieldErrors keeps them per field)
+        String message = fieldErrors.isEmpty()
+                ? "Validation failed"
+                : fieldErrors.entrySet().stream()
+                        .sorted(Map.Entry.comparingByKey())
+                        .map(Map.Entry::getValue)
+                        .collect(Collectors.joining(". "));
+
         ErrorResponse error = new ErrorResponse(
                 HttpStatus.BAD_REQUEST.value(),
                 "Bad Request",
-                "Validation failed",
+                message,
                 "VALIDATION_ERROR"
         );
         error.setPath(request.getRequestURI());
