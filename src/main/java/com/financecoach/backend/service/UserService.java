@@ -87,9 +87,11 @@ public class UserService {
             throw new InvalidCredentialsException();
         }
 
-        // Update last login
-        user.setLastLogin(LocalDateTime.now());
-        userRepository.save(user);
+        // Update only last_login. Saving the whole user would write back the password hash and
+        // token version loaded above, undoing a password reset that committed in the meantime.
+        LocalDateTime now = LocalDateTime.now();
+        userRepository.updateLastLogin(user.getId(), now);
+        user.setLastLogin(now);
 
         logger.info("User authenticated successfully - ID: {}, Email: {}",
                 user.getId(), email);

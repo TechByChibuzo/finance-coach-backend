@@ -119,6 +119,23 @@ class UserServiceTest {
     }
 
     @Test
+    void authenticate_updatesOnlyLastLogin_neverSavesTheWholeUser() {
+        // Saving the loaded user would write back its password hash and token version,
+        // undoing a password reset that committed while the password was being checked
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        user.setPasswordHash("old-hash");
+        user.setTokenVersion(3);
+        when(userRepository.lookupByEmail("jane@example.com")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("right", "old-hash")).thenReturn(true);
+
+        userService.authenticate("jane@example.com", "right");
+
+        verify(userRepository).updateLastLogin(org.mockito.ArgumentMatchers.eq(user.getId()), any());
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
     void getUserById_andByEmail_returnTheUser_orThrowNotFound() {
         User user = new User();
         user.setId(UUID.randomUUID());

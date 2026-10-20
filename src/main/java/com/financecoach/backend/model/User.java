@@ -38,6 +38,14 @@ public class User {
     @ColumnDefault("0")
     private Integer tokenVersion = INITIAL_TOKEN_VERSION;
 
+    // Optimistic locking: a save based on a stale copy of the user fails instead of
+    // silently restoring an old password hash or token version. Null until first persisted
+    // (Spring Data uses that to tell new users apart); existing rows default to 0.
+    @Version
+    @Column(name = "version", nullable = false)
+    @ColumnDefault("0")
+    private Long version;
+
     @Column(name = "last_login")
     private LocalDateTime lastLogin;
 

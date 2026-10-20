@@ -3,10 +3,13 @@ package com.financecoach.backend.repository;
 
 import com.financecoach.backend.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -39,6 +42,12 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     Optional<User> findByStripeCustomerId(String stripeCustomerId);
 
     boolean existsByEmailIgnoreCase(String email);
+
+    // Touches only last_login, so it can't overwrite credentials changed concurrently
+    @Transactional
+    @Modifying
+    @Query("UPDATE User u SET u.lastLogin = :lastLogin WHERE u.id = :id")
+    int updateLastLogin(@Param("id") UUID id, @Param("lastLogin") LocalDateTime lastLogin);
 
     // Checked on every authenticated request, so only load the one column
     @Query("SELECT u.tokenVersion FROM User u WHERE u.id = :id")
