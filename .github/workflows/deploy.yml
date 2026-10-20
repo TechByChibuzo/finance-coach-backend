@@ -1,13 +1,25 @@
-name: Deploy to AWS ECS
+name: CI / Deploy to AWS ECS
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  ECR_REPOSITORY: finance-coach-backend
+  ECS_CLUSTER: finance-coach-cluster
+  ECS_SERVICE: finance-coach-service
+  ECS_TASK_FAMILY: finance-coach-backend
+  CONTAINER_NAME: finance-coach-backend
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -17,41 +29,76 @@ jobs:
         with:
           java-version: '21'
           distribution: 'temurin'
+          cache: maven
+
+      # contextLoads boots the whole app and needs a real database and secrets,
+      # so it is excluded until it runs against Testcontainers
+      - name: Run tests
+        run: ./mvnw -B test -Dtest='!UserServiceApplicationTests'
+
+  deploy:
+    # Only deploy pushes to main, and only if every test passed
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write   # GitHub OIDC: assume an AWS role without long-lived access keys
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Tag with the commit SHA so every deploy is traceable and can be rolled back
       - name: Build and push Docker image
+        id: build
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
-          docker buildx create --use
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:${{ github.sha }}"
           docker buildx build \
             --platform linux/amd64 \
             --push \
-            -t 516737672838.dkr.ecr.us-east-1.amazonaws.com/finance-coach-backend:latest \
+            -t "$IMAGE" \
+            -t "$REGISTRY/$ECR_REPOSITORY:latest" \
             .
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
+      - name: Download current task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "$ECS_TASK_FAMILY" \
+            --query taskDefinition > task-definition.json
+
+      - name: Point task definition at the new image
+        id: render
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.build.outputs.image }}
+
+      # Registers a new task definition revision and waits for the service to be healthy
       - name: Deploy to ECS
-        run: |
-          REVISION=$(aws ecs describe-task-definition \
-            --task-definition finance-coach-backend \
-            --query 'taskDefinition.revision' \
-            --output text)
-          aws ecs update-service \
-            --cluster finance-coach-cluster \
-            --service finance-coach-service \
-            --task-definition finance-coach-backend:$REVISION \
-            --force-new-deployment
-
-      - name: Wait for deployment
-        run: |
-          aws ecs wait services-stable \
-            --cluster finance-coach-cluster \
-            --services finance-coach-service
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
