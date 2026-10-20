@@ -122,6 +122,23 @@ class TransactionServiceTest {
     }
 
     @Test
+    void syncItem_neverSavesTheAccountsItLoaded_soFreshBalancesAreNotOverwritten() throws Exception {
+        // refreshBalances saves new balances on separately loaded copies; saving the accounts
+        // loaded at the start of the sync would write the old balances back
+        stubItemAccounts(checking, savings);
+        stubPlaidTransactions(plaidTx("tx-1", "plaid-checking"));
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        transactionService.syncItem(item);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(plaidService, bankAccountRepository);
+        order.verify(plaidService).refreshBalances(item);
+        order.verify(bankAccountRepository).updateLastSyncedAt(
+                org.mockito.ArgumentMatchers.eq(List.of(checking.getId(), savings.getId())), any());
+        verify(bankAccountRepository, never()).save(any());
+    }
+
+    @Test
     void syncItem_callsPlaidOncePerItem_notPerAccount() throws Exception {
         stubItemAccounts(checking, savings);
         stubPlaidTransactions();

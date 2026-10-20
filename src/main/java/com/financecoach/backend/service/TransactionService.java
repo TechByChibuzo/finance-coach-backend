@@ -182,11 +182,10 @@ public class TransactionService {
         long duration = System.currentTimeMillis() - startTime;
         metricsService.recordTransactionSyncDuration(duration);
 
-        // Update last synced time
-        for (BankAccount bankAccount : accountsByPlaidId.values()) {
-            bankAccount.setLastSyncedAt(LocalDateTime.now());
-            bankAccountRepository.save(bankAccount);
-        }
+        // Update last synced time with a targeted update. These account objects were loaded before
+        // refreshBalances saved new balances; saving them would write the old balances back.
+        bankAccountRepository.updateLastSyncedAt(
+                accountsByPlaidId.values().stream().map(BankAccount::getId).toList(), LocalDateTime.now());
 
         logger.info("Synced item {} - added: {}, modified: {}, removed: {}",
                 item.getId(), savedTransactions.size(), changes.modified().size(), changes.removed().size());

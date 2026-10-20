@@ -7,7 +7,10 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,6 +25,12 @@ public interface BankAccountRepository extends JpaRepository<BankAccount, UUID> 
     List<BankAccount> findByIsActive(Boolean isActive);
 
     List<BankAccount> findByItemIdAndIsActive(UUID itemId, Boolean isActive);
+
+    // Touches only last_synced_at, so it can't overwrite balances refreshed in the meantime
+    @Transactional
+    @Modifying
+    @Query("UPDATE BankAccount a SET a.lastSyncedAt = :syncedAt WHERE a.id IN :ids")
+    int updateLastSyncedAt(@Param("ids") Collection<UUID> ids, @Param("syncedAt") LocalDateTime syncedAt);
 
     Optional<BankAccount> findByPlaidAccountId(String plaidAccountId);
 
