@@ -207,6 +207,15 @@ public class SubscriptionService {
     }
 
     /**
+     * The user's plan limit for a feature or countable resource (budgets per month, bank
+     * connections, monthly AI messages). -1 means unlimited.
+     */
+    public int getLimit(UUID userId, String featureName) {
+        Integer limit = getFeatureLimit(getUserPlan(userId), featureName);
+        return limit == null ? -1 : limit;
+    }
+
+    /**
      * Get current usage count for a feature
      */
     public Integer getCurrentUsage(UUID userId, String featureName) {

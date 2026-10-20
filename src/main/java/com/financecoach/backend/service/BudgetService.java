@@ -4,6 +4,7 @@ import com.financecoach.backend.dto.BudgetRequest;
 import com.financecoach.backend.dto.BudgetResponse;
 import com.financecoach.backend.dto.BudgetSummaryResponse;
 import com.financecoach.backend.exception.BudgetNotFoundException;
+import com.financecoach.backend.exception.FeatureNotAvailableException;
 import com.financecoach.backend.exception.NoPreviousBudgetsException;
 import com.financecoach.backend.exception.UnauthorizedAccessException;
 import com.financecoach.backend.exception.ValidationException;
@@ -28,17 +29,21 @@ import java.util.stream.Collectors;
 public class BudgetService {
 
     private static final Logger logger = LoggerFactory.getLogger(BudgetService.class);
+    private static final String BUDGET_LIMIT_FEATURE = "budget_create";
 
     private final BudgetRepository budgetRepository;
     private final AnalyticsService analyticsService;
+    private final SubscriptionService subscriptionService;
 
     @Autowired
     private MetricsService metricsService;
 
     @Autowired
-    public BudgetService(BudgetRepository budgetRepository, AnalyticsService analyticsService) {
+    public BudgetService(BudgetRepository budgetRepository, AnalyticsService analyticsService,
+                         SubscriptionService subscriptionService) {
         this.budgetRepository = budgetRepository;
         this.analyticsService = analyticsService;
+        this.subscriptionService = subscriptionService;
     }
 
     /**
@@ -119,6 +124,14 @@ public class BudgetService {
                 .orElse(null);
 
         boolean isNewBudget = (budget == null);
+
+        // A new budget, or re-activating a deleted one, adds to this month's count
+        if (budget == null || !Boolean.TRUE.equals(budget.getIsActive())) {
+            int remaining = remainingBudgetSlots(userId, month);
+            if (remaining == 0) {
+                throw new FeatureNotAvailableException(budgetLimitMessage(userId));
+            }
+        }
 
         if (budget != null) {
             logger.debug("Updating existing budget: {}", budget.getId());
@@ -388,6 +401,12 @@ public class BudgetService {
 
         logger.debug("Found {} budgets to copy from previous month", previousBudgets.size());
 
+        // Copy only as many as the plan allows this month
+        int remaining = remainingBudgetSlots(userId, currentMonth);
+        if (remaining == 0) {
+            throw new FeatureNotAvailableException(budgetLimitMessage(userId));
+        }
+
         List<Budget> newBudgets = previousBudgets.stream()
                 .map(prevBudget -> {
                     // Check if budget already exists for current month
@@ -411,6 +430,7 @@ public class BudgetService {
                     return null;
                 })
                 .filter(budget -> budget != null)
+                .limit(remaining < 0 ? Long.MAX_VALUE : remaining)
                 .collect(Collectors.toList());
 
         // Refresh spending for new budgets
@@ -421,6 +441,23 @@ public class BudgetService {
         return newBudgets.stream()
                 .map(this::convertToResponse)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * How many more active budgets the user's plan allows for the month; -1 means unlimited
+     */
+    private int remainingBudgetSlots(UUID userId, LocalDate month) {
+        int limit = subscriptionService.getLimit(userId, BUDGET_LIMIT_FEATURE);
+        if (limit < 0) {
+            return -1;
+        }
+        int active = budgetRepository.findByUserIdAndMonthAndIsActive(userId, month, true).size();
+        return Math.max(0, limit - active);
+    }
+
+    private String budgetLimitMessage(UUID userId) {
+        return "Your plan allows " + subscriptionService.getLimit(userId, BUDGET_LIMIT_FEATURE)
+                + " budgets per month. Upgrade to Premium for unlimited budgets.";
     }
 
     // Helper method to convert Entity to DTO

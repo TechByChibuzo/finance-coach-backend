@@ -2,6 +2,7 @@
 package com.financecoach.backend.service;
 
 import com.financecoach.backend.exception.BankAccountNotFoundException;
+import com.financecoach.backend.exception.FeatureNotAvailableException;
 import com.financecoach.backend.exception.PlaidIntegrationException;
 import com.financecoach.backend.exception.UnauthorizedAccessException;
 import com.plaid.client.model.*;
@@ -36,16 +37,19 @@ public class PlaidService {
     private final PlaidApi plaidClient;
     private final BankAccountRepository bankAccountRepository;
     private final PlaidItemRepository plaidItemRepository;
+    private final SubscriptionService subscriptionService;
     @Autowired
     private MetricsService metricsService;
 
     @Autowired
     public PlaidService(PlaidApi plaidClient,
                         BankAccountRepository bankAccountRepository,
-                        PlaidItemRepository plaidItemRepository) {
+                        PlaidItemRepository plaidItemRepository,
+                        SubscriptionService subscriptionService) {
         this.plaidClient = plaidClient;
         this.bankAccountRepository = bankAccountRepository;
         this.plaidItemRepository = plaidItemRepository;
+        this.subscriptionService = subscriptionService;
     }
 
     /**
@@ -53,6 +57,9 @@ public class PlaidService {
      */
     public String createLinkToken(UUID userId, String username) {
         logger.info("Creating Plaid link token for user: {}", userId);
+
+        // Check before the user goes through the bank login, not after
+        ensureCanConnectAnotherBank(userId);
 
         try {
             LinkTokenCreateRequestUser user = new LinkTokenCreateRequestUser()
@@ -95,6 +102,8 @@ public class PlaidService {
     public List<BankAccount> exchangePublicToken(UUID userId, String publicToken) {
         long startTime = System.currentTimeMillis();
         logger.info("Exchanging public token for user: {}", userId);
+
+        ensureCanConnectAnotherBank(userId);
 
         try {
             // Exchange public token for access token
@@ -216,6 +225,19 @@ public class PlaidService {
         } catch (IOException e) {
             logger.error("Network error exchanging token for user: {}", userId, e);
             throw new PlaidIntegrationException("Network error exchanging token", e);
+        }
+    }
+
+    /**
+     * Plan limits count bank connections (Plaid items), not accounts: one bank login
+     * usually brings several accounts (checking, savings, card...).
+     */
+    private void ensureCanConnectAnotherBank(UUID userId) {
+        int limit = subscriptionService.getLimit(userId, "bank_account");
+        if (limit >= 0 && bankAccountRepository.countConnectedItems(userId) >= limit) {
+            throw new FeatureNotAvailableException("Your plan allows " + limit
+                    + (limit == 1 ? " bank connection" : " bank connections")
+                    + ". Upgrade to connect more banks.");
         }
     }
 

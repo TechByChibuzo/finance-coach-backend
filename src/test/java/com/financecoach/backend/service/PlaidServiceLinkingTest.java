@@ -62,6 +62,7 @@ class PlaidServiceLinkingTest {
     @Mock private PlaidApi plaidClient;
     @Mock private BankAccountRepository bankAccountRepository;
     @Mock private PlaidItemRepository plaidItemRepository;
+    @Mock private SubscriptionService subscriptionService;
     @Mock private MetricsService metricsService;
 
     private PlaidService plaidService;
@@ -69,9 +70,12 @@ class PlaidServiceLinkingTest {
 
     @BeforeEach
     void setUp() {
-        plaidService = new PlaidService(plaidClient, bankAccountRepository, plaidItemRepository);
+        plaidService = new PlaidService(plaidClient, bankAccountRepository, plaidItemRepository, subscriptionService);
         ReflectionTestUtils.setField(plaidService, "metricsService", metricsService);
         userId = UUID.randomUUID();
+        // Unlimited bank connections unless a test says otherwise
+        org.mockito.Mockito.lenient().when(subscriptionService.getLimit(any(), org.mockito.ArgumentMatchers.eq("bank_account")))
+                .thenReturn(-1);
     }
 
     // --- link token ---
@@ -100,6 +104,36 @@ class PlaidServiceLinkingTest {
                 .isInstanceOf(PlaidIntegrationException.class).hasMessageContaining("INVALID_FIELD");
         assertThatThrownBy(() -> plaidService.createLinkToken(userId, "user"))
                 .isInstanceOf(PlaidIntegrationException.class).hasMessageContaining("Network");
+    }
+
+    @Test
+    void createLinkToken_atTheBankConnectionLimit_isRefusedBeforePlaidLinkOpens() throws Exception {
+        when(subscriptionService.getLimit(userId, "bank_account")).thenReturn(1);
+        when(bankAccountRepository.countConnectedItems(userId)).thenReturn(1L);
+
+        assertThatThrownBy(() -> plaidService.createLinkToken(userId, "user"))
+                .isInstanceOf(com.financecoach.backend.exception.FeatureNotAvailableException.class)
+                .hasMessageContaining("1 bank connection");
+        verify(plaidClient, never()).linkTokenCreate(any());
+    }
+
+    @Test
+    void createLinkToken_underTheLimit_isAllowed() throws Exception {
+        when(subscriptionService.getLimit(userId, "bank_account")).thenReturn(5);
+        when(bankAccountRepository.countConnectedItems(userId)).thenReturn(4L);
+        when(plaidClient.linkTokenCreate(any())).thenReturn(ok(new LinkTokenCreateResponse().linkToken("link-123")));
+
+        assertThat(plaidService.createLinkToken(userId, "user")).isEqualTo("link-123");
+    }
+
+    @Test
+    void exchangePublicToken_atTheLimit_isRefusedWithoutExchanging() throws Exception {
+        when(subscriptionService.getLimit(userId, "bank_account")).thenReturn(1);
+        when(bankAccountRepository.countConnectedItems(userId)).thenReturn(1L);
+
+        assertThatThrownBy(() -> plaidService.exchangePublicToken(userId, "public-token"))
+                .hasMessageContaining("Upgrade to connect more banks");
+        verify(plaidClient, never()).itemPublicTokenExchange(any());
     }
 
     // --- public token exchange ---

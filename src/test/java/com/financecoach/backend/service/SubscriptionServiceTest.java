@@ -463,6 +463,14 @@ class SubscriptionServiceTest {
     }
 
     @Test
+    void getLimit_returnsThePlansLimit_orMinusOneWhenUnlimited() {
+        stubCurrentPlan("FREE");
+        assertThat(subscriptionService.getLimit(userId, "budget_create")).isEqualTo(3);
+        assertThat(subscriptionService.getLimit(userId, "bank_account")).isEqualTo(1);
+        assertThat(subscriptionService.getLimit(userId, "anything_else")).isEqualTo(-1);
+    }
+
+    @Test
     void reserveUsage_countsAtomicallyAgainstThePlansMonthlyLimit() {
         stubCurrentPlan("FREE");
         LocalDate today = LocalDate.now();

@@ -42,6 +42,7 @@ class BudgetServiceCrudTest {
     @Mock private BudgetRepository budgetRepository;
     @Mock private AnalyticsService analyticsService;
     @Mock private MetricsService metricsService;
+    @Mock private SubscriptionService subscriptionService;
 
     private BudgetService budgetService;
     private UUID userId;
@@ -49,7 +50,9 @@ class BudgetServiceCrudTest {
 
     @BeforeEach
     void setUp() {
-        budgetService = new BudgetService(budgetRepository, analyticsService);
+        budgetService = new BudgetService(budgetRepository, analyticsService, subscriptionService);
+        // Unlimited budgets unless a test says otherwise
+        org.mockito.Mockito.lenient().when(subscriptionService.getLimit(any(), eq("budget_create"))).thenReturn(-1);
         ReflectionTestUtils.setField(budgetService, "metricsService", metricsService);
         userId = UUID.randomUUID();
         thisMonth = LocalDate.now().withDayOfMonth(1);
@@ -124,6 +127,72 @@ class BudgetServiceCrudTest {
         assertThatThrownBy(() -> budgetService.createOrUpdateBudget(userId, noAmount))
                 .isInstanceOf(ValidationException.class);
         verify(budgetRepository, never()).save(any());
+    }
+
+    // --- plan limits ---
+
+    @Test
+    void create_atTheFreePlanLimit_isRefused() {
+        when(subscriptionService.getLimit(userId, "budget_create")).thenReturn(3);
+        when(budgetRepository.findByUserIdAndCategoryAndMonth(userId, "Travel", thisMonth)).thenReturn(Optional.empty());
+        when(budgetRepository.findByUserIdAndMonthAndIsActive(userId, thisMonth, true)).thenReturn(List.of(
+                budget("Food & Dining", "1", "0"), budget("Shopping", "1", "0"), budget("Entertainment", "1", "0")));
+
+        assertThatThrownBy(() -> budgetService.createOrUpdateBudget(userId, request("Travel", "200", thisMonth)))
+                .isInstanceOf(com.financecoach.backend.exception.FeatureNotAvailableException.class)
+                .hasMessageContaining("3 budgets per month");
+        verify(budgetRepository, never()).save(any());
+    }
+
+    @Test
+    void update_atTheLimit_isStillAllowed_butReactivatingADeletedOneCounts() {
+        when(subscriptionService.getLimit(userId, "budget_create")).thenReturn(3);
+        Budget active = budget("Food & Dining", "100", "0");
+        Budget deleted = budget("Travel", "100", "0");
+        deleted.setIsActive(false);
+        when(budgetRepository.findByUserIdAndCategoryAndMonth(userId, "Food & Dining", thisMonth)).thenReturn(Optional.of(active));
+        when(budgetRepository.findByUserIdAndCategoryAndMonth(userId, "Travel", thisMonth)).thenReturn(Optional.of(deleted));
+        when(budgetRepository.findByUserIdAndMonthAndIsActive(userId, thisMonth, true)).thenReturn(List.of(
+                active, budget("Shopping", "1", "0"), budget("Entertainment", "1", "0")));
+        when(analyticsService.getSpendingByCategory(eq(userId), eq(thisMonth), any())).thenReturn(Map.of());
+        when(budgetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(budgetService.createOrUpdateBudget(userId, request("Food & Dining", "150", thisMonth)).getAmount())
+                .isEqualByComparingTo("150");
+        assertThatThrownBy(() -> budgetService.createOrUpdateBudget(userId, request("Travel", "100", thisMonth)))
+                .isInstanceOf(com.financecoach.backend.exception.FeatureNotAvailableException.class);
+    }
+
+    @Test
+    void copyPreviousMonth_copiesOnlyUpToThePlanLimit() {
+        when(subscriptionService.getLimit(userId, "budget_create")).thenReturn(3);
+        LocalDate lastMonth = thisMonth.minusMonths(1);
+        List<Budget> previous = java.util.stream.Stream.of("Food & Dining", "Travel", "Shopping", "Entertainment")
+                .map(c -> { Budget b = budget(c, "100", "0"); b.setMonth(lastMonth); return b; }).toList();
+        when(budgetRepository.findByUserIdAndMonthAndIsActive(userId, lastMonth, true)).thenReturn(previous);
+        when(budgetRepository.findByUserIdAndMonthAndIsActive(userId, thisMonth, true))
+                .thenReturn(List.of(budget("Personal Care", "1", "0")))   // limit check: 1 already exists
+                .thenReturn(List.of());                                    // refresh after copying
+        when(budgetRepository.existsByUserIdAndCategoryAndMonth(eq(userId), any(), eq(thisMonth))).thenReturn(false);
+        when(budgetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        List<BudgetResponse> copied = budgetService.copyPreviousMonthBudgets(userId);
+
+        assertThat(copied).extracting(BudgetResponse::getCategory).containsExactly("Food & Dining", "Travel");
+    }
+
+    @Test
+    void copyPreviousMonth_withNoSlotsLeft_isRefused() {
+        when(subscriptionService.getLimit(userId, "budget_create")).thenReturn(3);
+        LocalDate lastMonth = thisMonth.minusMonths(1);
+        Budget food = budget("Food & Dining", "100", "0");
+        food.setMonth(lastMonth);
+        when(budgetRepository.findByUserIdAndMonthAndIsActive(userId, lastMonth, true)).thenReturn(List.of(food));
+        when(budgetRepository.findByUserIdAndMonthAndIsActive(userId, thisMonth, true)).thenReturn(List.of(
+                budget("Shopping", "1", "0"), budget("Travel", "1", "0"), budget("Entertainment", "1", "0")));
+
+        assertThatThrownBy(() -> budgetService.copyPreviousMonthBudgets(userId))
+                .isInstanceOf(com.financecoach.backend.exception.FeatureNotAvailableException.class);
     }
 
     // --- monthly summary ---

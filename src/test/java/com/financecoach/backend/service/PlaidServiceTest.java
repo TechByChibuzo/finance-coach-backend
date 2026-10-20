@@ -38,6 +38,7 @@ class PlaidServiceTest {
     @Mock private PlaidApi plaidClient;
     @Mock private BankAccountRepository bankAccountRepository;
     @Mock private PlaidItemRepository plaidItemRepository;
+    @Mock private SubscriptionService subscriptionService;
 
     private PlaidService plaidService;
     private PlaidItem item;
@@ -46,7 +47,7 @@ class PlaidServiceTest {
 
     @BeforeEach
     void setUp() {
-        plaidService = new PlaidService(plaidClient, bankAccountRepository, plaidItemRepository);
+        plaidService = new PlaidService(plaidClient, bankAccountRepository, plaidItemRepository, subscriptionService);
 
         item = new PlaidItem();
         item.setId(UUID.randomUUID());

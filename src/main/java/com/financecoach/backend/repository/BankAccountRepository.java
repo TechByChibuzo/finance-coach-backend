@@ -26,6 +26,11 @@ public interface BankAccountRepository extends JpaRepository<BankAccount, UUID> 
 
     List<BankAccount> findByItemIdAndIsActive(UUID itemId, Boolean isActive);
 
+    // Bank connections (Plaid items) with at least one active account; plan limits count these
+    @Query("SELECT COUNT(DISTINCT a.itemId) FROM BankAccount a "
+            + "WHERE a.userId = :userId AND a.isActive = true AND a.itemId IS NOT NULL")
+    long countConnectedItems(@Param("userId") UUID userId);
+
     // Touches only last_synced_at, so it can't overwrite balances refreshed in the meantime
     @Transactional
     @Modifying
