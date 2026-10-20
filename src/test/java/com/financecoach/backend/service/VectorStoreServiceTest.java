@@ -6,6 +6,7 @@ import com.financecoach.backend.repository.TransactionEmbeddingRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -15,6 +16,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -22,6 +24,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -43,10 +46,11 @@ class VectorStoreServiceTest {
 
     @Test
     void indexTransaction_storesTheEmbeddingAsAPgvectorLiteral() {
-        Transaction tx = transaction();
+        Transaction tx = transaction("tx-1");
         when(embeddingRepository.existsByTransactionId("tx-1")).thenReturn(false);
         when(embeddingService.buildTransactionText(tx)).thenReturn("Transaction: $5.00 at Uber");
-        when(embeddingService.embedTransaction(tx)).thenReturn(new float[]{0.5f, -1.25f});
+        when(embeddingService.embedTexts(List.of("Transaction: $5.00 at Uber")))
+                .thenReturn(List.of(new float[]{0.5f, -1.25f}));
 
         vectorStoreService.indexTransaction(tx);
 
@@ -55,24 +59,51 @@ class VectorStoreServiceTest {
     }
 
     @Test
-    void indexTransaction_skipsTransactionsAlreadyIndexed() {
-        when(embeddingRepository.existsByTransactionId("tx-1")).thenReturn(true);
+    void indexTransactions_embedsInBatchesOfOneHundred_skippingOnesAlreadyIndexed() {
+        List<Transaction> transactions = IntStream.range(0, 250).mapToObj(i -> transaction("tx-" + i)).toList();
+        when(embeddingRepository.existsByTransactionId(anyString())).thenAnswer(inv -> inv.getArgument(0).equals("tx-0"));
+        when(embeddingService.buildTransactionText(any())).thenAnswer(inv -> ((Transaction) inv.getArgument(0)).getPlaidTransactionId());
+        when(embeddingService.embedTexts(any())).thenAnswer(inv ->
+                ((List<?>) inv.getArgument(0)).stream().map(t -> new float[]{1f}).toList());
 
-        vectorStoreService.indexTransaction(transaction());
+        vectorStoreService.indexTransactions(transactions);
 
-        verify(embeddingService, never()).embedTransaction(any());
+        ArgumentCaptor<List<String>> batches = ArgumentCaptor.forClass(List.class);
+        verify(embeddingService, times(3)).embedTexts(batches.capture());
+        assertThat(batches.getAllValues()).extracting(List::size).containsExactly(100, 100, 49);
+        verify(jdbcTemplate, times(249)).update(anyString(), any(), any(), any(), any(), any());
     }
 
     @Test
-    void indexTransaction_whenEmbeddingFails_doesNotThrow() {
-        Transaction tx = transaction();
-        when(embeddingRepository.existsByTransactionId("tx-1")).thenReturn(false);
-        when(embeddingService.buildTransactionText(tx)).thenReturn("text");
-        when(embeddingService.embedTransaction(tx)).thenThrow(new RuntimeException("OpenAI down"));
+    void indexTransactions_aFailedBatchIsSkipped_andTheRestStillIndexed() {
+        List<Transaction> transactions = IntStream.range(0, 150).mapToObj(i -> transaction("tx-" + i)).toList();
+        when(embeddingRepository.existsByTransactionId(anyString())).thenReturn(false);
+        when(embeddingService.buildTransactionText(any())).thenReturn("text");
+        when(embeddingService.embedTexts(any()))
+                .thenThrow(new RuntimeException("OpenAI rate limit"))
+                .thenAnswer(inv -> ((List<?>) inv.getArgument(0)).stream().map(t -> new float[]{1f}).toList());
 
-        vectorStoreService.indexTransaction(tx);
+        vectorStoreService.indexTransactions(transactions);
 
-        verify(jdbcTemplate, never()).update(anyString(), any(Object[].class));
+        verify(jdbcTemplate, times(50)).update(anyString(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void indexTransaction_skipsTransactionsAlreadyIndexed() {
+        when(embeddingRepository.existsByTransactionId("tx-1")).thenReturn(true);
+
+        vectorStoreService.indexTransaction(transaction("tx-1"));
+
+        verify(embeddingService, never()).embedTexts(any());
+    }
+
+    @Test
+    void indexTransactionsAsync_indexesTheGivenTransactions() {
+        when(embeddingRepository.existsByTransactionId("tx-1")).thenReturn(true);
+
+        vectorStoreService.indexTransactionsAsync(List.of(transaction("tx-1")));
+
+        verify(embeddingRepository).existsByTransactionId("tx-1");
     }
 
     @Test
@@ -95,10 +126,10 @@ class VectorStoreServiceTest {
         assertThat(vectorStoreService.getIndexedTransactionCount(userId)).isEqualTo(7L);
     }
 
-    private Transaction transaction() {
+    private Transaction transaction(String plaidTransactionId) {
         Transaction t = new Transaction();
         t.setUserId(userId);
-        t.setPlaidTransactionId("tx-1");
+        t.setPlaidTransactionId(plaidTransactionId);
         t.setAmount(new BigDecimal("5.00"));
         t.setMerchantName("Uber");
         t.setCategory("TRANSPORTATION");

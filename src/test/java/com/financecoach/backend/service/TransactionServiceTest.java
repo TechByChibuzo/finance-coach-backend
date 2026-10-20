@@ -92,6 +92,18 @@ class TransactionServiceTest {
     }
 
     @Test
+    void syncItem_indexesNewTransactionsInTheBackground_inOneCall() throws Exception {
+        stubItemAccounts(checking, savings);
+        stubPlaidTransactions(plaidTx("tx-1", "plaid-checking"), plaidTx("tx-2", "plaid-savings"));
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        List<Transaction> saved = transactionService.syncItem(item);
+
+        verify(vectorStoreService).indexTransactionsAsync(saved);
+        verify(vectorStoreService, never()).indexTransaction(any());
+    }
+
+    @Test
     void syncItem_callsPlaidOncePerItem_notPerAccount() throws Exception {
         stubItemAccounts(checking, savings);
         stubPlaidTransactions();
@@ -176,7 +188,7 @@ class TransactionServiceTest {
 
         assertThat(stored.getAmount()).isEqualByComparingTo("42.00");
         verify(vectorStoreService).removeTransaction("tx-1");
-        verify(vectorStoreService).indexTransaction(stored);
+        verify(vectorStoreService).indexTransactionsAsync(List.of(stored));
     }
 
     @Test

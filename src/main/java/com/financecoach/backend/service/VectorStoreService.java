@@ -7,6 +7,7 @@ import com.financecoach.backend.repository.TransactionEmbeddingRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +20,7 @@ public class VectorStoreService {
 
     private static final Logger logger = LoggerFactory.getLogger(VectorStoreService.class);
     private static final int DEFAULT_RETRIEVAL_LIMIT = 10;
+    private static final int EMBEDDING_BATCH_SIZE = 100;
 
     private final TransactionEmbeddingRepository embeddingRepository;
     private final EmbeddingService embeddingService;
@@ -35,45 +37,68 @@ public class VectorStoreService {
         this.objectMapper = objectMapper;
     }
 
-    @Transactional
     public void indexTransaction(Transaction transaction) {
-        if (embeddingRepository.existsByTransactionId(transaction.getPlaidTransactionId())) {
-            logger.debug("Transaction {} already indexed, skipping", transaction.getPlaidTransactionId());
-            return;
+        indexTransactions(List.of(transaction));
+    }
+
+    /**
+     * Index transactions in the background so syncing doesn't wait on the embedding API.
+     */
+    @Async("embeddingExecutor")
+    public void indexTransactionsAsync(List<Transaction> transactions) {
+        indexTransactions(transactions);
+    }
+
+    /**
+     * Embed and store transactions that aren't indexed yet, EMBEDDING_BATCH_SIZE per API call.
+     * A failed batch is logged and skipped; the rest still get indexed.
+     */
+    public void indexTransactions(List<Transaction> transactions) {
+        List<Transaction> pending = transactions.stream()
+                .filter(t -> !embeddingRepository.existsByTransactionId(t.getPlaidTransactionId()))
+                .toList();
+
+        int indexed = 0;
+        for (int start = 0; start < pending.size(); start += EMBEDDING_BATCH_SIZE) {
+            List<Transaction> batch = pending.subList(start, Math.min(start + EMBEDDING_BATCH_SIZE, pending.size()));
+            try {
+                List<String> texts = batch.stream().map(embeddingService::buildTransactionText).toList();
+                List<float[]> embeddings = embeddingService.embedTexts(texts);
+
+                for (int i = 0; i < batch.size(); i++) {
+                    insertEmbedding(batch.get(i), texts.get(i), embeddings.get(i));
+                }
+                indexed += batch.size();
+
+            } catch (Exception e) {
+                logger.error("Failed to index a batch of {} transactions: {}", batch.size(), e.getMessage());
+            }
         }
 
-        try {
-            String content = embeddingService.buildTransactionText(transaction);
-            float[] embedding = embeddingService.embedTransaction(transaction);
-
-            Map<String, Object> metadata = Map.of(
-                    "amount", transaction.getAmount(),
-                    "category", transaction.getCategory() != null ? transaction.getCategory() : "Uncategorized",
-                    "date", transaction.getDate().toString(),
-                    "merchant", transaction.getMerchantName() != null
-                            ? transaction.getMerchantName()
-                            : transaction.getName()
-            );
-
-            String vectorString = buildVectorString(embedding);
-            String metadataJson = objectMapper.writeValueAsString(metadata);
-
-            jdbcTemplate.update(
-                    "INSERT INTO transaction_embeddings (id, transaction_id, user_id, embedding, content, metadata, created_at) " +
-                            "VALUES (gen_random_uuid(), ?, ?, ?::vector, ?, ?::jsonb, NOW())",
-                    transaction.getPlaidTransactionId(),
-                    transaction.getUserId(),
-                    vectorString,
-                    content,
-                    metadataJson
-            );
-
-            logger.debug("Indexed transaction {}", transaction.getPlaidTransactionId());
-
-        } catch (Exception e) {
-            logger.error("Failed to index transaction {}: {}",
-                    transaction.getPlaidTransactionId(), e.getMessage());
+        if (!pending.isEmpty()) {
+            logger.info("Indexed {}/{} transactions", indexed, pending.size());
         }
+    }
+
+    private void insertEmbedding(Transaction transaction, String content, float[] embedding) throws Exception {
+        Map<String, Object> metadata = Map.of(
+                "amount", transaction.getAmount(),
+                "category", transaction.getCategory() != null ? transaction.getCategory() : "Uncategorized",
+                "date", transaction.getDate().toString(),
+                "merchant", transaction.getMerchantName() != null
+                        ? transaction.getMerchantName()
+                        : transaction.getName()
+        );
+
+        jdbcTemplate.update(
+                "INSERT INTO transaction_embeddings (id, transaction_id, user_id, embedding, content, metadata, created_at) " +
+                        "VALUES (gen_random_uuid(), ?, ?, ?::vector, ?, ?::jsonb, NOW())",
+                transaction.getPlaidTransactionId(),
+                transaction.getUserId(),
+                buildVectorString(embedding),
+                content,
+                objectMapper.writeValueAsString(metadata)
+        );
     }
 
     @Transactional

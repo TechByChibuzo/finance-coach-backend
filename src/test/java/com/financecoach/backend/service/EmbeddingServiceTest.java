@@ -10,6 +10,7 @@ import org.springframework.ai.embedding.EmbeddingModel;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,6 +53,14 @@ class EmbeddingServiceTest {
 
         assertThat(embeddingService.embedTransaction(transaction("5.00", "Uber", "TRANSPORTATION"))).isSameAs(vector);
         assertThat(embeddingService.embedText("question")).isSameAs(vector);
+    }
+
+    @Test
+    void embedTexts_embedsAllTextsInOneCall() {
+        List<float[]> vectors = List.of(new float[]{1f}, new float[]{2f});
+        when(embeddingModel.embed(List.of("a", "b"))).thenReturn(vectors);
+
+        assertThat(embeddingService.embedTexts(List.of("a", "b"))).isSameAs(vectors);
     }
 
     private Transaction transaction(String amount, String merchant, String category) {

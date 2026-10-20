@@ -111,8 +111,9 @@ public class TransactionService {
 
         SyncChanges changes = fetchChanges(item);
 
-        // Save transactions
+        // Save transactions; embeddings for new and changed ones are built afterwards, in the background
         List<Transaction> savedTransactions = new ArrayList<>();
+        List<Transaction> toIndex = new ArrayList<>();
         for (com.plaid.client.model.Transaction plaidTx : changes.added()) {
             BankAccount bankAccount = accountsByPlaidId.get(plaidTx.getAccountId());
             if (bankAccount == null) {
@@ -125,7 +126,7 @@ public class TransactionService {
             Transaction transaction = convertPlaidTransaction(plaidTx, bankAccount);
             Transaction saved = transactionRepository.save(transaction);
             savedTransactions.add(saved);
-            vectorStoreService.indexTransaction(saved);
+            toIndex.add(saved);
         }
 
         // Update changed transactions (e.g. amount or merchant corrected) and re-index them
@@ -138,7 +139,7 @@ public class TransactionService {
                 applyPlaidFields(existing, plaidTx, bankAccount);
                 Transaction saved = transactionRepository.save(existing);
                 vectorStoreService.removeTransaction(saved.getPlaidTransactionId());
-                vectorStoreService.indexTransaction(saved);
+                toIndex.add(saved);
             });
         }
 
@@ -153,6 +154,11 @@ public class TransactionService {
         // Only advance the cursor once every change is applied, so a failure replays them next time
         item.setTransactionsCursor(changes.nextCursor());
         plaidItemRepository.save(item);
+
+        // Embed for the AI coach without making the user wait on the embedding API
+        if (!toIndex.isEmpty()) {
+            vectorStoreService.indexTransactionsAsync(toIndex);
+        }
 
         // Keep balances current for cash, credit and net worth figures
         try {

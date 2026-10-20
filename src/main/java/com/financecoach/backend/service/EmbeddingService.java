@@ -23,6 +23,13 @@ public class EmbeddingService {
         return embeddingModel.embed(text);
     }
 
+    /**
+     * Embed several texts in one API call, in order
+     */
+    public List<float[]> embedTexts(List<String> texts) {
+        return embeddingModel.embed(texts);
+    }
+
     public float[] embedTransaction(Transaction transaction) {
         String text = buildTransactionText(transaction);
         logger.debug("Embedding transaction {}: {}", transaction.getPlaidTransactionId(), text);
