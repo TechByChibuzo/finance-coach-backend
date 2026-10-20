@@ -591,18 +591,37 @@ class SubscriptionServiceTest {
     }
 
     @Test
-    void createSubscription_onUpgrade_continuesEvenIfCancellingTheOldOneFails() throws Exception {
+    void createSubscription_onUpgrade_ifTheOldOneCantBeCancelled_failsWithoutCreatingTheNewOne() throws Exception {
+        // Carrying on would leave both plans billing; failing makes Stripe retry the event
         UserSubscription previous = activeSubscription("sub_old");
         when(subscriptionRepository.findActiveByUserId(userId)).thenReturn(Optional.of(previous));
         when(stripeService.cancelSubscription("sub_old")).thenThrow(new ApiConnectionException("down"));
 
-        subscriptionService.createSubscription(userId, plan("PRO"), BillingCycle.YEARLY,
-                stripeSubscription("sub_new", "active", false));
+        assertThatThrownBy(() -> subscriptionService.createSubscription(userId, plan("PRO"), BillingCycle.YEARLY,
+                stripeSubscription("sub_new", "active", false)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("sub_old");
 
-        ArgumentCaptor<UserSubscription> saved = ArgumentCaptor.forClass(UserSubscription.class);
-        verify(subscriptionRepository).save(saved.capture());
-        assertThat(saved.getValue().getStripeSubscriptionId()).isEqualTo("sub_new");
-        assertThat(saved.getValue().getBillingCycle()).isEqualTo(BillingCycle.YEARLY);
+        verify(subscriptionRepository, never()).save(any());
+        assertThat(previous.getStatus()).isEqualTo(SubscriptionStatus.ACTIVE);
+    }
+
+    @Test
+    void webhook_upgradeWhoseOldSubscriptionCantBeCancelled_failsSoStripeRetries() throws Exception {
+        User user = new User();
+        user.setId(userId);
+        stubPlans();
+        when(stripeService.retrieveSubscription("sub_new")).thenReturn(stripeSubscription("sub_new", "active", false));
+        when(subscriptionRepository.findByStripeSubscriptionId("sub_new")).thenReturn(Optional.empty());
+        when(subscriptionRepository.findActiveByUserId(userId)).thenReturn(Optional.of(activeSubscription("sub_old")));
+        when(stripeService.cancelSubscription("sub_old")).thenThrow(new ApiConnectionException("down"));
+
+        assertThatThrownBy(() -> sendWebhook("checkout.session.completed", """
+                {"id": "cs_1", "object": "checkout.session", "customer": "cus_1",
+                 "subscription": "sub_new", "client_reference_id": "%s"}
+                """.formatted(userId)))
+                .isNotInstanceOf(IllegalArgumentException.class); // not a bad signature: controller returns 500
+        verify(subscriptionRepository, never()).save(any());
     }
 
     // --- webhook edge cases ---

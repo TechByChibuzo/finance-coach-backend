@@ -107,6 +107,27 @@ class StripeServiceTest {
     }
 
     @Test
+    void cancelSubscription_isSafeToRepeat_forEndedOrMissingSubscriptions() throws Exception {
+        Subscription ended = mock(Subscription.class);
+        when(ended.getStatus()).thenReturn("canceled");
+        subscriptions.when(() -> Subscription.retrieve("sub_ended")).thenReturn(ended);
+        subscriptions.when(() -> Subscription.retrieve("sub_gone")).thenThrow(
+                new InvalidRequestException("No such subscription", "id", "req_1", "resource_missing", 404, null));
+
+        assertThat(stripeService.cancelSubscription("sub_ended")).isSameAs(ended);
+        assertThat(stripeService.cancelSubscription("sub_gone")).isNull();
+        verify(ended, org.mockito.Mockito.never()).cancel();
+    }
+
+    @Test
+    void cancelSubscription_otherStripeErrors_propagate() {
+        subscriptions.when(() -> Subscription.retrieve("sub_1")).thenThrow(
+                new InvalidRequestException("Invalid API key", null, "req_1", "api_key_invalid", 401, null));
+
+        assertThatThrownBy(() -> stripeService.cancelSubscription("sub_1")).isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
     void cancelSubscriptionAtPeriodEnd_setsCancelAtPeriodEnd() throws Exception {
         Subscription subscription = mock(Subscription.class);
         subscriptions.when(() -> Subscription.retrieve("sub_1")).thenReturn(subscription);

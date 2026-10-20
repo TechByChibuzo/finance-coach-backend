@@ -80,7 +80,21 @@ public class StripeService {
      * Cancel subscription
      */
     public Subscription cancelSubscription(String subscriptionId) throws StripeException {
-        Subscription subscription = Subscription.retrieve(subscriptionId);
+        Subscription subscription;
+        try {
+            subscription = Subscription.retrieve(subscriptionId);
+        } catch (InvalidRequestException e) {
+            if ("resource_missing".equals(e.getCode())) {
+                return null; // already gone at Stripe: nothing left to cancel
+            }
+            throw e;
+        }
+
+        // Safe to call again (e.g. on a retried webhook): an ended subscription stays ended
+        String status = subscription.getStatus();
+        if ("canceled".equals(status) || "incomplete_expired".equals(status)) {
+            return subscription;
+        }
         return subscription.cancel();
     }
 

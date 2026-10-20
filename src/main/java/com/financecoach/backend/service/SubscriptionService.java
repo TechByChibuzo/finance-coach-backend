@@ -354,20 +354,22 @@ public class SubscriptionService {
             return;
         }
 
-        // Cancel existing subscription
+        // Cancel the subscription being replaced. If Stripe can't cancel it, fail: carrying on would
+        // leave the user billed for both plans with two ACTIVE rows. The webhook then returns an
+        // error and Stripe retries the event, and cancelSubscription is safe to repeat.
         current.ifPresent(existing -> {
             logger.info("Cancelling existing subscription: {}", existing.getId());
-            try {
-                if (existing.getStripeSubscriptionId() != null) {
+            if (existing.getStripeSubscriptionId() != null) {
+                try {
                     stripeService.cancelSubscription(existing.getStripeSubscriptionId());
+                } catch (StripeException e) {
+                    throw new IllegalStateException("Could not cancel previous Stripe subscription "
+                            + existing.getStripeSubscriptionId() + "; the event will be retried", e);
                 }
-                existing.setStatus(SubscriptionStatus.CANCELLED);
-                existing.setCancelledAt(LocalDateTime.now());
-                subscriptionRepository.save(existing);
-            } catch (StripeException e) {
-                logger.error("Failed to cancel Stripe subscription: {}",
-                        existing.getStripeSubscriptionId(), e);
             }
+            existing.setStatus(SubscriptionStatus.CANCELLED);
+            existing.setCancelledAt(LocalDateTime.now());
+            subscriptionRepository.save(existing);
         });
 
         // Create new subscription
