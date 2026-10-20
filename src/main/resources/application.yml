@@ -86,12 +86,12 @@ stripe:
   api-key: ${STRIPE_API_KEY}
   webhook-secret: ${STRIPE_WEBHOOK_SECRET}
 
-  # Stripe Price IDs (get from Stripe dashboard)
+  # Stripe Price IDs (get from Stripe dashboard); applied to the plans at startup when set
   prices:
-    premium-monthly: ${STRIPE_PREMIUM_MONTHLY_PRICE_ID}
-    premium-yearly: ${STRIPE_PREMIUM_YEARLY_PRICE_ID}
-    pro-monthly: ${STRIPE_PRO_MONTHLY_PRICE_ID}
-    pro-yearly: ${STRIPE_PRO_YEARLY_PRICE_ID}
+    premium-monthly: ${STRIPE_PREMIUM_MONTHLY_PRICE_ID:}
+    premium-yearly: ${STRIPE_PREMIUM_YEARLY_PRICE_ID:}
+    pro-monthly: ${STRIPE_PRO_MONTHLY_PRICE_ID:}
+    pro-yearly: ${STRIPE_PRO_YEARLY_PRICE_ID:}
 
 jasypt:
   encryptor:
