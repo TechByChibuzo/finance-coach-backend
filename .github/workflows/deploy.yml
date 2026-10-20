@@ -120,18 +120,29 @@ jobs:
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
 
-      # If the new tasks never get healthy, the ECS circuit breaker rolls back and the service
-      # looks "stable" again on the old revision. Fail the run unless the new revision is running.
+      # The stability wait can return as soon as a task is running, before Spring Boot is healthy,
+      # and if the new tasks never get healthy the circuit breaker rolls back to the old revision.
+      # Wait for the rollout to finish and fail unless the new revision is what's running.
       - name: Verify the new revision is running
         env:
           NEW_TASK_DEFINITION: ${{ steps.deploy.outputs.task-definition-arn }}
         run: |
-          read -r RUNNING_TD ROLLOUT RUNNING <<< "$(aws ecs describe-services \
-            --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
-            --query 'services[0].deployments[?status==`PRIMARY`] | [0].[taskDefinition,rolloutState,runningCount]' \
-            --output text)"
-          echo "Primary deployment: $RUNNING_TD ($ROLLOUT, $RUNNING running)"
-          if [ "$RUNNING_TD" != "$NEW_TASK_DEFINITION" ] || [ "$ROLLOUT" != "COMPLETED" ] || [ "$RUNNING" -lt 1 ]; then
-            echo "::error::The new version did not become healthy and ECS rolled back. Check the logs: aws logs tail /ecs/finance-coach-backend"
-            exit 1
-          fi
+          for attempt in $(seq 1 60); do
+            read -r RUNNING_TD ROLLOUT RUNNING <<< "$(aws ecs describe-services \
+              --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+              --query 'services[0].deployments[?status==`PRIMARY`] | [0].[taskDefinition,rolloutState,runningCount]' \
+              --output text)"
+            echo "Primary deployment: $RUNNING_TD ($ROLLOUT, $RUNNING running)"
+
+            if [ "$RUNNING_TD" != "$NEW_TASK_DEFINITION" ] || [ "$ROLLOUT" = "FAILED" ]; then
+              echo "::error::The new version did not become healthy and ECS rolled back. Check the logs: aws logs tail /ecs/finance-coach-backend"
+              exit 1
+            fi
+            if [ "$ROLLOUT" = "COMPLETED" ] && [ "$RUNNING" -ge 1 ]; then
+              echo "New version is live."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Rollout still not complete after 15 minutes"
+          exit 1
