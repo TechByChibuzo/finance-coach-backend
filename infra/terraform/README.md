@@ -46,7 +46,11 @@ Tasks read secrets when they start, so redeploy (or push to main) after changing
 
 ## Connect GitHub Actions
 
-Add a repository secret `AWS_DEPLOY_ROLE_ARN` with the value of `terraform output -raw github_deploy_role_arn`.
+With the default `use_github_oidc = false` (required on the AWS free plan, which forbids OIDC
+providers), add repository secrets `AWS_ACCESS_KEY_ID` (`terraform output -raw github_deploy_access_key_id`)
+and `AWS_SECRET_ACCESS_KEY` (`terraform output -raw github_deploy_secret_access_key`).
+
+With `use_github_oidc = true`, instead add `AWS_DEPLOY_ROLE_ARN` (`terraform output -raw github_deploy_role_arn`).
 If you use a region other than us-east-2, also add a repository variable `AWS_REGION`.
 Then push to `main`: tests run, the image is built and pushed to ECR, and the service is updated.
 

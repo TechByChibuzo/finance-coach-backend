@@ -16,6 +16,16 @@ variable "github_repo" {
   default     = "TechByChibuzo/finance-coach-backend"
 }
 
+variable "use_github_oidc" {
+  description = <<-EOT
+    true: GitHub Actions assumes an IAM role via OIDC (no stored keys; preferred).
+    false: a dedicated IAM user with an access key stored in GitHub secrets. The free-plan
+    account's service control policy forbids creating OIDC identity providers.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "domain_name" {
   description = "Custom API domain, e.g. api.aifinancecoach.dev. Leave empty to use the ALB's own DNS name over HTTP."
   type        = string

@@ -47,15 +47,28 @@ jobs:
     permissions:
       contents: read
       id-token: write   # GitHub OIDC: assume an AWS role without long-lived access keys
+    env:
+      # OIDC role if configured; otherwise the deploy user's access key (accounts that
+      # can't create OIDC providers, such as the AWS free plan)
+      USE_OIDC: ${{ secrets.AWS_DEPLOY_ROLE_ARN != '' }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - name: Configure AWS credentials
+      - name: Configure AWS credentials (OIDC role)
+        if: env.USE_OIDC == 'true'
         uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Configure AWS credentials (access key)
+        if: env.USE_OIDC != 'true'
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4.3.1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to ECR

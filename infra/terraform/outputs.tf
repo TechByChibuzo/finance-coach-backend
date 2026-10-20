@@ -9,8 +9,19 @@ output "alb_dns_name" {
 }
 
 output "github_deploy_role_arn" {
-  description = "Set as the AWS_DEPLOY_ROLE_ARN secret in GitHub"
-  value       = aws_iam_role.github_deploy.arn
+  description = "OIDC mode: set as the AWS_DEPLOY_ROLE_ARN secret in GitHub"
+  value       = one(aws_iam_role.github_deploy[*].arn)
+}
+
+output "github_deploy_access_key_id" {
+  description = "Access-key mode: set as the AWS_ACCESS_KEY_ID secret in GitHub"
+  value       = one(aws_iam_access_key.github_deploy[*].id)
+}
+
+output "github_deploy_secret_access_key" {
+  description = "Access-key mode: set as the AWS_SECRET_ACCESS_KEY secret in GitHub"
+  value       = one(aws_iam_access_key.github_deploy[*].secret)
+  sensitive   = true
 }
 
 output "ecr_repository_url" {
