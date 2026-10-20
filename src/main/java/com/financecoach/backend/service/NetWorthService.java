@@ -338,9 +338,10 @@ public class NetWorthService {
         List<BankAccount> creditAccounts = bankAccountRepository
                 .findByUserIdAndAccountTypeAndIsActive(userId, "credit", true);
 
-        // Credit card balances are positive (what you owe)
+        // Credit card balances are positive (what you owe); accounts without a balance count as 0
         return creditAccounts.stream()
                 .map(BankAccount::getCurrentBalance)
+                .filter(Objects::nonNull)
                 .map(BigDecimal::abs)  // Ensure positive
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
