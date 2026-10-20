@@ -73,7 +73,7 @@ plaid:
 
 claude:
   api-key: ${CLAUDE_API_KEY}
-  model: ${CLAUDE_MODEL:claude-sonnet-4-20250514}
+  model: ${CLAUDE_MODEL:us.anthropic.claude-sonnet-4-5-20250929-v1:0}
   max-tokens: ${CLAUDE_MAX_TOKENS:4096}
 
 sendgrid:
@@ -90,6 +90,7 @@ stripe:
 # ============================================
 app:
   frontend-url: ${APP_FRONTEND_URL}
+  api-url: ${APP_API_URL:https://api.aifinancecoach.dev}
   metrics:
     # Scrapers must send "Authorization: Bearer ${METRICS_TOKEN}"; without a token, metrics are unreachable
     token: ${METRICS_TOKEN:}

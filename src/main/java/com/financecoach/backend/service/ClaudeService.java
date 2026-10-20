@@ -31,9 +31,10 @@ public class ClaudeService {
 
     @Autowired
     public ClaudeService(@Value("${claude.model:anthropic.claude-sonnet-4-5-20250929-v1:0}") String model,
-                         @Value("${claude.max-tokens:4096}") int maxTokens) {
+                         @Value("${claude.max-tokens:4096}") int maxTokens,
+                         @Value("${aws.region}") String region) {
         this(BedrockRuntimeClient.builder()
-                        .region(Region.US_EAST_1)
+                        .region(Region.of(region))
                         .credentialsProvider(DefaultCredentialsProvider.create())
                         .build(),
                 model, maxTokens);

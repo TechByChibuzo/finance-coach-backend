@@ -21,6 +21,9 @@ public class OpenApiConfig {
     @Value("${app.frontend-url}")
     private String frontendUrl;
 
+    @Value("${app.api-url}")
+    private String apiUrl;
+
     @Bean
     public OpenAPI financeCoachOpenAPI() {
         // Security scheme for JWT
@@ -72,11 +75,8 @@ public class OpenApiConfig {
                                 .url("https://opensource.org/licenses/MIT")))
                 .servers(List.of(
                         new Server()
-                                .url("http://localhost:8080")
-                                .description("Local Development"),
-                        new Server()
-                                .url("https://finance-coach-api.onrender.com")
-                                .description("Production Server")
+                                .url(apiUrl)
+                                .description("This server")
                 ))
                 .components(new Components()
                         .addSecuritySchemes("bearerAuth", securityScheme))

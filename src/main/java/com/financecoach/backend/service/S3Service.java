@@ -2,7 +2,9 @@ package com.financecoach.backend.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
@@ -19,25 +21,30 @@ import java.time.Duration;
 public class S3Service {
 
     private static final Logger logger = LoggerFactory.getLogger(S3Service.class);
-    private static final String BUCKET_NAME = "finance-coach-exports-516737672838";
-
+    private final String bucketName;
     private final S3Client s3Client;
     private final S3Presigner presigner;
 
-    public S3Service() {
+    public S3Service(@Value("${aws.region}") String region,
+                     @Value("${aws.s3.export-bucket:}") String bucketName) {
+        this.bucketName = bucketName;
         this.s3Client = S3Client.builder()
-                .region(Region.US_EAST_1)
+                .region(Region.of(region))
                 .credentialsProvider(DefaultCredentialsProvider.create())
                 .build();
         this.presigner = S3Presigner.builder()
-                .region(Region.US_EAST_1)
+                .region(Region.of(region))
                 .credentialsProvider(DefaultCredentialsProvider.create())
                 .build();
     }
 
     public String uploadFile(String key, byte[] content, String contentType) {
+        if (!StringUtils.hasText(bucketName)) {
+            throw new IllegalStateException("S3_EXPORT_BUCKET is not configured");
+        }
+
         PutObjectRequest request = PutObjectRequest.builder()
-                .bucket(BUCKET_NAME)
+                .bucket(bucketName)
                 .key(key)
                 .contentType(contentType)
                 .build();
@@ -49,7 +56,7 @@ public class S3Service {
 
     public String generatePresignedUrl(String key) {
         GetObjectRequest getObjectRequest = GetObjectRequest.builder()
-                .bucket(BUCKET_NAME)
+                .bucket(bucketName)
                 .key(key)
                 .build();
 

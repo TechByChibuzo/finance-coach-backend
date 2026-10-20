@@ -50,8 +50,9 @@ plaid:
 # Claude API Configuration
 claude:
   api-key: ${CLAUDE_API_KEY}
-  model: claude-sonnet-4-5-20250929
-  max-tokens: 1000
+  # Bedrock model or inference-profile ID (needs model access enabled in the Bedrock console)
+  model: ${CLAUDE_MODEL:us.anthropic.claude-sonnet-4-5-20250929-v1:0}
+  max-tokens: ${CLAUDE_MAX_TOKENS:1000}
 
 # SendGrid Configuration
 sendgrid:
@@ -59,9 +60,17 @@ sendgrid:
   from-email: ${SENDGRID_FROM_EMAIL:cufombaa@gmail.com}
   from-name: ${SENDGRID_FROM_NAME:Finance Coach}
 
+# AWS (Bedrock + S3 exports)
+aws:
+  region: ${AWS_REGION:us-east-1}
+  s3:
+    export-bucket: ${S3_EXPORT_BUCKET:}
+
 # App Configuration
 app:
   frontend-url: ${APP_FRONTEND_URL:http://localhost:5173}
+  # Public base URL of this API (shown in Swagger)
+  api-url: ${APP_API_URL:http://localhost:8090}
   metrics:
     # Bearer token required to scrape /actuator/prometheus and /actuator/metrics
     token: ${METRICS_TOKEN:}
