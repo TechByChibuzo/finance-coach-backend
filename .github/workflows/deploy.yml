@@ -112,9 +112,26 @@ jobs:
 
       # Registers a new task definition revision and waits for the service to be healthy
       - name: Deploy to ECS
+        id: deploy
         uses: aws-actions/amazon-ecs-deploy-task-definition@ae89e14ac6188020feb2b19228b7149a7bc9cf0b # v2.6.4
         with:
           task-definition: ${{ steps.render.outputs.task-definition }}
           service: ${{ env.ECS_SERVICE }}
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
+
+      # If the new tasks never get healthy, the ECS circuit breaker rolls back and the service
+      # looks "stable" again on the old revision. Fail the run unless the new revision is running.
+      - name: Verify the new revision is running
+        env:
+          NEW_TASK_DEFINITION: ${{ steps.deploy.outputs.task-definition-arn }}
+        run: |
+          read -r RUNNING_TD ROLLOUT RUNNING <<< "$(aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].deployments[?status==`PRIMARY`] | [0].[taskDefinition,rolloutState,runningCount]' \
+            --output text)"
+          echo "Primary deployment: $RUNNING_TD ($ROLLOUT, $RUNNING running)"
+          if [ "$RUNNING_TD" != "$NEW_TASK_DEFINITION" ] || [ "$ROLLOUT" != "COMPLETED" ] || [ "$RUNNING" -lt 1 ]; then
+            echo "::error::The new version did not become healthy and ECS rolled back. Check the logs: aws logs tail /ecs/finance-coach-backend"
+            exit 1
+          fi
