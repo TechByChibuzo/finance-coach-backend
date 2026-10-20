@@ -105,6 +105,48 @@ class InvestmentServiceTest {
         assertThat(saved.getValue().getAccountId()).isEqualTo(brokerage.getId());
     }
 
+    @Test
+    void sync_removesPositionsPlaidNoLongerReturns_soSoldHoldingsDontInflateTheTotals() {
+        Holding stillHeld = stored(brokerage, "sec-aapl");
+        Holding sold = stored(brokerage, "sec-tsla");
+        Holding soldFromIra = stored(ira, "sec-old-fund");
+        when(bankAccountRepository.findByUserIdAndAccountTypeAndIsActive(userId, "investment", true))
+                .thenReturn(List.of(brokerage, ira));
+        when(plaidService.getItems(List.of(brokerage, ira))).thenReturn(List.of(item));
+        stubItemAccounts();
+        when(plaidService.getHoldings("access-item")).thenReturn(new InvestmentsHoldingsGetResponse()
+                .holdings(List.of(plaidHolding("plaid-brokerage", "sec-aapl", 10, 1900)))
+                .securities(List.of(new Security().securityId("sec-aapl").name("Apple").tickerSymbol("AAPL").type("equity"))));
+        when(holdingRepository.findByAccountIdAndSecurityId(brokerage.getId(), "sec-aapl")).thenReturn(Optional.of(stillHeld));
+        when(holdingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(holdingRepository.findByAccountId(brokerage.getId())).thenReturn(List.of(stillHeld, sold));
+        when(holdingRepository.findByAccountId(ira.getId())).thenReturn(List.of(soldFromIra));
+
+        investmentService.syncAllHoldings(userId);
+
+        verify(holdingRepository).deleteAll(List.of(sold));
+        verify(holdingRepository).deleteAll(List.of(soldFromIra)); // IRA came back empty: everything was sold
+    }
+
+    @Test
+    void sync_whenPlaidFails_keepsAllStoredHoldings() {
+        when(bankAccountRepository.findById(ira.getId())).thenReturn(Optional.of(ira));
+        when(plaidService.getItem(ira)).thenReturn(item);
+        stubItemAccounts();
+        when(plaidService.getHoldings("access-item"))
+                .thenThrow(new com.financecoach.backend.exception.PlaidIntegrationException("ITEM_LOGIN_REQUIRED"));
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> investmentService.syncHoldingsForAccount(ira.getId(), userId))
+                .isInstanceOf(com.financecoach.backend.exception.PlaidIntegrationException.class);
+
+        verify(holdingRepository, org.mockito.Mockito.never()).deleteAll(any());
+    }
+
+    private Holding stored(BankAccount account, String securityId) {
+        return Holding.builder().id(UUID.randomUUID()).userId(userId).accountId(account.getId())
+                .securityId(securityId).type("stock").build();
+    }
+
     private BankAccount investmentAccount(String plaidAccountId) {
         BankAccount account = new BankAccount();
         account.setId(UUID.randomUUID());

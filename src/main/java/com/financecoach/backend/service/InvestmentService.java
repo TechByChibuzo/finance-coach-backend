@@ -84,7 +84,8 @@ public class InvestmentService {
             // Get securities list
             List<Security> securities = response.getSecurities();
 
-            // Process each holding
+            // Process each holding, remembering which positions each account still has
+            Map<UUID, Set<String>> currentSecurities = new HashMap<>();
             for (com.plaid.client.model.Holding plaidHolding : response.getHoldings()) {
                 BankAccount account = accountsByPlaidId.get(plaidHolding.getAccountId());
                 if (account == null) {
@@ -92,6 +93,8 @@ public class InvestmentService {
                 }
 
                 Holding holding = saveOrUpdateHolding(account, plaidHolding, securities);
+                currentSecurities.computeIfAbsent(account.getId(), id -> new HashSet<>())
+                        .add(plaidHolding.getSecurityId());
                 processedCount ++;
 
                 logger.debug("Processed holding: {} ({}) - Quantity: {}, Value: {}",
@@ -100,6 +103,10 @@ public class InvestmentService {
                         holding.getQuantity(),
                         holding.getCurrentValue());
             }
+
+            // The response is the item's complete current holdings: positions we still have stored
+            // but Plaid no longer returns were sold, and must not count toward portfolio or net worth
+            int removedCount = removeSoldHoldings(accountsByPlaidId.values(), currentSecurities);
 
             // The holdings response includes current balances for the item's investment accounts
             plaidService.applyBalances(item, response.getAccounts());
@@ -110,8 +117,8 @@ public class InvestmentService {
                 bankAccountRepository.save(account);
             }
 
-            logger.info("Holdings sync completed - Item: {}, Holdings processed: {}",
-                    item.getId(), processedCount);
+            logger.info("Holdings sync completed - Item: {}, Holdings processed: {}, sold positions removed: {}",
+                    item.getId(), processedCount, removedCount);
 
         } catch (PlaidIntegrationException e) {
             logger.error("Failed to sync holdings from Plaid for item: {}", item.getId(), e);
@@ -149,6 +156,21 @@ public class InvestmentService {
 
         logger.info("Holdings sync summary - User: {}, Success: {}, Failed: {}",
                 userId, successCount, failureCount);
+    }
+
+    private int removeSoldHoldings(Collection<BankAccount> accounts, Map<UUID, Set<String>> currentSecurities) {
+        int removed = 0;
+        for (BankAccount account : accounts) {
+            Set<String> stillHeld = currentSecurities.getOrDefault(account.getId(), Set.of());
+            List<Holding> sold = holdingRepository.findByAccountId(account.getId()).stream()
+                    .filter(h -> !stillHeld.contains(h.getSecurityId()))
+                    .toList();
+            if (!sold.isEmpty()) {
+                holdingRepository.deleteAll(sold);
+                removed += sold.size();
+            }
+        }
+        return removed;
     }
 
     /**
