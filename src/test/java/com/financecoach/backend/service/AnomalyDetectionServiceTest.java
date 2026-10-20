@@ -127,6 +127,67 @@ class AnomalyDetectionServiceTest {
         verify(anomalyRepository).deleteAll(List.of(older));
     }
 
+    @Test
+    void detectAnomalies_withoutHistory_findsNothing() {
+        LocalDate monthStart = monthStart();
+        when(transactionRepository.findByUserIdAndDateBetween(ownerId, monthStart, LocalDate.now()))
+                .thenReturn(List.of(food(LocalDate.now(), "500.00")));
+        when(transactionRepository.findByUserIdAndDateBetween(ownerId, monthStart.minusMonths(6), monthStart.minusDays(1)))
+                .thenReturn(List.of());
+
+        assertThat(anomalyDetectionService.detectAnomalies(ownerId)).isEmpty();
+    }
+
+    @Test
+    void detectAnomalies_ignoresSmallSpend_shortHistory_flatHistory_andNormalSpend() {
+        LocalDate monthStart = monthStart();
+        Transaction tinyCoffee = categorized("COFFEE", LocalDate.now(), "3.00");
+        Transaction newCategory = categorized("TRAVEL", LocalDate.now(), "900.00");
+        Transaction flatRent = categorized("RENT", LocalDate.now(), "2000.00");
+        Transaction normalFood = food(LocalDate.now(), "205.00");
+        Transaction uncategorized = categorized(null, LocalDate.now(), "999.00");
+        when(transactionRepository.findByUserIdAndDateBetween(ownerId, monthStart, LocalDate.now()))
+                .thenReturn(List.of(tinyCoffee, newCategory, flatRent, normalFood, uncategorized));
+        when(transactionRepository.findByUserIdAndDateBetween(ownerId, monthStart.minusMonths(6), monthStart.minusDays(1)))
+                .thenReturn(List.of(
+                        categorized("COFFEE", monthStart.minusMonths(1).withDayOfMonth(5), "4.00"),
+                        categorized("COFFEE", monthStart.minusMonths(2).withDayOfMonth(5), "4.00"),
+                        categorized("TRAVEL", monthStart.minusMonths(1).withDayOfMonth(5), "100.00"),
+                        categorized("RENT", monthStart.minusMonths(1).withDayOfMonth(1), "2000.00"),
+                        categorized("RENT", monthStart.minusMonths(2).withDayOfMonth(1), "2000.00"),
+                        food(monthStart.minusMonths(1).withDayOfMonth(10), "200.00"),
+                        food(monthStart.minusMonths(2).withDayOfMonth(10), "220.00"),
+                        food(monthStart.minusMonths(3).withDayOfMonth(10), "180.00")));
+
+        assertThat(anomalyDetectionService.detectAnomalies(ownerId)).isEmpty();
+        verify(anomalyRepository, never()).save(any());
+    }
+
+    @Test
+    void detectAnomalies_gradesSeverityByZScore() {
+        stubSpending(new BigDecimal("235.00")); // mean 200, std ~16.3 -> z ~2.1
+        when(anomalyRepository.findByUserIdAndCategoryAndPeriodStartOrderByDetectedAtDesc(
+                ownerId, "FOOD_AND_DRINK", monthStart())).thenReturn(List.of());
+        when(anomalyRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(anomalyDetectionService.detectAnomalies(ownerId).get(0).getSeverity()).isEqualTo("MEDIUM");
+
+        stubSpending(new BigDecimal("226.00")); // z ~1.6
+        assertThat(anomalyDetectionService.detectAnomalies(ownerId).get(0).getSeverity()).isEqualTo("LOW");
+    }
+
+    @Test
+    void queries_delegateToTheRepository() {
+        List<SpendingAnomaly> all = List.of(anomalyOwnedBy(ownerId));
+        when(anomalyRepository.findByUserIdOrderByDetectedAtDesc(ownerId)).thenReturn(all);
+        when(anomalyRepository.findByUserIdAndIsReviewedFalseOrderByDetectedAtDesc(ownerId)).thenReturn(all);
+        when(anomalyRepository.countByUserIdAndIsReviewedFalse(ownerId)).thenReturn(1L);
+
+        assertThat(anomalyDetectionService.getAllAnomalies(ownerId)).isSameAs(all);
+        assertThat(anomalyDetectionService.getUnreviewedAnomalies(ownerId)).isSameAs(all);
+        assertThat(anomalyDetectionService.getUnreviewedCount(ownerId)).isEqualTo(1L);
+    }
+
     // --- markAsReviewed ---
 
     @Test
@@ -177,6 +238,12 @@ class AnomalyDetectionServiceTest {
         when(transactionRepository.findByUserIdAndDateBetween(
                 ownerId, monthStart.minusMonths(6), monthStart.minusDays(1)))
                 .thenReturn(history);
+    }
+
+    private Transaction categorized(String category, LocalDate date, String amount) {
+        Transaction t = food(date, amount);
+        t.setCategory(category);
+        return t;
     }
 
     private Transaction food(LocalDate date, String amount) {

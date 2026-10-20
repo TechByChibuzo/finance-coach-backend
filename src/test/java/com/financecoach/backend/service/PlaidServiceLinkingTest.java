@@ -1,0 +1,378 @@
+package com.financecoach.backend.service;
+
+import com.financecoach.backend.exception.BankAccountNotFoundException;
+import com.financecoach.backend.exception.PlaidIntegrationException;
+import com.financecoach.backend.exception.UnauthorizedAccessException;
+import com.financecoach.backend.model.BankAccount;
+import com.financecoach.backend.model.PlaidItem;
+import com.financecoach.backend.repository.BankAccountRepository;
+import com.financecoach.backend.repository.PlaidItemRepository;
+import com.plaid.client.model.AccountBalance;
+import com.plaid.client.model.AccountBase;
+import com.plaid.client.model.AccountSubtype;
+import com.plaid.client.model.AccountType;
+import com.plaid.client.model.AccountsGetResponse;
+import com.plaid.client.model.Institution;
+import com.plaid.client.model.InstitutionsGetByIdResponse;
+import com.plaid.client.model.InvestmentsHoldingsGetResponse;
+import com.plaid.client.model.InvestmentsTransactionsGetResponse;
+import com.plaid.client.model.Item;
+import com.plaid.client.model.ItemGetResponse;
+import com.plaid.client.model.ItemPublicTokenExchangeResponse;
+import com.plaid.client.model.ItemWithConsentFields;
+import com.plaid.client.model.LinkTokenCreateRequest;
+import com.plaid.client.model.LinkTokenCreateResponse;
+import com.plaid.client.model.Products;
+import com.plaid.client.request.PlaidApi;
+import okhttp3.MediaType;
+import okhttp3.ResponseBody;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+import retrofit2.Call;
+import retrofit2.Response;
+
+import java.io.IOException;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+/**
+ * Linking banks (link token + public token exchange), item lookup and backfill,
+ * disconnecting accounts, and the investment endpoints.
+ */
+@ExtendWith(MockitoExtension.class)
+class PlaidServiceLinkingTest {
+
+    @Mock private PlaidApi plaidClient;
+    @Mock private BankAccountRepository bankAccountRepository;
+    @Mock private PlaidItemRepository plaidItemRepository;
+    @Mock private MetricsService metricsService;
+
+    private PlaidService plaidService;
+    private UUID userId;
+
+    @BeforeEach
+    void setUp() {
+        plaidService = new PlaidService(plaidClient, bankAccountRepository, plaidItemRepository);
+        ReflectionTestUtils.setField(plaidService, "metricsService", metricsService);
+        userId = UUID.randomUUID();
+    }
+
+    // --- link token ---
+
+    @Test
+    void createLinkToken_requestsTransactionsAndInvestments_withTwoYearsOfHistory() throws Exception {
+        when(plaidClient.linkTokenCreate(any())).thenReturn(ok(new LinkTokenCreateResponse().linkToken("link-123")));
+
+        String token = plaidService.createLinkToken(userId, "user");
+
+        ArgumentCaptor<LinkTokenCreateRequest> request = ArgumentCaptor.forClass(LinkTokenCreateRequest.class);
+        verify(plaidClient).linkTokenCreate(request.capture());
+        assertThat(token).isEqualTo("link-123");
+        assertThat(request.getValue().getUser().getClientUserId()).isEqualTo(userId.toString());
+        assertThat(request.getValue().getProducts()).containsExactly(Products.TRANSACTIONS, Products.INVESTMENTS);
+        assertThat(request.getValue().getTransactions().getDaysRequested()).isEqualTo(730);
+    }
+
+    @Test
+    void createLinkToken_whenPlaidRejects_orIsUnreachable_throws() throws Exception {
+        when(plaidClient.linkTokenCreate(any()))
+                .thenReturn(error(400, "INVALID_FIELD"))
+                .thenReturn(networkFailure());
+
+        assertThatThrownBy(() -> plaidService.createLinkToken(userId, "user"))
+                .isInstanceOf(PlaidIntegrationException.class).hasMessageContaining("INVALID_FIELD");
+        assertThatThrownBy(() -> plaidService.createLinkToken(userId, "user"))
+                .isInstanceOf(PlaidIntegrationException.class).hasMessageContaining("Network");
+    }
+
+    // --- public token exchange ---
+
+    @Test
+    void exchangePublicToken_savesTheItemAndEachNewAccount() throws Exception {
+        stubExchange("access-1", "item-1");
+        when(plaidClient.accountsGet(any())).thenReturn(ok(new AccountsGetResponse()
+                .item(new Item().institutionId("ins_1"))
+                .accounts(List.of(
+                        plaidAccount("acc-checking", AccountType.DEPOSITORY, AccountSubtype.CHECKING, 1200.50, 1100.00),
+                        plaidAccount("acc-card", AccountType.CREDIT, AccountSubtype.CREDIT_CARD, 300.00, null)))));
+        when(plaidClient.institutionsGetById(any()))
+                .thenReturn(ok(new InstitutionsGetByIdResponse().institution(new Institution().name("Chase"))));
+        when(plaidItemRepository.findByPlaidItemId("item-1")).thenReturn(Optional.empty());
+        when(plaidItemRepository.save(any())).thenAnswer(inv -> {
+            PlaidItem item = inv.getArgument(0);
+            item.setId(UUID.randomUUID());
+            return item;
+        });
+        when(bankAccountRepository.existsByPlaidAccountId(any())).thenReturn(false);
+        when(bankAccountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        List<BankAccount> accounts = plaidService.exchangePublicToken(userId, "public-token");
+
+        ArgumentCaptor<PlaidItem> item = ArgumentCaptor.forClass(PlaidItem.class);
+        verify(plaidItemRepository).save(item.capture());
+        assertThat(item.getValue().getUserId()).isEqualTo(userId);
+        assertThat(item.getValue().getAccessToken()).isEqualTo("access-1");
+        assertThat(item.getValue().getInstitutionName()).isEqualTo("Chase");
+
+        assertThat(accounts).hasSize(2);
+        BankAccount checking = accounts.get(0);
+        assertThat(checking.getItemId()).isEqualTo(item.getValue().getId());
+        assertThat(checking.getInstitutionName()).isEqualTo("Chase");
+        assertThat(checking.getAccountType()).isEqualTo("depository");
+        assertThat(checking.getAccountSubtype()).isEqualTo("checking");
+        assertThat(checking.getCurrentBalance()).isEqualByComparingTo("1200.50");
+        assertThat(checking.getAvailableBalance()).isEqualByComparingTo("1100.00");
+        assertThat(checking.getCurrencyCode()).isEqualTo("USD");
+        assertThat(accounts.get(1).getAvailableBalance()).isNull();
+        verify(metricsService, times(2)).recordBankAccountConnected();
+    }
+
+    @Test
+    void exchangePublicToken_skipsAccountsAlreadyLinked_andFallsBackToUnknownInstitution() throws Exception {
+        stubExchange("access-1", "item-1");
+        when(plaidClient.accountsGet(any())).thenReturn(ok(new AccountsGetResponse()
+                .item(new Item().institutionId("ins_1"))
+                .accounts(List.of(
+                        plaidAccount("acc-known", AccountType.DEPOSITORY, null, null, null),
+                        plaidAccount("acc-new", AccountType.DEPOSITORY, null, null, null)))));
+        when(plaidClient.institutionsGetById(any())).thenThrow(new RuntimeException("institution lookup down"));
+        when(plaidItemRepository.findByPlaidItemId("item-1")).thenReturn(Optional.empty());
+        when(plaidItemRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(bankAccountRepository.existsByPlaidAccountId("acc-known")).thenReturn(true);
+        when(bankAccountRepository.existsByPlaidAccountId("acc-new")).thenReturn(false);
+        when(bankAccountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        List<BankAccount> accounts = plaidService.exchangePublicToken(userId, "public-token");
+
+        assertThat(accounts).extracting(BankAccount::getPlaidAccountId).containsExactly("acc-new");
+        assertThat(accounts.get(0).getInstitutionName()).isEqualTo("Unknown");
+        assertThat(accounts.get(0).getCurrentBalance()).isNull();
+    }
+
+    @Test
+    void exchangePublicToken_whenTheExchangeOrAccountLookupFails_throws() throws Exception {
+        when(plaidClient.itemPublicTokenExchange(any())).thenReturn(error(400, "INVALID_PUBLIC_TOKEN"));
+        assertThatThrownBy(() -> plaidService.exchangePublicToken(userId, "bad"))
+                .isInstanceOf(PlaidIntegrationException.class).hasMessageContaining("INVALID_PUBLIC_TOKEN");
+
+        stubExchange("access-1", "item-1");
+        when(plaidClient.accountsGet(any())).thenReturn(error(500, "INTERNAL_SERVER_ERROR"));
+        assertThatThrownBy(() -> plaidService.exchangePublicToken(userId, "public-token"))
+                .isInstanceOf(PlaidIntegrationException.class).hasMessageContaining("Failed to get accounts");
+
+        when(plaidClient.itemPublicTokenExchange(any())).thenReturn(networkFailure());
+        assertThatThrownBy(() -> plaidService.exchangePublicToken(userId, "public-token"))
+                .isInstanceOf(PlaidIntegrationException.class).hasMessageContaining("Network");
+
+        verify(bankAccountRepository, never()).save(any());
+    }
+
+    // --- items ---
+
+    @Test
+    void getItem_returnsTheLinkedItem_orFailsIfItsMissing() {
+        PlaidItem item = item(userId);
+        BankAccount linked = account(userId, item.getId());
+        BankAccount dangling = account(userId, UUID.randomUUID());
+        when(plaidItemRepository.findById(item.getId())).thenReturn(Optional.of(item));
+        when(plaidItemRepository.findById(dangling.getItemId())).thenReturn(Optional.empty());
+
+        assertThat(plaidService.getItem(linked)).isSameAs(item);
+        assertThatThrownBy(() -> plaidService.getItem(dangling)).isInstanceOf(PlaidIntegrationException.class);
+    }
+
+    @Test
+    void getItem_forAnAccountLinkedBeforeItemsExisted_looksUpTheItemOnceAndAttachesIt() throws Exception {
+        BankAccount legacy = account(userId, null);
+        legacy.setPlaidAccessToken("legacy-token");
+        when(plaidClient.itemGet(any()))
+                .thenReturn(ok(new ItemGetResponse().item(new ItemWithConsentFields().itemId("item-legacy"))));
+        when(plaidItemRepository.findByPlaidItemId("item-legacy")).thenReturn(Optional.empty());
+        when(plaidItemRepository.save(any())).thenAnswer(inv -> {
+            PlaidItem item = inv.getArgument(0);
+            item.setId(UUID.randomUUID());
+            return item;
+        });
+
+        PlaidItem item = plaidService.getItem(legacy);
+
+        assertThat(item.getAccessToken()).isEqualTo("legacy-token");
+        assertThat(item.getUserId()).isEqualTo(userId);
+        assertThat(legacy.getItemId()).isEqualTo(item.getId());
+        verify(bankAccountRepository).save(legacy);
+    }
+
+    @Test
+    void getItem_backfill_whenPlaidFails_throws() throws Exception {
+        BankAccount legacy = account(userId, null);
+        when(plaidClient.itemGet(any())).thenReturn(error(400, "ITEM_LOGIN_REQUIRED")).thenReturn(networkFailure());
+
+        assertThatThrownBy(() -> plaidService.getItem(legacy)).hasMessageContaining("ITEM_LOGIN_REQUIRED");
+        assertThatThrownBy(() -> plaidService.getItem(legacy)).hasMessageContaining("Network");
+    }
+
+    @Test
+    void getItems_returnsEachItemOnce_evenWithSeveralAccounts() {
+        PlaidItem item = item(userId);
+        when(plaidItemRepository.findById(item.getId())).thenReturn(Optional.of(item));
+
+        List<PlaidItem> items = plaidService.getItems(List.of(account(userId, item.getId()), account(userId, item.getId())));
+
+        assertThat(items).containsExactly(item);
+    }
+
+    @Test
+    void getActiveAccountsByPlaidId_keysAccountsByTheirPlaidId() {
+        PlaidItem item = item(userId);
+        BankAccount account = account(userId, item.getId());
+        account.setPlaidAccountId("plaid-acc");
+        when(bankAccountRepository.findByItemIdAndIsActive(item.getId(), true)).thenReturn(List.of(account));
+
+        Map<String, BankAccount> byPlaidId = plaidService.getActiveAccountsByPlaidId(item);
+
+        assertThat(byPlaidId).containsOnlyKeys("plaid-acc");
+    }
+
+    // --- accounts ---
+
+    @Test
+    void getUserBankAccounts_returnsActiveAccounts() {
+        List<BankAccount> accounts = List.of(account(userId, null));
+        when(bankAccountRepository.findByUserIdAndIsActive(userId, true)).thenReturn(accounts);
+
+        assertThat(plaidService.getUserBankAccounts(userId)).isEqualTo(accounts);
+    }
+
+    @Test
+    void disconnectBankAccount_deactivatesTheOwnersAccount() {
+        BankAccount account = account(userId, null);
+        when(bankAccountRepository.findById(account.getId())).thenReturn(Optional.of(account));
+
+        plaidService.disconnectBankAccount(account.getId(), userId);
+
+        assertThat(account.getIsActive()).isFalse();
+        verify(bankAccountRepository).save(account);
+    }
+
+    @Test
+    void disconnectBankAccount_ofAnotherUser_isRejected_andUnknown_isNotFound() {
+        BankAccount theirs = account(UUID.randomUUID(), null);
+        UUID missing = UUID.randomUUID();
+        when(bankAccountRepository.findById(theirs.getId())).thenReturn(Optional.of(theirs));
+        when(bankAccountRepository.findById(missing)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> plaidService.disconnectBankAccount(theirs.getId(), userId))
+                .isInstanceOf(UnauthorizedAccessException.class);
+        assertThatThrownBy(() -> plaidService.disconnectBankAccount(missing, userId))
+                .isInstanceOf(BankAccountNotFoundException.class);
+        verify(bankAccountRepository, never()).save(any());
+    }
+
+    // --- investments ---
+
+    @Test
+    void getHoldings_returnsPlaidsResponse_andWrapsFailures() throws Exception {
+        InvestmentsHoldingsGetResponse holdings = new InvestmentsHoldingsGetResponse();
+        when(plaidClient.investmentsHoldingsGet(any()))
+                .thenReturn(ok(holdings))
+                .thenReturn(error(400, "PRODUCTS_NOT_SUPPORTED"))
+                .thenReturn(networkFailure());
+
+        assertThat(plaidService.getHoldings("token")).isSameAs(holdings);
+        assertThatThrownBy(() -> plaidService.getHoldings("token")).hasMessageContaining("PRODUCTS_NOT_SUPPORTED");
+        assertThatThrownBy(() -> plaidService.getHoldings("token")).hasMessageContaining("Unable to fetch");
+    }
+
+    @Test
+    void getInvestmentTransactions_returnsPlaidsResponse_andWrapsFailures() throws Exception {
+        InvestmentsTransactionsGetResponse transactions = new InvestmentsTransactionsGetResponse().totalInvestmentTransactions(3);
+        when(plaidClient.investmentsTransactionsGet(any()))
+                .thenReturn(ok(transactions))
+                .thenReturn(error(400, "INVALID_REQUEST"))
+                .thenReturn(networkFailure());
+        LocalDate start = LocalDate.of(2026, 1, 1);
+        LocalDate end = LocalDate.of(2026, 3, 31);
+
+        assertThat(plaidService.getInvestmentTransactions("token", start, end)).isSameAs(transactions);
+        assertThatThrownBy(() -> plaidService.getInvestmentTransactions("token", start, end))
+                .isInstanceOf(PlaidIntegrationException.class);
+        assertThatThrownBy(() -> plaidService.getInvestmentTransactions("token", start, end))
+                .hasMessageContaining("Unable to fetch");
+    }
+
+    // --- helpers ---
+
+    private void stubExchange(String accessToken, String itemId) throws Exception {
+        when(plaidClient.itemPublicTokenExchange(any()))
+                .thenReturn(ok(new ItemPublicTokenExchangeResponse().accessToken(accessToken).itemId(itemId)));
+    }
+
+    private AccountBase plaidAccount(String id, AccountType type, AccountSubtype subtype, Double current, Double available) {
+        AccountBase account = new AccountBase().accountId(id).name("Account " + id).type(type).subtype(subtype);
+        if (current != null || available != null) {
+            account.balances(new AccountBalance().current(current).available(available).isoCurrencyCode("USD"));
+        }
+        return account;
+    }
+
+    private PlaidItem item(UUID owner) {
+        PlaidItem item = new PlaidItem();
+        item.setId(UUID.randomUUID());
+        item.setUserId(owner);
+        item.setAccessToken("access");
+        return item;
+    }
+
+    private BankAccount account(UUID owner, UUID itemId) {
+        BankAccount account = new BankAccount();
+        account.setId(UUID.randomUUID());
+        account.setUserId(owner);
+        account.setItemId(itemId);
+        return account;
+    }
+
+    // Fake retrofit calls built with a default answer, so they can be created inline inside
+    // another when(...) without nesting Mockito stubbing
+    @SuppressWarnings("unchecked")
+    private static <T> Call<T> call(Response<T> response, IOException failure) {
+        return mock(Call.class, invocation -> {
+            if (!invocation.getMethod().getName().equals("execute")) {
+                return null;
+            }
+            if (failure != null) {
+                throw failure;
+            }
+            return response;
+        });
+    }
+
+    private static <T> Call<T> ok(T body) {
+        return call(Response.success(body), null);
+    }
+
+    private static <T> Call<T> error(int status, String errorCode) {
+        return call(Response.error(status, ResponseBody.create(
+                "{\"error_code\": \"" + errorCode + "\"}", MediaType.get("application/json"))), null);
+    }
+
+    private static <T> Call<T> networkFailure() {
+        return call(null, new IOException("connection reset"));
+    }
+}

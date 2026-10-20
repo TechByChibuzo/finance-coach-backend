@@ -4,6 +4,7 @@ import com.financecoach.backend.exception.AiServiceUnavailableException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import software.amazon.awssdk.core.SdkBytes;
@@ -12,9 +13,12 @@ import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelRequest;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelResponse;
 import software.amazon.awssdk.services.bedrockruntime.model.ThrottlingException;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -53,6 +57,42 @@ class ClaudeServiceTest {
 
         assertThatThrownBy(() -> claudeService.chat("Hi"))
                 .isInstanceOf(AiServiceUnavailableException.class);
+    }
+
+    @Test
+    void chat_sendsSystemPromptAndHistoryInOrder() {
+        stubBedrockBody("{\"content\": [{\"type\": \"text\", \"text\": \"ok\"}]}");
+
+        claudeService.chat("And now?", "You are a coach",
+                List.of(new ClaudeService.ConversationTurn("First question", "First answer")));
+
+        String body = sentBody();
+        assertThat(body).contains("\"system\":\"You are a coach\"").contains("\"max_tokens\":1000");
+        assertThat(body.indexOf("First question")).isLessThan(body.indexOf("First answer"));
+        assertThat(body.indexOf("First answer")).isLessThan(body.indexOf("And now?"));
+    }
+
+    @Test
+    void chat_withoutASystemPrompt_omitsIt() {
+        stubBedrockBody("{\"content\": [{\"type\": \"text\", \"text\": \"ok\"}]}");
+
+        claudeService.chat("Hi", "");
+
+        assertThat(sentBody()).doesNotContain("\"system\"");
+    }
+
+    @Test
+    void chat_whenTheResponseIsMalformed_throws() {
+        stubBedrockBody("not json");
+
+        assertThatThrownBy(() -> claudeService.chat("Hi")).isInstanceOf(AiServiceUnavailableException.class);
+    }
+
+    private String sentBody() {
+        ArgumentCaptor<InvokeModelRequest> request = ArgumentCaptor.forClass(InvokeModelRequest.class);
+        verify(bedrockClient).invokeModel(request.capture());
+        assertThat(request.getValue().modelId()).isEqualTo("anthropic.claude-test");
+        return request.getValue().body().asUtf8String();
     }
 
     private void stubBedrockBody(String json) {

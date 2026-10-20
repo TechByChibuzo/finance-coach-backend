@@ -245,6 +245,136 @@ class TransactionServiceTest {
         verify(plaidClient, never()).transactionsSync(any());
     }
 
+    @Test
+    void syncItem_mapsPlaidFieldsOntoTheTransaction() throws Exception {
+        stubItemAccounts(checking);
+        stubPlaidTransactions(plaidTx("tx-1", "plaid-checking")
+                .merchantName("Blue Bottle")
+                .personalFinanceCategory(new com.plaid.client.model.PersonalFinanceCategory()
+                        .primary("FOOD_AND_DRINK").detailed("FOOD_AND_DRINK_COFFEE"))
+                .paymentChannel(com.plaid.client.model.Transaction.PaymentChannelEnum.IN_STORE)
+                .location(new com.plaid.client.model.Location().address("1 Main St").city("Oakland").region("CA")));
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        Transaction saved = transactionService.syncItem(item).get(0);
+
+        assertThat(saved.getUserId()).isEqualTo(userId);
+        assertThat(saved.getAmount()).isEqualByComparingTo("12.50");
+        assertThat(saved.getMerchantName()).isEqualTo("Blue Bottle");
+        assertThat(saved.getCategory()).isEqualTo("FOOD_AND_DRINK");
+        assertThat(saved.getSubcategory()).isEqualTo("FOOD_AND_DRINK_COFFEE");
+        assertThat(saved.getPaymentChannel()).isEqualTo("in store");
+        assertThat(saved.getLocationCity()).isEqualTo("Oakland");
+        assertThat(saved.getLocationRegion()).isEqualTo("CA");
+        assertThat(saved.getCurrencyCode()).isEqualTo("USD");
+    }
+
+    @Test
+    void syncItem_fallsBackToLegacyPlaidCategories() throws Exception {
+        stubItemAccounts(checking);
+        stubPlaidTransactions(
+                plaidTx("tx-1", "plaid-checking").category(List.of("Shops", "Supermarkets")),
+                plaidTx("tx-2", "plaid-checking").category(List.of("Transfer")));
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        List<Transaction> saved = transactionService.syncItem(item);
+
+        assertThat(saved.get(0).getCategory()).isEqualTo("Shops");
+        assertThat(saved.get(0).getSubcategory()).isEqualTo("Supermarkets");
+        assertThat(saved.get(1).getCategory()).isEqualTo("Transfer");
+        assertThat(saved.get(1).getSubcategory()).isNull();
+    }
+
+    @Test
+    void syncItem_skipsTransactionsAlreadyStored_andChangesForUnlinkedAccounts() throws Exception {
+        stubItemAccounts(checking);
+        stubSyncPages(page(false, "cursor-1",
+                List.of(plaidTx("tx-dupe", "plaid-checking")),
+                List.of(plaidTx("tx-elsewhere", "plaid-unlinked")),
+                List.of(new RemovedTransaction().transactionId("tx-never-stored"))));
+        when(transactionRepository.existsByPlaidTransactionId("tx-dupe")).thenReturn(true);
+        when(transactionRepository.findByPlaidTransactionId("tx-never-stored")).thenReturn(java.util.Optional.empty());
+
+        assertThat(transactionService.syncItem(item)).isEmpty();
+        verify(transactionRepository, never()).save(any());
+        verify(transactionRepository, never()).delete(any());
+    }
+
+    @Test
+    void syncItem_forAnItemWithNoActiveAccounts_doesNotCallPlaid() throws Exception {
+        when(plaidService.getActiveAccountsByPlaidId(item)).thenReturn(Map.of());
+
+        assertThat(transactionService.syncItem(item)).isEmpty();
+        verify(plaidClient, never()).transactionsSync(any());
+    }
+
+    @Test
+    void syncItem_whenPlaidFailsOrIsUnreachable_throws() throws Exception {
+        stubItemAccounts(checking);
+        stubSyncResponses(Response.error(400, ResponseBody.create(
+                "{\"error_code\": \"ITEM_LOGIN_REQUIRED\"}", MediaType.get("application/json"))));
+
+        assertThatThrownBy(() -> transactionService.syncItem(item))
+                .isInstanceOf(com.financecoach.backend.exception.PlaidIntegrationException.class)
+                .hasMessageContaining("ITEM_LOGIN_REQUIRED");
+
+        @SuppressWarnings("unchecked")
+        Call<TransactionsSyncResponse> broken = mock(Call.class);
+        when(broken.execute()).thenThrow(new java.io.IOException("reset"));
+        when(plaidClient.transactionsSync(any(TransactionsSyncRequest.class))).thenReturn(broken);
+        assertThatThrownBy(() -> transactionService.syncItem(item)).hasMessageContaining("Network error");
+    }
+
+    @Test
+    void syncItem_whenDataKeepsChangingDuringPagination_givesUpAfterThreeTries() throws Exception {
+        stubItemAccounts(checking);
+        // A fresh response per attempt: an error body can only be read once
+        stubSyncResponses(mutationError(), mutationError(), mutationError());
+
+        assertThatThrownBy(() -> transactionService.syncItem(item)).hasMessageContaining("kept changing");
+        assertThat(item.getTransactionsCursor()).isNull();
+    }
+
+    @Test
+    void syncAllTransactions_syncsEveryItem_andRequiresALinkedAccount() throws Exception {
+        UUID lonelyUser = UUID.randomUUID();
+        when(bankAccountRepository.findByUserIdAndIsActive(lonelyUser, true)).thenReturn(List.of());
+        when(bankAccountRepository.findByUserIdAndIsActive(userId, true)).thenReturn(List.of(checking, savings));
+        when(plaidService.getItems(List.of(checking, savings))).thenReturn(List.of(item));
+        stubItemAccounts(checking, savings);
+        stubPlaidTransactions(plaidTx("tx-1", "plaid-savings"));
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(transactionService.syncAllTransactions(userId)).hasSize(1);
+        assertThatThrownBy(() -> transactionService.syncAllTransactions(lonelyUser))
+                .isInstanceOf(com.financecoach.backend.exception.BankAccountNotFoundException.class);
+    }
+
+    @Test
+    void syncTransactions_forAnUnknownAccount_throwsNotFound() {
+        UUID missing = UUID.randomUUID();
+        when(bankAccountRepository.findById(missing)).thenReturn(java.util.Optional.empty());
+
+        assertThatThrownBy(() -> transactionService.syncTransactions(missing, userId))
+                .isInstanceOf(com.financecoach.backend.exception.BankAccountNotFoundException.class);
+    }
+
+    @Test
+    void queries_filterByDateRangeOrCategory() {
+        LocalDate start = LocalDate.of(2026, 9, 1);
+        LocalDate end = LocalDate.of(2026, 9, 30);
+        List<Transaction> inRange = List.of(new Transaction());
+        List<Transaction> all = List.of(new Transaction(), new Transaction());
+        when(transactionRepository.findByUserIdAndDateBetween(userId, start, end)).thenReturn(inRange);
+        when(transactionRepository.findByUserId(userId)).thenReturn(all);
+        when(transactionRepository.findByUserIdAndCategory(userId, "TRAVEL")).thenReturn(inRange);
+
+        assertThat(transactionService.getTransactions(userId, start, end)).isSameAs(inRange);
+        assertThat(transactionService.getTransactions(userId, null, null)).isSameAs(all);
+        assertThat(transactionService.getTransactions(userId, start, null)).isSameAs(all);
+        assertThat(transactionService.getTransactionsByCategory(userId, "TRAVEL")).isSameAs(inRange);
+    }
+
     // --- helpers ---
 
     private BankAccount account(String plaidAccountId) {
@@ -291,6 +421,11 @@ class TransactionServiceTest {
         for (Call<TransactionsSyncResponse> call : calls) {
             stubbing = stubbing.thenReturn(call);
         }
+    }
+
+    private Response<TransactionsSyncResponse> mutationError() {
+        return Response.error(400, ResponseBody.create(
+                "{\"error_code\": \"TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION\"}", MediaType.get("application/json")));
     }
 
     private TransactionsSyncResponse page(boolean hasMore, String nextCursor,

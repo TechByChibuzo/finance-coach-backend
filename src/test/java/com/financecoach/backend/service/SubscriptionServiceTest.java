@@ -14,6 +14,7 @@ import com.financecoach.backend.repository.UserRepository;
 import com.financecoach.backend.repository.UserSubscriptionRepository;
 import com.stripe.Stripe;
 import com.stripe.exception.ApiConnectionException;
+import com.stripe.model.Customer;
 import com.stripe.model.Price;
 import com.stripe.model.Subscription;
 import com.stripe.model.SubscriptionItem;
@@ -30,11 +31,11 @@ import org.springframework.test.util.ReflectionTestUtils;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
-import java.util.HexFormat;
-
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -43,7 +44,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -393,6 +396,318 @@ class SubscriptionServiceTest {
                 "{\"id\": \"sub_1\", \"object\": \"subscription\"}"))
                 .isInstanceOf(RuntimeException.class)
                 .isNotInstanceOf(IllegalArgumentException.class);
+    }
+
+    // --- plans ---
+
+    @Test
+    void planLookups_delegateToTheRepository() {
+        SubscriptionPlan premium = plan("PREMIUM");
+        UUID planId = UUID.randomUUID();
+        when(planRepository.findByIsActiveTrue()).thenReturn(List.of(premium));
+        when(planRepository.findById(planId)).thenReturn(Optional.of(premium));
+        when(planRepository.findByName("PREMIUM")).thenReturn(Optional.of(premium));
+
+        assertThat(subscriptionService.getAllPlans()).containsExactly(premium);
+        assertThat(subscriptionService.getPlanById(planId)).contains(premium);
+        assertThat(subscriptionService.getPlanByName("PREMIUM")).contains(premium);
+    }
+
+    @Test
+    void getUserPlan_usesTheActiveSubscription_orFallsBackToFree() {
+        UserSubscription pro = activeSubscription("sub_1");
+        pro.setPlan(plan("PRO"));
+        UUID freeUser = UUID.randomUUID();
+        when(subscriptionRepository.findActiveByUserId(userId)).thenReturn(Optional.of(pro));
+        when(subscriptionRepository.findActiveByUserId(freeUser)).thenReturn(Optional.empty());
+        when(planRepository.findByName("FREE")).thenReturn(Optional.of(plan("FREE")));
+
+        assertThat(subscriptionService.getUserPlan(userId).getName()).isEqualTo("PRO");
+        assertThat(subscriptionService.getUserPlan(freeUser).getName()).isEqualTo("FREE");
+    }
+
+    @Test
+    void getUserPlan_withoutAFreePlanSeeded_failsClearly() {
+        when(subscriptionRepository.findActiveByUserId(userId)).thenReturn(Optional.empty());
+        when(planRepository.findByName("FREE")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> subscriptionService.getUserPlan(userId)).hasMessageContaining("FREE plan not found");
+    }
+
+    // --- feature access and usage ---
+
+    @Test
+    void hasFeatureAccess_isDeniedForMissingOrDisabledFlags_andOpenWhenNoPlanIsRequired() {
+        FeatureFlag disabled = new FeatureFlag();
+        disabled.setIsEnabled(false);
+        FeatureFlag open = new FeatureFlag();
+        open.setIsEnabled(true);
+        open.setRequiredPlan(null);
+        when(featureFlagRepository.findByFeatureName("missing")).thenReturn(Optional.empty());
+        when(featureFlagRepository.findByFeatureName("disabled")).thenReturn(Optional.of(disabled));
+        when(featureFlagRepository.findByFeatureName("open")).thenReturn(Optional.of(open));
+
+        assertThat(subscriptionService.hasFeatureAccess(userId, "missing")).isFalse();
+        assertThat(subscriptionService.hasFeatureAccess(userId, "disabled")).isFalse();
+        assertThat(subscriptionService.hasFeatureAccess(userId, "open")).isTrue();
+        assertThat(subscriptionService.canUseFeature(userId, "missing")).isFalse();
+    }
+
+    @Test
+    void canUseFeature_withoutALimit_isUnlimited() {
+        stubFlag("advanced_analytics", "PREMIUM");
+        stubCurrentPlan("PREMIUM");
+
+        assertThat(subscriptionService.canUseFeature(userId, "advanced_analytics")).isTrue();
+    }
+
+    @Test
+    void trackUsage_createsTheMonthsCounter_thenIncrementsIt() {
+        UsageTracking existing = new UsageTracking();
+        existing.setUsageCount(2);
+        when(usageRepository.findByUserIdAndFeatureNameAndPeriod(any(), any(), any(), any()))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(existing));
+
+        subscriptionService.trackUsage(userId, "ai_coach");
+        subscriptionService.trackUsage(userId, "ai_coach");
+
+        ArgumentCaptor<UsageTracking> saved = ArgumentCaptor.forClass(UsageTracking.class);
+        verify(usageRepository, times(2)).save(saved.capture());
+        UsageTracking created = saved.getAllValues().get(0);
+        assertThat(created.getUserId()).isEqualTo(userId);
+        assertThat(created.getUsageCount()).isEqualTo(1);
+        assertThat(created.getPeriodStart()).isEqualTo(LocalDate.now().withDayOfMonth(1));
+        assertThat(created.getPeriodEnd()).isEqualTo(LocalDate.now().withDayOfMonth(LocalDate.now().lengthOfMonth()));
+        assertThat(existing.getUsageCount()).isEqualTo(3);
+    }
+
+    @Test
+    void getRemainingUsage_countsDownToZero_andIsMinusOneWhenUnlimited() {
+        stubCurrentPlan("FREE");
+        when(usageRepository.findByUserIdAndFeatureNameAndPeriod(any(), any(), any(), any()))
+                .thenReturn(Optional.empty())
+                .thenReturn(Optional.of(usage(7)));
+
+        assertThat(subscriptionService.getRemainingUsage(userId, "ai_coach")).isEqualTo(5);
+        assertThat(subscriptionService.getRemainingUsage(userId, "ai_coach")).isZero();
+        assertThat(subscriptionService.getRemainingUsage(userId, "something_unlimited")).isEqualTo(-1);
+    }
+
+    @Test
+    void featureLimits_dependOnThePlan() {
+        stubCurrentPlan("PREMIUM");
+        when(usageRepository.findByUserIdAndFeatureNameAndPeriod(any(), any(), any(), any()))
+                .thenReturn(Optional.of(usage(1)));
+
+        assertThat(subscriptionService.getRemainingUsage(userId, "bank_account")).isEqualTo(4);
+        assertThat(subscriptionService.getRemainingUsage(userId, "budget_create")).isEqualTo(-1);
+        assertThat(subscriptionService.getRemainingUsage(userId, "export_reports")).isEqualTo(-1);
+    }
+
+    // --- checkout ---
+
+    @Test
+    void createCheckoutSession_reusesTheStripeCustomer_andUsesTheCyclesPrice() throws Exception {
+        SubscriptionPlan premium = plan("PREMIUM");
+        premium.setStripePriceIdMonthly("price_m");
+        premium.setStripePriceIdYearly("price_y");
+        UUID planId = UUID.randomUUID();
+        User user = new User();
+        user.setStripeCustomerId("cus_existing");
+        ReflectionTestUtils.setField(subscriptionService, "frontendUrl", "https://app.test");
+        when(planRepository.findById(planId)).thenReturn(Optional.of(premium));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        com.stripe.model.checkout.Session session = new com.stripe.model.checkout.Session();
+        session.setUrl("https://checkout.stripe.test/session");
+        when(stripeService.createCheckoutSession(any(), any(), any(), any(), any())).thenReturn(session);
+
+        String url = subscriptionService.createCheckoutSession(userId, planId, BillingCycle.YEARLY);
+
+        assertThat(url).isEqualTo("https://checkout.stripe.test/session");
+        verify(stripeService).createCheckoutSession(eq("cus_existing"), eq("price_y"),
+                eq("https://app.test/subscription/success?session_id={CHECKOUT_SESSION_ID}"),
+                eq("https://app.test/subscription/cancel"), eq(userId.toString()));
+        verify(stripeService, never()).createCustomer(anyString(), anyString());
+    }
+
+    @Test
+    void createCheckoutSession_createsAStripeCustomerTheFirstTime() throws Exception {
+        SubscriptionPlan premium = plan("PREMIUM");
+        premium.setStripePriceIdMonthly("price_m");
+        UUID planId = UUID.randomUUID();
+        User user = new User();
+        user.setEmail("jane@example.com");
+        Customer customer = new Customer();
+        customer.setId("cus_new");
+        when(planRepository.findById(planId)).thenReturn(Optional.of(premium));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(stripeService.createCustomer("jane@example.com", "jane@example.com")).thenReturn(customer);
+        when(stripeService.createCheckoutSession(any(), any(), any(), any(), any()))
+                .thenReturn(new com.stripe.model.checkout.Session());
+
+        subscriptionService.createCheckoutSession(userId, planId, BillingCycle.MONTHLY);
+
+        assertThat(user.getStripeCustomerId()).isEqualTo("cus_new");
+        verify(userRepository).save(user);
+        verify(stripeService).createCheckoutSession(eq("cus_new"), eq("price_m"), any(), any(), any());
+    }
+
+    @Test
+    void createCheckoutSession_failsForUnknownPlans_users_orMissingPriceIds() throws Exception {
+        UUID unknownPlan = UUID.randomUUID();
+        UUID noPricePlan = UUID.randomUUID();
+        UUID pricedPlan = UUID.randomUUID();
+        SubscriptionPlan priced = plan("PRO");
+        priced.setStripePriceIdMonthly("price_m");
+        User user = new User();
+        user.setStripeCustomerId("cus_1");
+        when(planRepository.findById(unknownPlan)).thenReturn(Optional.empty());
+        when(planRepository.findById(noPricePlan)).thenReturn(Optional.of(plan("PRO")));
+        when(planRepository.findById(pricedPlan)).thenReturn(Optional.of(priced));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        UUID ghost = UUID.randomUUID();
+        when(userRepository.findById(ghost)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> subscriptionService.createCheckoutSession(userId, unknownPlan, BillingCycle.MONTHLY))
+                .hasMessageContaining("Plan not found");
+        assertThatThrownBy(() -> subscriptionService.createCheckoutSession(userId, noPricePlan, BillingCycle.MONTHLY))
+                .hasMessageContaining("price ID not configured");
+        assertThatThrownBy(() -> subscriptionService.createCheckoutSession(ghost, pricedPlan, BillingCycle.MONTHLY))
+                .hasMessageContaining("User not found");
+    }
+
+    @Test
+    void startTrial_createsATrialEndingAfterTheGivenDays() {
+        when(planRepository.findByName("PREMIUM")).thenReturn(Optional.of(plan("PREMIUM")));
+        when(subscriptionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        UserSubscription trial = subscriptionService.startTrial(userId, "PREMIUM", 14);
+
+        assertThat(trial.getStatus()).isEqualTo(SubscriptionStatus.TRIAL);
+        assertThat(trial.getTrialEndDate()).isAfter(LocalDateTime.now().plusDays(13));
+        assertThatThrownBy(() -> subscriptionService.startTrial(userId, "UNKNOWN", 14))
+                .hasMessageContaining("Plan not found");
+    }
+
+    @Test
+    void createSubscription_onUpgrade_continuesEvenIfCancellingTheOldOneFails() throws Exception {
+        UserSubscription previous = activeSubscription("sub_old");
+        when(subscriptionRepository.findActiveByUserId(userId)).thenReturn(Optional.of(previous));
+        when(stripeService.cancelSubscription("sub_old")).thenThrow(new ApiConnectionException("down"));
+
+        subscriptionService.createSubscription(userId, plan("PRO"), BillingCycle.YEARLY,
+                stripeSubscription("sub_new", "active", false));
+
+        ArgumentCaptor<UserSubscription> saved = ArgumentCaptor.forClass(UserSubscription.class);
+        verify(subscriptionRepository).save(saved.capture());
+        assertThat(saved.getValue().getStripeSubscriptionId()).isEqualTo("sub_new");
+        assertThat(saved.getValue().getBillingCycle()).isEqualTo(BillingCycle.YEARLY);
+    }
+
+    // --- webhook edge cases ---
+
+    @Test
+    void webhook_checkoutWithoutASubscription_isIgnored() throws Exception {
+        sendWebhook("checkout.session.completed", "{\"id\": \"cs_1\", \"object\": \"checkout.session\", \"mode\": \"payment\"}");
+
+        verify(stripeService, never()).retrieveSubscription(anyString());
+    }
+
+    @Test
+    void webhook_checkoutWithoutClientReference_findsTheUserByStripeCustomer() throws Exception {
+        User user = new User();
+        user.setId(userId);
+        stubPlans();
+        when(stripeService.retrieveSubscription("sub_new")).thenReturn(stripeSubscription("sub_new", "active", false));
+        when(userRepository.findByStripeCustomerId("cus_1")).thenReturn(Optional.of(user));
+        when(subscriptionRepository.findByStripeSubscriptionId("sub_new")).thenReturn(Optional.empty());
+        when(subscriptionRepository.findActiveByUserId(userId)).thenReturn(Optional.empty());
+
+        sendWebhook("checkout.session.completed", """
+                {"id": "cs_1", "object": "checkout.session", "customer": "cus_1", "subscription": "sub_new"}
+                """);
+
+        ArgumentCaptor<UserSubscription> saved = ArgumentCaptor.forClass(UserSubscription.class);
+        verify(subscriptionRepository).save(saved.capture());
+        assertThat(saved.getValue().getUserId()).isEqualTo(userId);
+    }
+
+    @Test
+    void webhook_checkoutForAnUnknownCustomer_failsSoStripeRetries() throws Exception {
+        when(stripeService.retrieveSubscription("sub_new")).thenReturn(stripeSubscription("sub_new", "active", false));
+        when(userRepository.findByStripeCustomerId("cus_unknown")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> sendWebhook("checkout.session.completed", """
+                {"id": "cs_1", "object": "checkout.session", "customer": "cus_unknown", "subscription": "sub_new"}
+                """)).hasMessageContaining("User not found");
+    }
+
+    @Test
+    void webhook_subscriptionEventForAnUnknownUser_isSkipped() throws Exception {
+        Subscription subscription = stripeSubscription("sub_x", "active", false);
+        subscription.setCustomer("cus_unknown");
+        when(stripeService.retrieveSubscription("sub_x")).thenReturn(subscription);
+        when(subscriptionRepository.findByStripeSubscriptionId("sub_x")).thenReturn(Optional.empty());
+        when(userRepository.findByStripeCustomerId("cus_unknown")).thenReturn(Optional.empty());
+
+        sendWebhook("customer.subscription.updated", "{\"id\": \"sub_x\", \"object\": \"subscription\"}");
+
+        verify(subscriptionRepository, never()).save(any());
+    }
+
+    @Test
+    void webhook_inactiveSubscriptionWithNoLocalRecord_isNotCreated() throws Exception {
+        User user = new User();
+        user.setId(userId);
+        Subscription incomplete = stripeSubscription("sub_x", "incomplete", false);
+        incomplete.setCustomer("cus_1");
+        stubPlans();
+        when(stripeService.retrieveSubscription("sub_x")).thenReturn(incomplete);
+        when(subscriptionRepository.findByStripeSubscriptionId("sub_x")).thenReturn(Optional.empty());
+        when(userRepository.findByStripeCustomerId("cus_1")).thenReturn(Optional.of(user));
+
+        sendWebhook("customer.subscription.created", "{\"id\": \"sub_x\", \"object\": \"subscription\"}");
+
+        verify(subscriptionRepository, never()).save(any());
+    }
+
+    @Test
+    void webhook_unpaidSubscription_isSuspended() throws Exception {
+        UserSubscription local = activeSubscription("sub_1");
+        stubPlans();
+        when(stripeService.retrieveSubscription("sub_1")).thenReturn(stripeSubscription("sub_1", "unpaid", false));
+        when(subscriptionRepository.findByStripeSubscriptionId("sub_1")).thenReturn(Optional.of(local));
+
+        sendWebhook("customer.subscription.updated", "{\"id\": \"sub_1\", \"object\": \"subscription\"}");
+
+        assertThat(local.getStatus()).isEqualTo(SubscriptionStatus.SUSPENDED);
+    }
+
+    @Test
+    void webhook_oneOffInvoices_andUnhandledEvents_areIgnored() throws Exception {
+        sendWebhook("invoice.payment_succeeded", "{\"id\": \"in_1\", \"object\": \"invoice\"}");
+        sendWebhook("customer.created", "{\"id\": \"cus_1\", \"object\": \"customer\"}");
+
+        verify(stripeService, never()).retrieveSubscription(anyString());
+    }
+
+    @Test
+    void webhook_priceNotMatchingAnyPlan_failsSoStripeRetries() throws Exception {
+        UserSubscription local = activeSubscription("sub_1");
+        when(planRepository.findAll()).thenReturn(List.of(plan("FREE")));
+        when(stripeService.retrieveSubscription("sub_1")).thenReturn(stripeSubscription("sub_1", "active", false));
+        when(subscriptionRepository.findByStripeSubscriptionId("sub_1")).thenReturn(Optional.of(local));
+
+        assertThatThrownBy(() -> sendWebhook("customer.subscription.updated",
+                "{\"id\": \"sub_1\", \"object\": \"subscription\"}"))
+                .hasMessageContaining("Plan not found for price");
+    }
+
+    private UsageTracking usage(int count) {
+        UsageTracking usage = new UsageTracking();
+        usage.setUsageCount(count);
+        return usage;
     }
 
     // --- helpers ---

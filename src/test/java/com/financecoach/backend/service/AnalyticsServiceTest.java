@@ -288,4 +288,75 @@ class AnalyticsServiceTest {
 
         assertThat(result).containsKey("Fallback Name");
     }
+
+    // --- trend, monthly summary, month comparison ---
+
+    @Test
+    void getSpendingTrend_sumsEachDay_inDateOrder() {
+        Transaction day2a = expense("FOOD_AND_DRINK", 10.00);
+        day2a.setDate(LocalDate.of(2026, 1, 2));
+        Transaction day2b = expense("TRANSPORTATION", 5.50);
+        day2b.setDate(LocalDate.of(2026, 1, 2));
+        Transaction day1 = expense("FOOD_AND_DRINK", 20.00);
+        day1.setDate(LocalDate.of(2026, 1, 1));
+        when(transactionRepository.findByUserIdAndDateBetween(userId, startDate, endDate))
+                .thenReturn(List.of(day2a, income(100), day1, day2b));
+
+        Map<LocalDate, BigDecimal> trend = analyticsService.getSpendingTrend(userId, startDate, endDate);
+
+        assertThat(trend.keySet()).containsExactly(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 2));
+        assertThat(trend.get(LocalDate.of(2026, 1, 1))).isEqualByComparingTo("20.00");
+        assertThat(trend.get(LocalDate.of(2026, 1, 2))).isEqualByComparingTo("15.50");
+    }
+
+    @Test
+    void getMonthlySummary_coversTheWholeCalendarMonth() {
+        LocalDate monthStart = LocalDate.of(2026, 2, 1);
+        LocalDate monthEnd = LocalDate.of(2026, 2, 28);
+        when(transactionRepository.findByUserIdAndDateBetween(userId, monthStart, monthEnd))
+                .thenReturn(List.of(expense("FOOD_AND_DRINK", 120.00), expense("TRAVEL", 80.00), income(1000)));
+
+        Map<String, Object> summary = analyticsService.getMonthlySummary(userId, LocalDate.of(2026, 2, 14));
+
+        assertThat(summary.get("month")).isEqualTo("2026-02-14");
+        assertThat((BigDecimal) summary.get("totalSpending")).isEqualByComparingTo("200.00");
+        assertThat((BigDecimal) summary.get("totalIncome")).isEqualByComparingTo("1000");
+        assertThat((BigDecimal) summary.get("netCashFlow")).isEqualByComparingTo("800.00");
+        assertThat(summary.get("transactionCount")).isEqualTo(3);
+        @SuppressWarnings("unchecked")
+        Map<String, BigDecimal> categories = (Map<String, BigDecimal>) summary.get("categoryBreakdown");
+        assertThat(categories).containsOnlyKeys("FOOD_AND_DRINK", "TRAVEL");
+        assertThat((Map<?, ?>) summary.get("topMerchants")).hasSize(2);
+    }
+
+    @Test
+    void compareMonths_reportsTheChangeAndPercentage() {
+        LocalDate thisMonth = LocalDate.now().withDayOfMonth(1);
+        LocalDate lastMonth = thisMonth.minusMonths(1);
+        when(transactionRepository.findByUserIdAndDateBetween(userId, thisMonth, thisMonth.withDayOfMonth(thisMonth.lengthOfMonth())))
+                .thenReturn(List.of(expense("FOOD_AND_DRINK", 150.00)));
+        when(transactionRepository.findByUserIdAndDateBetween(userId, lastMonth, lastMonth.withDayOfMonth(lastMonth.lengthOfMonth())))
+                .thenReturn(List.of(expense("FOOD_AND_DRINK", 100.00)));
+
+        Map<String, Object> comparison = analyticsService.compareMonths(userId);
+
+        assertThat((BigDecimal) comparison.get("spendingChange")).isEqualByComparingTo("50.00");
+        assertThat(comparison.get("spendingChangePercentage")).isEqualTo(50.0);
+        assertThat(comparison).containsKeys("currentMonth", "previousMonth");
+    }
+
+    @Test
+    void compareMonths_withNoSpendingLastMonth_reportsZeroPercent() {
+        LocalDate thisMonth = LocalDate.now().withDayOfMonth(1);
+        LocalDate lastMonth = thisMonth.minusMonths(1);
+        when(transactionRepository.findByUserIdAndDateBetween(userId, thisMonth, thisMonth.withDayOfMonth(thisMonth.lengthOfMonth())))
+                .thenReturn(List.of(expense("FOOD_AND_DRINK", 150.00)));
+        when(transactionRepository.findByUserIdAndDateBetween(userId, lastMonth, lastMonth.withDayOfMonth(lastMonth.lengthOfMonth())))
+                .thenReturn(List.of());
+
+        Map<String, Object> comparison = analyticsService.compareMonths(userId);
+
+        assertThat((BigDecimal) comparison.get("spendingChange")).isEqualByComparingTo("150.00");
+        assertThat(comparison.get("spendingChangePercentage")).isEqualTo(0.0);
+    }
 }

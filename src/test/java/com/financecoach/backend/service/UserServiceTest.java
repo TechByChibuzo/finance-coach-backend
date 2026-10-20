@@ -87,6 +87,56 @@ class UserServiceTest {
         assertThat(result).isSameAs(user);
     }
 
+    @Test
+    void registerUser_rejectsMissingEmailOrShortPassword() {
+        UserRegistrationRequest noEmail = registration("");
+        UserRegistrationRequest shortPassword = registration("jane@example.com");
+        shortPassword.setPassword("short");
+
+        assertThatThrownBy(() -> userService.registerUser(noEmail)).hasMessageContaining("Email is required");
+        assertThatThrownBy(() -> userService.registerUser(shortPassword)).hasMessageContaining("at least 8");
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void authenticate_withAWrongPasswordOrUnknownEmail_isRejected_andRecordsLogins() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        user.setPasswordHash("hash");
+        when(userRepository.lookupByEmail("jane@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.lookupByEmail("nobody@example.com")).thenReturn(Optional.empty());
+        when(passwordEncoder.matches("wrong", "hash")).thenReturn(false);
+        when(passwordEncoder.matches("right", "hash")).thenReturn(true);
+
+        assertThatThrownBy(() -> userService.authenticate("jane@example.com", "wrong"))
+                .isInstanceOf(com.financecoach.backend.exception.InvalidCredentialsException.class);
+        assertThatThrownBy(() -> userService.authenticate("nobody@example.com", "right"))
+                .isInstanceOf(com.financecoach.backend.exception.InvalidCredentialsException.class);
+        userService.authenticate("jane@example.com", "right");
+
+        assertThat(user.getLastLogin()).isNotNull();
+        verify(metricsService).recordUserLogin();
+    }
+
+    @Test
+    void getUserById_andByEmail_returnTheUser_orThrowNotFound() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        user.setEmail("jane@example.com");
+        UUID missing = UUID.randomUUID();
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.findById(missing)).thenReturn(Optional.empty());
+        when(userRepository.lookupByEmail("jane@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.lookupByEmail("nobody@example.com")).thenReturn(Optional.empty());
+
+        assertThat(userService.getUserById(user.getId()).getEmail()).isEqualTo("jane@example.com");
+        assertThat(userService.getUserByEmail("JANE@example.com").getId()).isEqualTo(user.getId());
+        assertThatThrownBy(() -> userService.getUserById(missing))
+                .isInstanceOf(com.financecoach.backend.exception.UserNotFoundException.class);
+        assertThatThrownBy(() -> userService.getUserByEmail("nobody@example.com"))
+                .isInstanceOf(com.financecoach.backend.exception.UserNotFoundException.class);
+    }
+
     private UserRegistrationRequest registration(String email) {
         UserRegistrationRequest request = new UserRegistrationRequest();
         request.setEmail(email);
