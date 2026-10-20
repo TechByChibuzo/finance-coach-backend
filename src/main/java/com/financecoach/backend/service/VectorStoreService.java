@@ -90,14 +90,20 @@ public class VectorStoreService {
                         : transaction.getName()
         );
 
+        // Runs in the background, so the transaction may have been deleted (or the account erased)
+        // since it was synced: only insert while the transaction still exists. The foreign key with
+        // ON DELETE CASCADE (DatabaseConstraints) covers a delete racing this statement.
         jdbcTemplate.update(
                 "INSERT INTO transaction_embeddings (id, transaction_id, user_id, embedding, content, metadata, created_at) " +
-                        "VALUES (gen_random_uuid(), ?, ?, ?::vector, ?, ?::jsonb, NOW())",
+                        "SELECT gen_random_uuid(), ?, ?, ?::vector, ?, ?::jsonb, NOW() " +
+                        "WHERE EXISTS (SELECT 1 FROM transactions WHERE plaid_transaction_id = ?) " +
+                        "ON CONFLICT (transaction_id) DO NOTHING",
                 transaction.getPlaidTransactionId(),
                 transaction.getUserId(),
                 buildVectorString(embedding),
                 content,
-                objectMapper.writeValueAsString(metadata)
+                objectMapper.writeValueAsString(metadata),
+                transaction.getPlaidTransactionId()
         );
     }
 

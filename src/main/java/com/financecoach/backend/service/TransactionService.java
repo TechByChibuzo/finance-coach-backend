@@ -25,7 +25,9 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class TransactionService {
@@ -155,9 +157,16 @@ public class TransactionService {
         item.setTransactionsCursor(changes.nextCursor());
         plaidItemRepository.save(item);
 
-        // Embed for the AI coach without making the user wait on the embedding API
-        if (!toIndex.isEmpty()) {
-            vectorStoreService.indexTransactionsAsync(toIndex);
+        // Embed for the AI coach without making the user wait on the embedding API.
+        // Skip anything Plaid also removed in this sync (e.g. modified, then removed).
+        Set<String> removedIds = changes.removed().stream()
+                .map(RemovedTransaction::getTransactionId)
+                .collect(Collectors.toSet());
+        List<Transaction> stillPresent = toIndex.stream()
+                .filter(t -> !removedIds.contains(t.getPlaidTransactionId()))
+                .toList();
+        if (!stillPresent.isEmpty()) {
+            vectorStoreService.indexTransactionsAsync(stillPresent);
         }
 
         // Keep balances current for cash, credit and net worth figures

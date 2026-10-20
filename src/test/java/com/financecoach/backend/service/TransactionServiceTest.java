@@ -104,6 +104,24 @@ class TransactionServiceTest {
     }
 
     @Test
+    void syncItem_doesNotReindexATransactionModifiedAndRemovedInTheSameSync() throws Exception {
+        Transaction stored = existing("tx-1");
+        stubItemAccounts(checking);
+        stubSyncPages(page(false, "cursor-1",
+                List.of(plaidTx("tx-2", "plaid-checking")),
+                List.of(plaidTx("tx-1", "plaid-checking")),
+                List.of(new RemovedTransaction().transactionId("tx-1"))));
+        when(transactionRepository.findByPlaidTransactionId("tx-1")).thenReturn(java.util.Optional.of(stored));
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        transactionService.syncItem(item);
+
+        ArgumentCaptor<List<Transaction>> indexed = ArgumentCaptor.forClass(List.class);
+        verify(vectorStoreService).indexTransactionsAsync(indexed.capture());
+        assertThat(indexed.getValue()).extracting(Transaction::getPlaidTransactionId).containsExactly("tx-2");
+    }
+
+    @Test
     void syncItem_callsPlaidOncePerItem_notPerAccount() throws Exception {
         stubItemAccounts(checking, savings);
         stubPlaidTransactions();

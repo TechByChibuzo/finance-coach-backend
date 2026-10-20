@@ -54,8 +54,9 @@ class VectorStoreServiceTest {
 
         vectorStoreService.indexTransaction(tx);
 
-        verify(jdbcTemplate).update(contains("INSERT INTO transaction_embeddings"),
-                eq("tx-1"), eq(userId), eq("[0.5,-1.25]"), eq("Transaction: $5.00 at Uber"), contains("\"merchant\":\"Uber\""));
+        verify(jdbcTemplate).update(contains("WHERE EXISTS (SELECT 1 FROM transactions WHERE plaid_transaction_id = ?)"),
+                eq("tx-1"), eq(userId), eq("[0.5,-1.25]"), eq("Transaction: $5.00 at Uber"),
+                contains("\"merchant\":\"Uber\""), eq("tx-1"));
     }
 
     @Test
@@ -71,7 +72,7 @@ class VectorStoreServiceTest {
         ArgumentCaptor<List<String>> batches = ArgumentCaptor.forClass(List.class);
         verify(embeddingService, times(3)).embedTexts(batches.capture());
         assertThat(batches.getAllValues()).extracting(List::size).containsExactly(100, 100, 49);
-        verify(jdbcTemplate, times(249)).update(anyString(), any(), any(), any(), any(), any());
+        verify(jdbcTemplate, times(249)).update(anyString(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -85,7 +86,7 @@ class VectorStoreServiceTest {
 
         vectorStoreService.indexTransactions(transactions);
 
-        verify(jdbcTemplate, times(50)).update(anyString(), any(), any(), any(), any(), any());
+        verify(jdbcTemplate, times(50)).update(anyString(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
