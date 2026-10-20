@@ -113,7 +113,7 @@ jobs:
       # Registers a new task definition revision and waits for the service to be healthy
       - name: Deploy to ECS
         id: deploy
-        uses: aws-actions/amazon-ecs-deploy-task-definition@ae89e14ac6188020feb2b19228b7149a7bc9cf0b # v2.6.4
+        uses: aws-actions/amazon-ecs-deploy-task-definition@a00d4d57ac0de1a99b39fe469f3d898d38717c2b # v2.6.4
         with:
           task-definition: ${{ steps.render.outputs.task-definition }}
           service: ${{ env.ECS_SERVICE }}
