@@ -32,6 +32,8 @@ class DatabaseConstraintsTest {
 
         verify(jdbcTemplate).update(contains("DELETE FROM transaction_embeddings"));
         verify(jdbcTemplate).execute(contains("REFERENCES transactions (plaid_transaction_id) ON DELETE CASCADE"));
+        verify(jdbcTemplate).update(contains("DELETE FROM usage_tracking"));
+        verify(jdbcTemplate).execute(contains("CREATE UNIQUE INDEX IF NOT EXISTS uk_usage_tracking_user_feature_period"));
     }
 
     @Test
@@ -41,8 +43,10 @@ class DatabaseConstraintsTest {
 
         databaseConstraints.run(null);
 
-        verify(jdbcTemplate, never()).execute(anyString());
-        verify(jdbcTemplate, never()).update(anyString());
+        verify(jdbcTemplate, never()).execute(contains("ADD CONSTRAINT"));
+        verify(jdbcTemplate, never()).update(contains("DELETE FROM transaction_embeddings"));
+        // The usage index is created with IF NOT EXISTS, so it's always (cheaply) ensured
+        verify(jdbcTemplate).execute(contains("CREATE UNIQUE INDEX IF NOT EXISTS"));
     }
 
     @Test
@@ -52,6 +56,6 @@ class DatabaseConstraintsTest {
 
         databaseConstraints.run(null);
 
-        verify(jdbcTemplate, never()).execute(anyString());
+        verify(jdbcTemplate, never()).execute(contains("ADD CONSTRAINT"));
     }
 }

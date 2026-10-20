@@ -1,5 +1,6 @@
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.exception.UsageLimitExceededException;
 import com.financecoach.backend.model.BillingCycle;
 import com.financecoach.backend.model.FeatureFlag;
 import com.financecoach.backend.model.SubscriptionPlan;
@@ -462,24 +463,41 @@ class SubscriptionServiceTest {
     }
 
     @Test
-    void trackUsage_createsTheMonthsCounter_thenIncrementsIt() {
-        UsageTracking existing = new UsageTracking();
-        existing.setUsageCount(2);
-        when(usageRepository.findByUserIdAndFeatureNameAndPeriod(any(), any(), any(), any()))
-                .thenReturn(Optional.empty())
-                .thenReturn(Optional.of(existing));
+    void reserveUsage_countsAtomicallyAgainstThePlansMonthlyLimit() {
+        stubCurrentPlan("FREE");
+        LocalDate today = LocalDate.now();
+        when(usageRepository.reserveUsage(userId, "ai_coach", today.withDayOfMonth(1),
+                today.withDayOfMonth(today.lengthOfMonth()), 5)).thenReturn(1).thenReturn(0);
 
-        subscriptionService.trackUsage(userId, "ai_coach");
-        subscriptionService.trackUsage(userId, "ai_coach");
+        subscriptionService.reserveUsage(userId, "ai_coach");
+        assertThatThrownBy(() -> subscriptionService.reserveUsage(userId, "ai_coach"))
+                .isInstanceOf(UsageLimitExceededException.class);
+    }
 
-        ArgumentCaptor<UsageTracking> saved = ArgumentCaptor.forClass(UsageTracking.class);
-        verify(usageRepository, times(2)).save(saved.capture());
-        UsageTracking created = saved.getAllValues().get(0);
-        assertThat(created.getUserId()).isEqualTo(userId);
-        assertThat(created.getUsageCount()).isEqualTo(1);
-        assertThat(created.getPeriodStart()).isEqualTo(LocalDate.now().withDayOfMonth(1));
-        assertThat(created.getPeriodEnd()).isEqualTo(LocalDate.now().withDayOfMonth(LocalDate.now().lengthOfMonth()));
-        assertThat(existing.getUsageCount()).isEqualTo(3);
+    @Test
+    void reserveUsage_onUnlimitedPlans_stillCounts_butNeverRefuses() {
+        stubCurrentPlan("PREMIUM");
+        when(usageRepository.reserveUsage(eq(userId), eq("ai_coach"), any(), any(), eq(Integer.MAX_VALUE))).thenReturn(1);
+
+        subscriptionService.reserveUsage(userId, "ai_coach");
+
+        verify(usageRepository).reserveUsage(eq(userId), eq("ai_coach"), any(), any(), eq(Integer.MAX_VALUE));
+    }
+
+    @Test
+    void reserveUsage_withAZeroLimit_isRefusedWithoutTouchingTheCounter() {
+        stubCurrentPlan("FREE");
+
+        assertThatThrownBy(() -> subscriptionService.reserveUsage(userId, "export_reports"))
+                .isInstanceOf(UsageLimitExceededException.class);
+        verify(usageRepository, never()).reserveUsage(any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
+    void releaseUsage_givesBackThisMonthsUse() {
+        subscriptionService.releaseUsage(userId, "ai_coach");
+
+        verify(usageRepository).releaseUsage(userId, "ai_coach", LocalDate.now().withDayOfMonth(1));
     }
 
     @Test

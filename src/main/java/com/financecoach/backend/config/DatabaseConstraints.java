@@ -17,6 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
  * ON DELETE CASCADE: deleting a transaction (or a whole account) removes its embedding, and an
  * embedding written in the background for a transaction that's being deleted fails instead of
  * outliving it.
+ *
+ * usage_tracking has a unique index on (user_id, feature_name, period_start), which the atomic
+ * usage reservation needs.
  */
 @Component
 @Order(0)
@@ -25,6 +28,7 @@ public class DatabaseConstraints implements ApplicationRunner {
     private static final Logger logger = LoggerFactory.getLogger(DatabaseConstraints.class);
 
     static final String EMBEDDING_FK = "fk_transaction_embeddings_transaction";
+    static final String USAGE_UNIQUE_INDEX = "uk_usage_tracking_user_feature_period";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -40,6 +44,29 @@ public class DatabaseConstraints implements ApplicationRunner {
         } catch (Exception e) {
             // Never block startup over this; the guarded insert in VectorStoreService still applies
             logger.error("Could not add {}: {}", EMBEDDING_FK, e.getMessage());
+        }
+        try {
+            addUsageUniqueIndex();
+        } catch (Exception e) {
+            logger.error("Could not add {}: {}", USAGE_UNIQUE_INDEX, e.getMessage());
+        }
+    }
+
+    /**
+     * One usage counter per user, feature and month. reserveUsage relies on it (ON CONFLICT).
+     * Counters duplicated by the old read-then-write race are merged first, keeping the highest count.
+     */
+    private void addUsageUniqueIndex() {
+        int merged = jdbcTemplate.update("""
+                DELETE FROM usage_tracking a USING usage_tracking b
+                WHERE a.user_id = b.user_id AND a.feature_name = b.feature_name
+                  AND a.period_start = b.period_start
+                  AND (a.usage_count < b.usage_count OR (a.usage_count = b.usage_count AND a.id < b.id))
+                """);
+        jdbcTemplate.execute("CREATE UNIQUE INDEX IF NOT EXISTS " + USAGE_UNIQUE_INDEX
+                + " ON usage_tracking (user_id, feature_name, period_start)");
+        if (merged > 0) {
+            logger.info("Merged {} duplicate usage counters", merged);
         }
     }
 

@@ -1,5 +1,6 @@
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.exception.UsageLimitExceededException;
 import com.financecoach.backend.model.*;
 import com.financecoach.backend.repository.*;
 import com.stripe.exception.SignatureVerificationException;
@@ -177,32 +178,32 @@ public class SubscriptionService {
     // ============================================
 
     /**
-     * Track feature usage
+     * Atomically count one use of a feature for this month, unless the user is at their limit.
+     *
+     * @throws UsageLimitExceededException if the plan's limit for this month is already used up
      */
-    @Transactional
-    public void trackUsage(UUID userId, String featureName) {
-        LocalDate today = LocalDate.now();
-        LocalDate startOfMonth = today.withDayOfMonth(1);
-        LocalDate endOfMonth = today.withDayOfMonth(today.lengthOfMonth());
-
-        Optional<UsageTracking> existing = usageRepository
-                .findByUserIdAndFeatureNameAndPeriod(userId, featureName, startOfMonth, endOfMonth);
-
-        if (existing.isPresent()) {
-            // Increment existing
-            UsageTracking usage = existing.get();
-            usage.setUsageCount(usage.getUsageCount() + 1);
-            usageRepository.save(usage);
-        } else {
-            // Create new
-            UsageTracking usage = new UsageTracking();
-            usage.setUserId(userId);
-            usage.setFeatureName(featureName);
-            usage.setUsageCount(1);
-            usage.setPeriodStart(startOfMonth);
-            usage.setPeriodEnd(endOfMonth);
-            usageRepository.save(usage);
+    public void reserveUsage(UUID userId, String featureName) {
+        Integer limit = getFeatureLimit(getUserPlan(userId), featureName);
+        boolean unlimited = limit == null || limit == -1;
+        if (!unlimited && limit <= 0) {
+            throw new UsageLimitExceededException("Usage limit exceeded for " + featureName);
         }
+
+        LocalDate today = LocalDate.now();
+        int counted = usageRepository.reserveUsage(userId, featureName,
+                today.withDayOfMonth(1), today.withDayOfMonth(today.lengthOfMonth()),
+                unlimited ? Integer.MAX_VALUE : limit);
+
+        if (counted == 0) {
+            throw new UsageLimitExceededException("Usage limit exceeded for " + featureName);
+        }
+    }
+
+    /**
+     * Give back a use reserved by reserveUsage, when the request it was for failed
+     */
+    public void releaseUsage(UUID userId, String featureName) {
+        usageRepository.releaseUsage(userId, featureName, LocalDate.now().withDayOfMonth(1));
     }
 
     /**

@@ -9,6 +9,7 @@ import com.financecoach.backend.service.SubscriptionService;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
+import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -48,6 +49,16 @@ public class FeatureAccessAspect {
         UUID userId = getCurrentUserId();
         String featureName = requiresFeature.value();
 
+        // When the method also counts usage of this feature, @TrackUsage reserves it atomically and
+        // enforces the limit; checking the count here too would refuse the last allowed use if that
+        // reservation happened first. Only check plan access then.
+        if (countsUsageOf(joinPoint, featureName)) {
+            if (!subscriptionService.hasFeatureAccess(userId, featureName)) {
+                throw new FeatureNotAvailableException(requiresFeature.message());
+            }
+            return joinPoint.proceed();
+        }
+
         // Check if user can use this feature
         if (!subscriptionService.canUseFeature(userId, featureName)) {
             // Check if it's access or usage limit issue
@@ -69,13 +80,21 @@ public class FeatureAccessAspect {
         UUID userId = getCurrentUserId();
         String featureName = trackUsage.feature();
 
-        // Execute method
-        Object result = joinPoint.proceed();
+        // Reserve the use up front (atomic, enforces the plan limit), and give it back if the call
+        // fails, so failed requests don't use up the allowance
+        subscriptionService.reserveUsage(userId, featureName);
+        try {
+            return joinPoint.proceed();
+        } catch (Throwable e) {
+            subscriptionService.releaseUsage(userId, featureName);
+            throw e;
+        }
+    }
 
-        // Track usage after successful execution
-        subscriptionService.trackUsage(userId, featureName);
-
-        return result;
+    private boolean countsUsageOf(ProceedingJoinPoint joinPoint, String featureName) {
+        TrackUsage trackUsage = ((MethodSignature) joinPoint.getSignature()).getMethod()
+                .getAnnotation(TrackUsage.class);
+        return trackUsage != null && trackUsage.feature().equals(featureName);
     }
 
     private UUID getCurrentUserId() {

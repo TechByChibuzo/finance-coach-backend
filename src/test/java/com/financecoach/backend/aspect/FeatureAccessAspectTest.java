@@ -73,42 +73,59 @@ class FeatureAccessAspectTest {
     }
 
     @Test
-    void chat_withinLimit_runsAndCountsUsage() {
-        when(subscriptionService.canUseFeature(userId, "ai_coach")).thenReturn(true);
+    void chat_withinLimit_reservesAUseUpFront_andKeepsIt() {
+        when(subscriptionService.hasFeatureAccess(userId, "ai_coach")).thenReturn(true);
         when(aiCoachService.chat(any(), anyString(), anyString())).thenReturn("hi");
 
         aiCoachController.chat(chatRequest());
 
-        verify(aiCoachService).chat(userId, "How am I doing?", "default");
-        verify(subscriptionService).trackUsage(userId, "ai_coach");
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(subscriptionService, aiCoachService);
+        order.verify(subscriptionService).reserveUsage(userId, "ai_coach");
+        order.verify(aiCoachService).chat(userId, "How am I doing?", "default");
+        verify(subscriptionService, never()).releaseUsage(any(), anyString());
+        // The atomic reservation enforces the limit; no separate (racy) count check
+        verify(subscriptionService, never()).canUseFeature(any(), anyString());
     }
 
     @Test
-    void chat_overLimit_isBlockedAndNotCounted() {
-        when(subscriptionService.canUseFeature(userId, "ai_coach")).thenReturn(false);
+    void chat_overLimit_isBlockedBeforeCallingTheAi() {
         when(subscriptionService.hasFeatureAccess(userId, "ai_coach")).thenReturn(true);
+        org.mockito.Mockito.doThrow(new UsageLimitExceededException("Usage limit exceeded for ai_coach"))
+                .when(subscriptionService).reserveUsage(userId, "ai_coach");
 
         assertThatThrownBy(() -> aiCoachController.chat(chatRequest()))
                 .isInstanceOf(UsageLimitExceededException.class);
 
         verify(aiCoachService, never()).chat(any(), anyString(), anyString());
-        verify(subscriptionService, never()).trackUsage(any(), anyString());
+        verify(subscriptionService, never()).releaseUsage(any(), anyString());
     }
 
     @Test
-    void chat_whenServiceFails_isNotCounted() {
-        when(subscriptionService.canUseFeature(userId, "ai_coach")).thenReturn(true);
+    void chat_withoutPlanAccess_isBlockedWithoutReservingAUse() {
+        when(subscriptionService.hasFeatureAccess(userId, "ai_coach")).thenReturn(false);
+
+        assertThatThrownBy(() -> aiCoachController.chat(chatRequest()))
+                .isInstanceOf(FeatureNotAvailableException.class);
+
+        verify(aiCoachService, never()).chat(any(), anyString(), anyString());
+    }
+
+    @Test
+    void chat_whenTheAiFails_givesTheReservedUseBack() {
+        when(subscriptionService.hasFeatureAccess(userId, "ai_coach")).thenReturn(true);
         when(aiCoachService.chat(any(), anyString(), anyString())).thenThrow(new RuntimeException("boom"));
 
         assertThatThrownBy(() -> aiCoachController.chat(chatRequest())).hasMessage("boom");
 
-        verify(subscriptionService, never()).trackUsage(any(), anyString());
+        verify(subscriptionService).reserveUsage(userId, "ai_coach");
+        verify(subscriptionService).releaseUsage(userId, "ai_coach");
     }
 
     @Test
     void reportEndpoints_shareTheAiCoachLimit() {
-        when(subscriptionService.canUseFeature(userId, "ai_coach")).thenReturn(false);
         when(subscriptionService.hasFeatureAccess(userId, "ai_coach")).thenReturn(true);
+        org.mockito.Mockito.doThrow(new UsageLimitExceededException("Usage limit exceeded for ai_coach"))
+                .when(subscriptionService).reserveUsage(userId, "ai_coach");
 
         assertThatThrownBy(() -> aiCoachController.getWeeklySummary())
                 .isInstanceOf(UsageLimitExceededException.class);
