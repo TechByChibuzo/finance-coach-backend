@@ -2,6 +2,7 @@
 package com.financecoach.backend.repository;
 
 import com.financecoach.backend.model.Transaction;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -9,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -25,6 +27,12 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     Optional<Transaction> findByPlaidTransactionId(String plaidTransactionId);
 
     boolean existsByPlaidTransactionId(String plaidTransactionId);
+
+    // Transactions on these accounts that have no embedding yet (e.g. their batch failed), newest first
+    @Query("SELECT t FROM Transaction t WHERE t.accountId IN :accountIds AND NOT EXISTS "
+            + "(SELECT e.id FROM TransactionEmbedding e WHERE e.transactionId = t.plaidTransactionId) "
+            + "ORDER BY t.date DESC")
+    List<Transaction> findWithoutEmbedding(@Param("accountIds") Collection<UUID> accountIds, Pageable pageable);
 
     @Query("SELECT t FROM Transaction t WHERE t.userId = :userId AND t.category = :category")
     List<Transaction> findByUserIdAndCategory(@Param("userId") UUID userId, @Param("category") String category);

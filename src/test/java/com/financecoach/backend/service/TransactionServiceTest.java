@@ -33,6 +33,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -136,6 +137,36 @@ class TransactionServiceTest {
         order.verify(bankAccountRepository).updateLastSyncedAt(
                 org.mockito.ArgumentMatchers.eq(List.of(checking.getId(), savings.getId())), any());
         verify(bankAccountRepository, never()).save(any());
+    }
+
+    @Test
+    void syncItem_alsoRetriesEarlierTransactionsThatStillHaveNoEmbedding() throws Exception {
+        Transaction missedEarlier = existing("tx-old");
+        stubItemAccounts(checking, savings);
+        stubPlaidTransactions(plaidTx("tx-new", "plaid-checking"));
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(transactionRepository.findWithoutEmbedding(eq(List.of(checking.getId(), savings.getId())), any()))
+                .thenAnswer(inv -> List.of(missedEarlier));
+
+        transactionService.syncItem(item);
+
+        ArgumentCaptor<List<Transaction>> indexed = ArgumentCaptor.forClass(List.class);
+        verify(vectorStoreService).indexTransactionsAsync(indexed.capture());
+        assertThat(indexed.getValue()).extracting(Transaction::getPlaidTransactionId).containsExactly("tx-new", "tx-old");
+    }
+
+    @Test
+    void syncItem_doesNotQueueATransactionTwice_whenItIsNewAndStillUnembedded() throws Exception {
+        stubItemAccounts(checking);
+        stubPlaidTransactions(plaidTx("tx-new", "plaid-checking"));
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(transactionRepository.findWithoutEmbedding(any(), any())).thenAnswer(inv -> List.of(existing("tx-new")));
+
+        transactionService.syncItem(item);
+
+        ArgumentCaptor<List<Transaction>> indexed = ArgumentCaptor.forClass(List.class);
+        verify(vectorStoreService).indexTransactionsAsync(indexed.capture());
+        assertThat(indexed.getValue()).hasSize(1);
     }
 
     @Test

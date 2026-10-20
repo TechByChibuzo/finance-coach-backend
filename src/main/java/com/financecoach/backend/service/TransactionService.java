@@ -15,6 +15,7 @@ import com.financecoach.backend.repository.TransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import retrofit2.Response;
 
@@ -23,6 +24,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,6 +37,7 @@ public class TransactionService {
     private static final Logger logger = LoggerFactory.getLogger(TransactionService.class);
     private static final int SYNC_PAGE_SIZE = 500;
     private static final int MAX_SYNC_ATTEMPTS = 3;
+    private static final int EMBEDDING_BACKFILL_LIMIT = 500;
 
     private final PlaidApi plaidClient;
     private final TransactionRepository transactionRepository;
@@ -162,11 +165,23 @@ public class TransactionService {
         Set<String> removedIds = changes.removed().stream()
                 .map(RemovedTransaction::getTransactionId)
                 .collect(Collectors.toSet());
-        List<Transaction> stillPresent = toIndex.stream()
+        List<Transaction> toEmbed = new ArrayList<>(toIndex.stream()
                 .filter(t -> !removedIds.contains(t.getPlaidTransactionId()))
-                .toList();
-        if (!stillPresent.isEmpty()) {
-            vectorStoreService.indexTransactionsAsync(stillPresent);
+                .toList());
+
+        // Also retry earlier transactions that still have no embedding (a batch failed, e.g. during
+        // an OpenAI outage). Capped per sync; a large backlog drains over the next syncs.
+        Set<String> queued = toEmbed.stream().map(Transaction::getPlaidTransactionId)
+                .collect(Collectors.toCollection(HashSet::new));
+        List<UUID> accountIds = accountsByPlaidId.values().stream().map(BankAccount::getId).toList();
+        for (Transaction missing : transactionRepository.findWithoutEmbedding(accountIds, PageRequest.of(0, EMBEDDING_BACKFILL_LIMIT))) {
+            if (queued.add(missing.getPlaidTransactionId())) {
+                toEmbed.add(missing);
+            }
+        }
+
+        if (!toEmbed.isEmpty()) {
+            vectorStoreService.indexTransactionsAsync(toEmbed);
         }
 
         // Keep balances current for cash, credit and net worth figures
