@@ -47,8 +47,16 @@ Tasks read secrets when they start, so redeploy (or push to main) after changing
 ## Connect GitHub Actions
 
 With the default `use_github_oidc = false` (required on the AWS free plan, which forbids OIDC
-providers), add repository secrets `AWS_ACCESS_KEY_ID` (`terraform output -raw github_deploy_access_key_id`)
-and `AWS_SECRET_ACCESS_KEY` (`terraform output -raw github_deploy_secret_access_key`).
+providers), the deploy job uses an access key. Keep it scoped to main:
+
+1. Repo Settings → Environments → New environment `production`.
+2. Under "Deployment branches and tags", choose "Selected branches and tags" and add `main`.
+3. In that environment, add the secrets `AWS_ACCESS_KEY_ID` (`terraform output -raw github_deploy_access_key_id`)
+   and `AWS_SECRET_ACCESS_KEY` (`terraform output -raw github_deploy_secret_access_key`).
+   Use environment secrets, not repository secrets, and delete any old repository-level AWS keys.
+
+Rotate the key periodically: `terraform apply -replace=aws_iam_access_key.github_deploy[0]`, then
+update the two environment secrets.
 
 With `use_github_oidc = true`, instead add `AWS_DEPLOY_ROLE_ARN` (`terraform output -raw github_deploy_role_arn`).
 If you use a region other than us-east-2, also add a repository variable `AWS_REGION`.

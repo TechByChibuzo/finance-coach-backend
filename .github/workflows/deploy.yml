@@ -41,6 +41,9 @@ jobs:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # Deploy credentials are secrets of the "production" environment, which only allows
+    # the main branch, so workflows on other branches can't read them
+    environment: production
     concurrency:
       group: deploy-production
       cancel-in-progress: false
