@@ -6,8 +6,10 @@ import com.sendgrid.helpers.mail.objects.Content;
 import com.sendgrid.helpers.mail.objects.Email;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.HtmlUtils;
 
 import java.io.IOException;
 
@@ -21,13 +23,17 @@ public class EmailService {
     private final String fromName;
     private final String frontendUrl;
 
+    @Autowired
     public EmailService(
             @Value("${sendgrid.api-key}") String apiKey,
             @Value("${sendgrid.from-email}") String fromEmail,
             @Value("${sendgrid.from-name}") String fromName,
             @Value("${app.frontend-url}") String frontendUrl) {
+        this(new SendGrid(apiKey), fromEmail, fromName, frontendUrl);
+    }
 
-        this.sendGridClient = new SendGrid(apiKey);
+    EmailService(SendGrid sendGridClient, String fromEmail, String fromName, String frontendUrl) {
+        this.sendGridClient = sendGridClient;
         this.fromEmail = fromEmail;
         this.fromName = fromName;
         this.frontendUrl = frontendUrl;
@@ -111,6 +117,14 @@ public class EmailService {
             logger.error("Failed to send welcome email to: {}", toEmail, e);
             // Don't throw - welcome email failure shouldn't break registration
         }
+    }
+
+    /**
+     * The user's name as safe HTML text. Names are user-supplied, so markup in them
+     * (e.g. a link) must not render inside our emails.
+     */
+    private String displayName(String userName) {
+        return userName == null || userName.isBlank() ? "there" : HtmlUtils.htmlEscape(userName);
     }
 
     /**
@@ -203,7 +217,7 @@ public class EmailService {
                 </table>
             </body>
             </html>
-            """, userName, resetLink, resetLink, resetLink);
+            """, displayName(userName), resetLink, resetLink, resetLink);
     }
 
     /**
@@ -288,6 +302,6 @@ public class EmailService {
                 </table>
             </body>
             </html>
-            """, userName, frontendUrl, frontendUrl);
+            """, displayName(userName), frontendUrl, frontendUrl);
     }
 }

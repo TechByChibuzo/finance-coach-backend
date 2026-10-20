@@ -2,6 +2,7 @@ package com.financecoach.backend.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -25,17 +26,24 @@ public class S3Service {
     private final S3Client s3Client;
     private final S3Presigner presigner;
 
+    @Autowired
     public S3Service(@Value("${aws.region}") String region,
                      @Value("${aws.s3.export-bucket:}") String bucketName) {
+        this(S3Client.builder()
+                        .region(Region.of(region))
+                        .credentialsProvider(DefaultCredentialsProvider.create())
+                        .build(),
+                S3Presigner.builder()
+                        .region(Region.of(region))
+                        .credentialsProvider(DefaultCredentialsProvider.create())
+                        .build(),
+                bucketName);
+    }
+
+    S3Service(S3Client s3Client, S3Presigner presigner, String bucketName) {
+        this.s3Client = s3Client;
+        this.presigner = presigner;
         this.bucketName = bucketName;
-        this.s3Client = S3Client.builder()
-                .region(Region.of(region))
-                .credentialsProvider(DefaultCredentialsProvider.create())
-                .build();
-        this.presigner = S3Presigner.builder()
-                .region(Region.of(region))
-                .credentialsProvider(DefaultCredentialsProvider.create())
-                .build();
     }
 
     public String uploadFile(String key, byte[] content, String contentType) {
