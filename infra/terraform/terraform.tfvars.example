@@ -1,0 +1,21 @@
+# Copy to terraform.tfvars (gitignored) and adjust.
+
+aws_region  = "us-east-1"
+github_repo = "TechByChibuzo/finance-coach-backend"
+
+# Leave empty to start with the ALB's own HTTP URL. For a custom domain, set it, apply,
+# add the acm_validation_record CNAME at your DNS provider, then set enable_https = true.
+domain_name  = ""
+enable_https = false
+
+frontend_url        = "https://finance-coach-frontend.vercel.app"
+sendgrid_from_email = "you@example.com"
+plaid_environment   = "sandbox"
+
+# From your Stripe dashboard (test mode while testing)
+stripe_price_ids = {
+  premium_monthly = ""
+  premium_yearly  = ""
+  pro_monthly     = ""
+  pro_yearly      = ""
+}

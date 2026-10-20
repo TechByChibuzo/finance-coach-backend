@@ -1,0 +1,7 @@
+# Local state and provider plugins. State contains generated secrets: never commit it.
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+terraform.tfvars
+*.auto.tfvars
