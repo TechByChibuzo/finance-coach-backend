@@ -9,9 +9,12 @@ public IPv4 addresses, logs and Secrets Manager. No NAT gateway.
 
 1. Install Terraform: `brew install hashicorp/tap/terraform`
 2. Give the AWS CLI credentials for the account (an admin IAM user or IAM Identity Center),
-   e.g. `aws configure --profile financecoach`, then `export AWS_PROFILE=financecoach`.
+   e.g. `aws configure --profile financecoach` (region us-east-2), then `export AWS_PROFILE=financecoach`.
    Check with `aws sts get-caller-identity`.
-3. In the Bedrock console (us-east-1), make sure Anthropic Claude models are enabled for the account.
+3. In the Bedrock console (us-east-2), make sure Anthropic Claude models are enabled for the account.
+
+The current account is on the AWS free plan, which only allows us-east-2 (Ohio) for EC2, ECS,
+RDS, ELB, ECR, Secrets Manager and Lambda. Keep `aws_region = "us-east-2"`.
 
 ## Create everything
 
@@ -44,7 +47,7 @@ Tasks read secrets when they start, so redeploy (or push to main) after changing
 ## Connect GitHub Actions
 
 Add a repository secret `AWS_DEPLOY_ROLE_ARN` with the value of `terraform output -raw github_deploy_role_arn`.
-If you use a region other than us-east-1, also add a repository variable `AWS_REGION`.
+If you use a region other than us-east-2, also add a repository variable `AWS_REGION`.
 Then push to `main`: tests run, the image is built and pushed to ECR, and the service is updated.
 
 ## Custom domain + HTTPS

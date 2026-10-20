@@ -1,6 +1,6 @@
 # Copy to terraform.tfvars (gitignored) and adjust.
 
-aws_region  = "us-east-1"
+aws_region  = "us-east-2"
 github_repo = "TechByChibuzo/finance-coach-backend"
 
 # Leave empty to start with the ALB's own HTTP URL. For a custom domain, set it, apply,

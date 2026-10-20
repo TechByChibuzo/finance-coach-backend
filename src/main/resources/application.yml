@@ -67,7 +67,7 @@ sendgrid:
 
 # AWS (Bedrock + S3 exports)
 aws:
-  region: ${AWS_REGION:us-east-1}
+  region: ${AWS_REGION:us-east-2}
   s3:
     export-bucket: ${S3_EXPORT_BUCKET:}
 

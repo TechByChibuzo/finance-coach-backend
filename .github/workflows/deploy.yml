@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-2' }}
   ECR_REPOSITORY: finance-coach-backend
   ECS_CLUSTER: finance-coach-cluster
   ECS_SERVICE: finance-coach-service

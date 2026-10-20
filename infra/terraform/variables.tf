@@ -1,7 +1,7 @@
 variable "aws_region" {
-  description = "Region for everything. us-east-1 matches the default us.anthropic.* Bedrock inference profile."
+  description = "Region for everything. The free-plan account only allows us-east-2; us.anthropic.* Bedrock profiles work there."
   type        = string
-  default     = "us-east-1"
+  default     = "us-east-2"
 }
 
 variable "project" {
