@@ -83,6 +83,19 @@ class NetWorthServiceTest {
     }
 
     @Test
+    void calculateNetWorth_countsLinkedLoanBalancesAsLiabilities() {
+        stubBalances(userId, List.of(account("10000.00")), List.of(), null, null, null);
+        when(bankAccountRepository.findByUserIdAndAccountTypeAndIsActive(userId, "loan", true))
+                .thenReturn(List.of(account("56302.06"), account("-13500.50"), account(null)));
+
+        NetWorthSummaryDTO summary = netWorthService.calculateNetWorth(userId);
+
+        assertThat(summary.getLoanDebt()).isEqualByComparingTo("69802.56");
+        assertThat(summary.getTotalLiabilities()).isEqualByComparingTo("69802.56");
+        assertThat(summary.getNetWorth()).isEqualByComparingTo("-59802.56");
+    }
+
+    @Test
     void calculateNetWorth_creditAccountWithoutBalance_countsAsZero() {
         stubBalances(userId, List.of(), List.of(account(null), account("120.00")), null, null, null);
 

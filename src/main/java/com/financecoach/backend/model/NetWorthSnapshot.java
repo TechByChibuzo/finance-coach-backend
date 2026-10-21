@@ -53,6 +53,10 @@ public class NetWorthSnapshot {
     @Column(name = "credit_card_debt", precision = 18, scale = 2)
     private BigDecimal creditCardDebt;
 
+    // Linked loan accounts; null on snapshots taken before loans were counted
+    @Column(name = "loan_debt", precision = 18, scale = 2)
+    private BigDecimal loanDebt;
+
     @Column(name = "manual_liabilities", precision = 18, scale = 2)
     private BigDecimal manualLiabilities;
 

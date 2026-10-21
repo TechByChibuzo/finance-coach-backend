@@ -55,8 +55,9 @@ public class NetWorthService {
 
         // LIABILITIES
         BigDecimal creditCardDebt = getCreditCardDebt(userId);
+        BigDecimal loanDebt = getLoanDebt(userId);
         BigDecimal manualLiabilitiesValue = getManualLiabilitiesTotal(userId);
-        BigDecimal totalLiabilities = creditCardDebt.add(manualLiabilitiesValue);
+        BigDecimal totalLiabilities = creditCardDebt.add(loanDebt).add(manualLiabilitiesValue);
 
         // NET WORTH
         BigDecimal netWorth = totalAssets.subtract(totalLiabilities);
@@ -70,6 +71,7 @@ public class NetWorthService {
                 .manualAssetsValue(manualAssetsValue)
                 .totalAssets(totalAssets)
                 .creditCardDebt(creditCardDebt)
+                .loanDebt(loanDebt)
                 .manualLiabilities(manualLiabilitiesValue)
                 .totalLiabilities(totalLiabilities)
                 .netWorth(netWorth)
@@ -274,6 +276,7 @@ public class NetWorthService {
                         .manualAssetsValue(summary.getManualAssetsValue())
                         .totalAssets(summary.getTotalAssets())
                         .creditCardDebt(summary.getCreditCardDebt())
+                        .loanDebt(summary.getLoanDebt())
                         .manualLiabilities(summary.getManualLiabilities())
                         .totalLiabilities(summary.getTotalLiabilities())
                         .netWorth(summary.getNetWorth())
@@ -343,6 +346,17 @@ public class NetWorthService {
                 .map(BankAccount::getCurrentBalance)
                 .filter(Objects::nonNull)
                 .map(BigDecimal::abs)  // Ensure positive
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /**
+     * Balances owed on linked loan accounts (mortgages, student, auto, HELOC)
+     */
+    private BigDecimal getLoanDebt(UUID userId) {
+        return bankAccountRepository.findByUserIdAndAccountTypeAndIsActive(userId, "loan", true).stream()
+                .map(BankAccount::getCurrentBalance)
+                .filter(Objects::nonNull)
+                .map(BigDecimal::abs)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 

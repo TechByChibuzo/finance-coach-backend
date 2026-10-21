@@ -17,6 +17,7 @@ public class NetWorthSummaryDTO {
     private BigDecimal manualAssetsValue;
     private BigDecimal totalAssets;
     private BigDecimal creditCardDebt;
+    private BigDecimal loanDebt;
     private BigDecimal manualLiabilities;
     private BigDecimal totalLiabilities;
     private BigDecimal netWorth;
