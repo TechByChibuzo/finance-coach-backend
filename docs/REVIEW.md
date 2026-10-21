@@ -11,12 +11,11 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 
 ## Follow-up review (2026-10-20)
 
-Edge cases, none reachable with today's production data or traffic. Fix before taking real payments or onboarding real users (#1 and #2 first).
+Edge cases, none reachable with today's production data or traffic. Fix before onboarding real users (#1 first). (#2, concurrent Stripe webhooks creating duplicate subscriptions, turned out to happen on every new subscription and has been fixed.)
 
 | # | Sev | Issue | Where | Fix |
 |---|---|---|---|---|
 | 1 | P1 | A sync in flight during account deletion can write transactions after the purge, and `plaidItemRepository.save(item)` can re-insert the deleted item **with its access token**. Only `transaction_embeddings` has a parent FK. | `TransactionService.syncItem` | Add parent FKs with `ON DELETE CASCADE` in `DatabaseConstraints` (transactions → bank_accounts, bank_accounts / plaid_items → users), deleting orphans first, so late writes fail. |
-| 2 | P1 | Two concurrent checkout webhooks for one user can both see no active subscription and create two ACTIVE rows; `findActiveByUserId` (an `Optional`) then throws on every plan check for that user. | `SubscriptionService.createSubscription` | `userRepository.lockById(userId)` at the start of the (already transactional) method. |
 | 3 | P1 | On upgrade, a paid row with no `stripeSubscriptionId` is marked cancelled locally while Stripe keeps billing it. No such rows exist in production today. | `SubscriptionService.createSubscription` | Cancel every other running Stripe subscription for the customer (`listSubscriptions`), excluding the new one, like the cancel path does. |
 | 4 | P2 | Parallel budget creation can exceed the plan cap (two requests at 2/3 both take the last slot). | `BudgetService.createBudget`, copy path | Lock the user row before counting, as `PlaidService.exchangePublicToken` does. |
 | 5 | P2 | Legacy bank connections (accounts with no `item_id`) are counted by distinct *encrypted* access token. Jasypt salts randomly, so the same token never matches and each legacy account counts separately, which could wrongly block a user. No legacy rows exist in production today. | `BankAccountRepository.countLegacyConnections` | Load the legacy accounts and count distinct decrypted tokens in Java, or backfill `item_id` via `PlaidService.getItem`. |

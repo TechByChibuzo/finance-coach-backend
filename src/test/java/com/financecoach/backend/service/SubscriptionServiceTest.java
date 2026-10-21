@@ -237,6 +237,32 @@ class SubscriptionServiceTest {
     }
 
     @Test
+    void createSubscription_locksTheUserBeforeCheckingTheCurrentSubscription() {
+        when(subscriptionRepository.findActiveByUserId(userId)).thenReturn(Optional.empty());
+
+        subscriptionService.createSubscription(userId, plan("PREMIUM"), BillingCycle.MONTHLY,
+                stripeSubscription("sub_new", "active", false));
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(userRepository, subscriptionRepository);
+        order.verify(userRepository).lockById(userId);
+        order.verify(subscriptionRepository).findActiveByUserId(userId);
+    }
+
+    @Test
+    void createSubscription_secondEventForTheSameSubscription_afterWaitingOnTheLock_skips() throws Exception {
+        // The first event recorded sub_new while this one waited for the lock
+        when(subscriptionRepository.findActiveByUserId(userId))
+                .thenReturn(Optional.of(activeSubscription("sub_new")));
+
+        subscriptionService.createSubscription(userId, plan("PRO"), BillingCycle.MONTHLY,
+                stripeSubscription("sub_new", "active", false));
+
+        verify(userRepository).lockById(userId);
+        verify(stripeService, never()).cancelSubscription(anyString());
+        verify(subscriptionRepository, never()).save(any());
+    }
+
+    @Test
     void createSubscription_onUpgrade_cancelsPreviousStripeSubscription() throws Exception {
         UserSubscription previous = activeSubscription("sub_old");
         when(subscriptionRepository.findActiveByUserId(userId)).thenReturn(Optional.of(previous));

@@ -355,6 +355,11 @@ public class SubscriptionService {
         logger.info("Creating subscription - User: {}, Plan: {}, Cycle: {}, StripeSubscription: {}",
                 userId, plan.getName(), cycle, stripeSubscription.getId());
 
+        // Stripe sends several events for one new subscription at once (checkout.session.completed,
+        // customer.subscription.created, invoice.payment_succeeded). Serialize them per user, so the
+        // later ones wait, see the subscription already recorded below and skip it, instead of each
+        // recording it and cancelling the previous plan.
+        userRepository.lockById(userId);
         Optional<UserSubscription> current = getUserSubscription(userId);
 
         // Already recorded (e.g. Stripe retried the webhook) - don't cancel the subscription we just created

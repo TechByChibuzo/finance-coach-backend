@@ -120,6 +120,28 @@ class StripeServiceTest {
     }
 
     @Test
+    void cancelSubscription_cancelledByAnotherRequestMeanwhile_countsAsCancelled() throws Exception {
+        Subscription subscription = mock(Subscription.class);
+        when(subscription.getStatus()).thenReturn("active");
+        subscriptions.when(() -> Subscription.retrieve("sub_1")).thenReturn(subscription);
+        when(subscription.cancel()).thenThrow(
+                new InvalidRequestException("No such subscription", "id", "req_1", "resource_missing", 404, null));
+
+        assertThat(stripeService.cancelSubscription("sub_1")).isNull();
+    }
+
+    @Test
+    void cancelSubscription_errorsWhileCancelling_propagate() throws Exception {
+        Subscription subscription = mock(Subscription.class);
+        when(subscription.getStatus()).thenReturn("active");
+        subscriptions.when(() -> Subscription.retrieve("sub_1")).thenReturn(subscription);
+        when(subscription.cancel()).thenThrow(
+                new InvalidRequestException("Rate limited", null, "req_1", "rate_limit", 429, null));
+
+        assertThatThrownBy(() -> stripeService.cancelSubscription("sub_1")).isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
     void cancelSubscription_otherStripeErrors_propagate() {
         subscriptions.when(() -> Subscription.retrieve("sub_1")).thenThrow(
                 new InvalidRequestException("Invalid API key", null, "req_1", "api_key_invalid", 401, null));

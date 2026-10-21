@@ -95,7 +95,14 @@ public class StripeService {
         if ("canceled".equals(status) || "incomplete_expired".equals(status)) {
             return subscription;
         }
-        return subscription.cancel();
+        try {
+            return subscription.cancel();
+        } catch (InvalidRequestException e) {
+            if ("resource_missing".equals(e.getCode())) {
+                return null; // cancelled by someone else since we retrieved it
+            }
+            throw e;
+        }
     }
 
     /**
