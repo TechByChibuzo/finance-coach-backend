@@ -50,7 +50,7 @@ For the full architecture, see [docs/SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md). O
 | Language | Java 21 |
 | Framework | Spring Boot 3.3.6 |
 | Database | Amazon RDS PostgreSQL 16 + pgvector extension |
-| AI / LLM | AWS Bedrock (Claude Sonnet 4.5) |
+| AI / LLM | AWS Bedrock (Claude Sonnet 4.6) |
 | Embeddings | OpenAI text-embedding-3-small |
 | RAG Framework | Spring AI 1.0.0 |
 | Bank Data | Plaid API |
@@ -211,7 +211,7 @@ DB_PASSWORD=your_db_password
 
 # AWS (Bedrock for Claude, S3 for exports); credentials come from your AWS profile
 AWS_REGION=us-east-2
-CLAUDE_MODEL=us.anthropic.claude-sonnet-4-5-20250929-v1:0
+CLAUDE_MODEL=us.anthropic.claude-sonnet-4-6
 S3_EXPORT_BUCKET=your-export-bucket
 
 # OpenAI (Embeddings)

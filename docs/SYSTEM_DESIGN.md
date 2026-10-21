@@ -35,7 +35,7 @@ flowchart LR
             ASYNC[Embedding worker<br/>async executor]
         end
         RDS[(RDS PostgreSQL 16<br/>+ pgvector)]
-        BR[Bedrock<br/>Claude Sonnet 4.5]
+        BR[Bedrock<br/>Claude Sonnet 4.6]
         S3[(S3<br/>CSV exports)]
         SM[Secrets Manager]
     end
@@ -436,7 +436,7 @@ flowchart LR
 | `JASYPT_ENCRYPTOR_PASSWORD` | Plaid token encryption key. **Rotating it makes existing tokens unreadable** |
 | `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENVIRONMENT` | Plaid (`sandbox` by default) |
 | `OPENAI_API_KEY` | Embeddings |
-| `CLAUDE_MODEL`, `CLAUDE_MAX_TOKENS` | Bedrock model or inference-profile ID (default `us.anthropic.claude-sonnet-4-5-20250929-v1:0`) |
+| `CLAUDE_MODEL`, `CLAUDE_MAX_TOKENS` | Bedrock model or inference-profile ID (default `us.anthropic.claude-sonnet-4-6`) |
 | `AWS_REGION` | Bedrock and S3 region (default `us-east-2`) |
 | `S3_EXPORT_BUCKET` | Bucket for CSV exports |
 | `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET` | Billing |

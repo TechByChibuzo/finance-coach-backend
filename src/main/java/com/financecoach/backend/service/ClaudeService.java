@@ -30,7 +30,7 @@ public class ClaudeService {
     private final int maxTokens;
 
     @Autowired
-    public ClaudeService(@Value("${claude.model:anthropic.claude-sonnet-4-5-20250929-v1:0}") String model,
+    public ClaudeService(@Value("${claude.model:us.anthropic.claude-sonnet-4-6}") String model,
                          @Value("${claude.max-tokens:4096}") int maxTokens,
                          @Value("${aws.region}") String region) {
         this(BedrockRuntimeClient.builder()
