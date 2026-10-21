@@ -31,7 +31,7 @@ class ClaudeServiceTest {
 
     @BeforeEach
     void setUp() {
-        claudeService = new ClaudeService(bedrockClient, "anthropic.claude-test", 1000);
+        claudeService = new ClaudeService(bedrockClient, "anthropic.claude-test", 1000, "low");
     }
 
     @Test
@@ -39,6 +39,45 @@ class ClaudeServiceTest {
         stubBedrockBody("{\"content\": [{\"type\": \"text\", \"text\": \"You spent $120 on food.\"}]}");
 
         assertThat(claudeService.chat("How much on food?")).isEqualTo("You spent $120 on food.");
+    }
+
+    @Test
+    void chat_skipsThinkingBlocks_andJoinsTheTextBlocks() {
+        stubBedrockBody("{\"stop_reason\": \"end_turn\", \"content\": ["
+                + "{\"type\": \"thinking\", \"thinking\": \"\", \"signature\": \"sig\"},"
+                + "{\"type\": \"text\", \"text\": \"You spent \"},"
+                + "{\"type\": \"text\", \"text\": \"$120 on food.\"}]}");
+
+        assertThat(claudeService.chat("How much on food?")).isEqualTo("You spent $120 on food.");
+    }
+
+    @Test
+    void chat_sendsTheEffortLevel_andOmitsItWhenBlank() {
+        stubBedrockBody("{\"content\": [{\"type\": \"text\", \"text\": \"ok\"}]}");
+        claudeService.chat("Hi");
+        assertThat(sentBody()).contains("\"output_config\":{\"effort\":\"low\"}");
+
+        org.mockito.Mockito.reset(bedrockClient);
+        stubBedrockBody("{\"content\": [{\"type\": \"text\", \"text\": \"ok\"}]}");
+        new ClaudeService(bedrockClient, "anthropic.claude-test", 1000, "").chat("Hi");
+        assertThat(sentBody()).doesNotContain("output_config");
+    }
+
+    @Test
+    void chat_whenClaudeDeclines_returnsAPoliteReply() {
+        stubBedrockBody("{\"stop_reason\": \"refusal\", \"stop_details\": {\"type\": \"refusal\", \"category\": \"general_harms\"},"
+                + " \"content\": []}");
+
+        assertThat(claudeService.chat("something off-topic")).isEqualTo(ClaudeService.REFUSAL_REPLY);
+    }
+
+    @Test
+    void chat_whenOnlyThinkingCameBack_throws() {
+        stubBedrockBody("{\"stop_reason\": \"max_tokens\", \"content\": [{\"type\": \"thinking\", \"thinking\": \"\"}]}");
+
+        assertThatThrownBy(() -> claudeService.chat("Hi"))
+                .isInstanceOf(AiServiceUnavailableException.class)
+                .hasMessageContaining("max_tokens");
     }
 
     @Test

@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class ClaudeService {
@@ -28,22 +29,28 @@ public class ClaudeService {
     private final ObjectMapper objectMapper;
     private final String model;
     private final int maxTokens;
+    private final String effort;
+
+    static final String REFUSAL_REPLY =
+            "Sorry, I can't help with that request. I can answer questions about your spending, budgets and savings.";
 
     @Autowired
-    public ClaudeService(@Value("${claude.model:us.anthropic.claude-sonnet-4-6}") String model,
-                         @Value("${claude.max-tokens:4096}") int maxTokens,
+    public ClaudeService(@Value("${claude.model:us.anthropic.claude-sonnet-5-5}") String model,
+                         @Value("${claude.max-tokens:16000}") int maxTokens,
+                         @Value("${claude.effort:low}") String effort,
                          @Value("${aws.region}") String region) {
         this(BedrockRuntimeClient.builder()
                         .region(Region.of(region))
                         .credentialsProvider(DefaultCredentialsProvider.create())
                         .build(),
-                model, maxTokens);
+                model, maxTokens, effort);
     }
 
-    ClaudeService(BedrockRuntimeClient bedrockClient, String model, int maxTokens) {
+    ClaudeService(BedrockRuntimeClient bedrockClient, String model, int maxTokens, String effort) {
         this.bedrockClient = bedrockClient;
         this.model = model;
         this.maxTokens = maxTokens;
+        this.effort = effort;
         this.objectMapper = new ObjectMapper();
     }
 
@@ -89,6 +96,10 @@ public class ClaudeService {
             requestBody.put("anthropic_version", "bedrock-2023-05-31");
             requestBody.put("max_tokens", maxTokens);
             requestBody.put("messages", messages);
+            // Sonnet 5.5 thinks adaptively by default; effort sets how much (low suits chat)
+            if (effort != null && !effort.isBlank()) {
+                requestBody.put("output_config", Map.of("effort", effort));
+            }
 
             if (systemPrompt != null && !systemPrompt.isEmpty()) {
                 requestBody.put("system", systemPrompt);
@@ -107,13 +118,26 @@ public class ClaudeService {
             String responseBody = response.body().asUtf8String();
 
             Map<String, Object> responseMap = objectMapper.readValue(responseBody, Map.class);
-            List<Map<String, Object>> content = (List<Map<String, Object>>) responseMap.get("content");
+            Object stopReason = responseMap.get("stop_reason");
 
-            if (content != null && !content.isEmpty() && content.get(0).get("text") != null) {
-                return (String) content.get(0).get("text");
+            // A safety decline is a normal response with no usable answer
+            if ("refusal".equals(stopReason)) {
+                logger.warn("Claude declined the request: {}", responseMap.get("stop_details"));
+                return REFUSAL_REPLY;
             }
 
-            throw new AiServiceUnavailableException("Bedrock returned no text content");
+            // The reply can start with thinking blocks, so read the text blocks by type
+            List<Map<String, Object>> content = (List<Map<String, Object>>) responseMap.get("content");
+            String text = content == null ? "" : content.stream()
+                    .filter(block -> "text".equals(block.get("type")) && block.get("text") != null)
+                    .map(block -> (String) block.get("text"))
+                    .collect(Collectors.joining());
+
+            if (!text.isBlank()) {
+                return text;
+            }
+
+            throw new AiServiceUnavailableException("Bedrock returned no text content (stop_reason " + stopReason + ")");
 
         } catch (AiServiceUnavailableException e) {
             throw e;
