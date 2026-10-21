@@ -47,6 +47,15 @@ public class ConversationService {
                 .toList();
     }
 
+    /**
+     * The latest turns of a conversation, oldest first, for showing it again in the app
+     */
+    public List<ConversationMessage> getTranscript(UUID userId, String sessionId, int maxTurns) {
+        List<ConversationMessage> messages = conversationRepository
+                .findByUserIdAndSessionIdOrderByCreatedAtAsc(userId, sessionId);
+        return messages.subList(Math.max(0, messages.size() - maxTurns), messages.size());
+    }
+
     // Derived deleteBy... queries load and remove entities, which needs an active transaction
     @Transactional
     public void clearSession(UUID userId, String sessionId) {

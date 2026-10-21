@@ -1,6 +1,7 @@
 // src/main/java/com/financecoach/backend/controller/AICoachController.java
 package com.financecoach.backend.controller;
 
+import com.financecoach.backend.dto.ChatTurnResponse;
 import com.financecoach.backend.annotation.RequiresFeature;
 import com.financecoach.backend.annotation.TrackUsage;
 import com.financecoach.backend.dto.ChatRequest;
@@ -15,6 +16,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -41,6 +43,15 @@ public class AICoachController {
         UUID userId = getCurrentUserId();
         String response = aiCoachService.chat(userId, request.getMessage(), request.getSessionId());
         return ResponseEntity.ok(Map.of("response", response));
+    }
+
+    /**
+     * Earlier messages of a chat session (not counted as AI usage)
+     * GET /api/ai-coach/chat/{sessionId}
+     */
+    @GetMapping("/chat/{sessionId}")
+    public ResponseEntity<List<ChatTurnResponse>> getConversation(@PathVariable String sessionId) {
+        return ResponseEntity.ok(aiCoachService.getConversation(getCurrentUserId(), sessionId));
     }
 
     @DeleteMapping("/chat/{sessionId}")

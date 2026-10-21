@@ -186,6 +186,19 @@ class AICoachServiceTest {
         verify(conversationService).clearSession(userId, "my-session");
     }
 
+    @Test
+    void getConversation_mapsSavedTurnsForTheChatScreen() {
+        when(conversationService.getTranscript(userId, "default", 50)).thenReturn(List.of(
+                new com.financecoach.backend.model.ConversationMessage(userId, "default", "How am I doing?", "Pretty well.")));
+
+        List<com.financecoach.backend.dto.ChatTurnResponse> turns = aiCoachService.getConversation(userId, "default");
+
+        assertThat(turns).hasSize(1);
+        assertThat(turns.get(0).userMessage()).isEqualTo("How am I doing?");
+        assertThat(turns.get(0).assistantMessage()).isEqualTo("Pretty well.");
+        assertThat(turns.get(0).createdAt()).isNotNull();
+    }
+
     // --- generateWeeklySummary ---
 
     @Test

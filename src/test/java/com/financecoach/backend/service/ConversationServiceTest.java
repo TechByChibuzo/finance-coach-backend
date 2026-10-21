@@ -63,6 +63,19 @@ class ConversationServiceTest {
     }
 
     @Test
+    void getTranscript_returnsTheLatestTurnsOldestFirst() {
+        List<ConversationMessage> all = new java.util.ArrayList<>();
+        for (int i = 1; i <= 5; i++) {
+            all.add(new ConversationMessage(userId, "s1", "q" + i, "a" + i));
+        }
+        when(repository.findByUserIdAndSessionIdOrderByCreatedAtAsc(userId, "s1")).thenReturn(all);
+
+        List<ConversationMessage> transcript = conversationService.getTranscript(userId, "s1", 3);
+
+        assertThat(transcript).extracting(ConversationMessage::getUserMessage).containsExactly("q3", "q4", "q5");
+    }
+
+    @Test
     void clearSession_andCount_delegateToTheRepository() {
         when(repository.countByUserIdAndSessionId(userId, "s1")).thenReturn(4L);
 

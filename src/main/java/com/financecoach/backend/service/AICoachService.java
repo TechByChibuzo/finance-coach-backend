@@ -1,5 +1,6 @@
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.dto.ChatTurnResponse;
 import com.financecoach.backend.model.Transaction;
 import com.financecoach.backend.repository.TransactionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +16,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class AICoachService {
+
+    private static final int TRANSCRIPT_TURNS = 50;
 
     private final ClaudeService claudeService;
     private final TransactionRepository transactionRepository;
@@ -71,6 +74,15 @@ public class AICoachService {
         metricsService.recordAiCoachResponseDuration(duration);
 
         return response;
+    }
+
+    /**
+     * Earlier turns of a conversation, so the chat screen can show them again
+     */
+    public List<ChatTurnResponse> getConversation(UUID userId, String sessionId) {
+        return conversationService.getTranscript(userId, sessionId, TRANSCRIPT_TURNS).stream()
+                .map(m -> new ChatTurnResponse(m.getUserMessage(), m.getAssistantMessage(), m.getCreatedAt()))
+                .toList();
     }
 
     public void clearSession(UUID userId, String sessionId) {
