@@ -56,10 +56,11 @@ plaid:
 claude:
   api-key: ${CLAUDE_API_KEY}
   # Bedrock model or inference-profile ID (needs model access enabled in the Bedrock console)
-  model: ${CLAUDE_MODEL:us.anthropic.claude-sonnet-5-5}
+  model: ${CLAUDE_MODEL:us.anthropic.claude-sonnet-4-6}
   max-tokens: ${CLAUDE_MAX_TOKENS:16000}
-  # How much Sonnet 5.5 thinks before answering: low | medium | high | xhigh | max
-  effort: ${CLAUDE_EFFORT:low}
+  # Optional effort level (low | medium | high | max); unset uses the model default.
+  # Set low if moving to Sonnet 5.5, which thinks by default.
+  effort: ${CLAUDE_EFFORT:}
 
 # SendGrid Configuration
 sendgrid:

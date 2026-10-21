@@ -73,9 +73,9 @@ plaid:
 
 claude:
   api-key: ${CLAUDE_API_KEY}
-  model: ${CLAUDE_MODEL:us.anthropic.claude-sonnet-5-5}
+  model: ${CLAUDE_MODEL:us.anthropic.claude-sonnet-4-6}
   max-tokens: ${CLAUDE_MAX_TOKENS:16000}
-  effort: ${CLAUDE_EFFORT:low}
+  effort: ${CLAUDE_EFFORT:}
 
 sendgrid:
   api-key: ${SENDGRID_API_KEY}

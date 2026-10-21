@@ -35,7 +35,7 @@ flowchart LR
             ASYNC[Embedding worker<br/>async executor]
         end
         RDS[(RDS PostgreSQL 16<br/>+ pgvector)]
-        BR[Bedrock<br/>Claude Sonnet 5.5]
+        BR[Bedrock<br/>Claude Sonnet 4.6]
         S3[(S3<br/>CSV exports)]
         SM[Secrets Manager]
     end
@@ -117,7 +117,7 @@ HTTP ─► AuthRateLimitFilter ─► JwtAuthenticationFilter ─► Controller
 - **`VectorStoreService`**: indexing runs **asynchronously** on the `embeddingExecutor` (1–2 threads, queue of 200). The insert only lands while the transaction still exists. Retrieval returns the top-K rows by cosine distance (`<=>`), scoped to `user_id`.
 - **`AICoachService`**: the system prompt combines an exact financial summary (spending, income, spending by category and top merchants, for this month to date and last month), so "how much" questions get real numbers, with the top 10 retrieved transactions for specific lookups.
 - **`ConversationService`**: stores each turn (user message + assistant reply) keyed by `(user_id, session_id)` and replays the last 10 turns.
-- **`ClaudeService`**: Bedrock `InvokeModel` with the Anthropic Messages body, using the ECS task role. The reply's text blocks are read by type (Sonnet 5.5 can return thinking blocks first), effort defaults to `low`, and a safety decline (`stop_reason: refusal`) returns a polite fixed reply. Bedrock failures throw `AiServiceUnavailableException` (→ 503); failed turns aren't saved and don't use up the allowance.
+- **`ClaudeService`**: Bedrock `InvokeModel` with the Anthropic Messages body, using the ECS task role. The reply's text blocks are read by type (newer models can return thinking blocks first), an optional `CLAUDE_EFFORT` sets the effort level, and a safety decline (`stop_reason: refusal`) returns a polite fixed reply. Bedrock failures throw `AiServiceUnavailableException` (→ 503); failed turns aren't saved and don't use up the allowance.
 
 ### 3.6 Billing
 - **`SubscriptionController`** (`/api/subscriptions/**`): list plans (public), current subscription, feature-access check, checkout, cancel, Stripe webhook (public, signature-verified).
@@ -436,7 +436,7 @@ flowchart LR
 | `JASYPT_ENCRYPTOR_PASSWORD` | Plaid token encryption key. **Rotating it makes existing tokens unreadable** |
 | `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENVIRONMENT` | Plaid (`sandbox` by default) |
 | `OPENAI_API_KEY` | Embeddings |
-| `CLAUDE_MODEL`, `CLAUDE_MAX_TOKENS`, `CLAUDE_EFFORT` | Bedrock model or inference-profile ID (default `us.anthropic.claude-sonnet-5-5`) |
+| `CLAUDE_MODEL`, `CLAUDE_MAX_TOKENS`, `CLAUDE_EFFORT` | Bedrock model or inference-profile ID (default `us.anthropic.claude-sonnet-4-6`) |
 | `AWS_REGION` | Bedrock and S3 region (default `us-east-2`) |
 | `S3_EXPORT_BUCKET` | Bucket for CSV exports |
 | `STRIPE_API_KEY`, `STRIPE_WEBHOOK_SECRET` | Billing |

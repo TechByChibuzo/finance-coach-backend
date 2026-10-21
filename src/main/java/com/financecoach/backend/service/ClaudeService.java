@@ -35,9 +35,9 @@ public class ClaudeService {
             "Sorry, I can't help with that request. I can answer questions about your spending, budgets and savings.";
 
     @Autowired
-    public ClaudeService(@Value("${claude.model:us.anthropic.claude-sonnet-5-5}") String model,
+    public ClaudeService(@Value("${claude.model:us.anthropic.claude-sonnet-4-6}") String model,
                          @Value("${claude.max-tokens:16000}") int maxTokens,
-                         @Value("${claude.effort:low}") String effort,
+                         @Value("${claude.effort:}") String effort,
                          @Value("${aws.region}") String region) {
         this(BedrockRuntimeClient.builder()
                         .region(Region.of(region))
@@ -96,7 +96,7 @@ public class ClaudeService {
             requestBody.put("anthropic_version", "bedrock-2023-05-31");
             requestBody.put("max_tokens", maxTokens);
             requestBody.put("messages", messages);
-            // Sonnet 5.5 thinks adaptively by default; effort sets how much (low suits chat)
+            // Optional: on models that think by default (Sonnet 5.5), effort sets how much
             if (effort != null && !effort.isBlank()) {
                 requestBody.put("output_config", Map.of("effort", effort));
             }

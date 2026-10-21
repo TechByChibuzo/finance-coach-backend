@@ -47,7 +47,7 @@ variable "frontend_url" {
 variable "claude_model" {
   description = "Bedrock model or inference-profile ID for the AI coach"
   type        = string
-  default     = "us.anthropic.claude-sonnet-5-5"
+  default     = "us.anthropic.claude-sonnet-4-6"
 }
 
 variable "plaid_environment" {
