@@ -93,6 +93,19 @@ class RecurringChargeServiceTest {
     }
 
     @Test
+    void rentAtTheSameAmountEveryMonth_isABillNotASubscription() {
+        charge("AVALON APARTMENTS RENT", "2026-08-02", "1950.00");
+        charge("AVALON APARTMENTS RENT", "2026-09-02", "1950.00");
+        charge("AVALON APARTMENTS RENT", "2026-10-02", "1950.00");
+        history.forEach(t -> t.setCategory("RENT_AND_UTILITIES"));
+
+        RecurringChargeResponse rent = run().get(0);
+
+        assertThat(rent.type()).isEqualTo("bill");
+        assertThat(rent.amount()).isEqualByComparingTo("1950.00");
+    }
+
+    @Test
     void subscriptionThatStopped_isLeftOut() {
         charge("HULU", "2026-04-10", "7.99");
         charge("HULU", "2026-05-10", "7.99");

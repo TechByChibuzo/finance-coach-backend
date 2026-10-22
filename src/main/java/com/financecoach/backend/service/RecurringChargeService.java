@@ -31,6 +31,9 @@ public class RecurringChargeService {
     private static final double REGULAR_SHARE = 0.75;      // share of gaps that must fit the rhythm
     private static final double AMOUNT_TOLERANCE = 0.25;   // a bill can vary this much and still repeat
     private static final double SAME_AMOUNT = 0.02;        // within this, the amount counts as unchanged
+    // Housing, utilities and loans are bills even when the amount never changes (rent)
+    private static final java.util.Set<String> BILL_CATEGORIES =
+            java.util.Set.of("RENT_AND_UTILITIES", "LOAN_PAYMENTS", "BANK_FEES", "GOVERNMENT_AND_NON_PROFIT", "MEDICAL");
 
     private record Rhythm(String name, int days, int tolerance) {
     }
@@ -110,9 +113,10 @@ public class RecurringChargeService {
                 ? earlierTypical : null;
 
         // Same amount every time, or a steady amount that just changed price
-        boolean subscription = previousAmount != null
+        boolean steady = previousAmount != null
                 || amounts.subList(Math.max(0, amounts.size() - 3), amounts.size()).stream()
                         .allMatch(a -> withinShare(a, last.getAmount(), SAME_AMOUNT));
+        boolean subscription = steady && !BILL_CATEGORIES.contains(last.getCategory());
 
         String logo = charges.stream().map(Transaction::getLogoUrl).filter(Objects::nonNull)
                 .reduce((a, b) -> b).orElse(null);
@@ -123,7 +127,7 @@ public class RecurringChargeService {
                 last.getCategory(),
                 subscription ? "subscription" : "bill",
                 rhythm.name(),
-                subscription ? last.getAmount() : typical,
+                steady ? last.getAmount() : typical,
                 previousAmount,
                 last.getDate(),
                 nextDate,
