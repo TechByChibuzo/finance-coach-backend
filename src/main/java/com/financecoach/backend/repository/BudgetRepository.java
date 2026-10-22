@@ -34,15 +34,6 @@ public interface BudgetRepository extends JpaRepository<Budget, UUID> {
     // Check if budget exists for category and month
     boolean existsByUserIdAndCategoryAndMonth(UUID userId, String category, LocalDate month);
 
-    // Find budgets that are exceeded
-    @Query("SELECT b FROM Budget b WHERE b.userId = :userId AND b.isActive = true AND b.spent > b.amount")
-    List<Budget> findExceededBudgets(@Param("userId") UUID userId);
-
-    // Find budgets that should trigger alerts
-    @Query("SELECT b FROM Budget b WHERE b.userId = :userId AND b.isActive = true " +
-            "AND (b.spent / b.amount * 100) >= b.alertThreshold")
-    List<Budget> findBudgetsNeedingAlert(@Param("userId") UUID userId);
-
     // Get total budget amount for a month
     @Query("SELECT COALESCE(SUM(b.amount), 0) FROM Budget b " +
             "WHERE b.userId = :userId AND b.month = :month AND b.isActive = true")

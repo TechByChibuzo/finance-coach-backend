@@ -297,14 +297,82 @@ class BudgetServiceCrudTest {
     // --- alerts ---
 
     @Test
-    void exceededAndAlertBudgets_comeFromTheRepository() {
-        when(budgetRepository.findExceededBudgets(userId)).thenReturn(List.of(budget("Travel", "100", "150")));
-        when(budgetRepository.findBudgetsNeedingAlert(userId)).thenReturn(List.of(budget("Food & Dining", "100", "90")));
+    void exceededAndAlertBudgets_areThisMonthsOnly_withFreshSpending() {
+        Budget travel = budget("Travel", "100", "0");
+        Budget food = budget("Food & Dining", "100", "0");
+        Budget shopping = budget("Shopping", "100", "0");
+        when(budgetRepository.findByUserIdAndMonthAndIsActive(userId, thisMonth, true)).thenReturn(List.of(travel, food, shopping));
+        when(analyticsService.getSpendingByCategory(eq(userId), eq(thisMonth), any()))
+                .thenReturn(Map.of("TRAVEL", new BigDecimal("150"), "FOOD_AND_DRINK", new BigDecimal("90"), "GENERAL_MERCHANDISE", new BigDecimal("10")));
 
         assertThat(budgetService.getExceededBudgets(userId)).extracting(BudgetResponse::getCategory)
                 .containsExactly("Travel");
-        assertThat(budgetService.getBudgetsNeedingAlert(userId)).extracting(BudgetResponse::getShouldAlert)
-                .containsExactly(true);
+        assertThat(budgetService.getBudgetsNeedingAlert(userId)).extracting(BudgetResponse::getCategory)
+                .containsExactlyInAnyOrder("Travel", "Food & Dining");
+    }
+
+    // --- rollover ---
+
+    @Test
+    void rollover_addsLastMonthsLeftover_andCarriesOverspendingToo() {
+        LocalDate lastMonth = thisMonth.minusMonths(1);
+        Budget food = budget("Food & Dining", "400", "0");
+        food.setRollover(true);
+        Budget travel = budget("Travel", "200", "0");
+        travel.setRollover(true);
+        Budget shopping = budget("Shopping", "100", "0"); // no rollover
+        Budget lastFood = new Budget(userId, "Food & Dining", lastMonth, new BigDecimal("400"));
+        lastFood.setCarriedOver(new BigDecimal("50")); // its own leftover from the month before
+        Budget lastTravel = new Budget(userId, "Travel", lastMonth, new BigDecimal("200"));
+        Budget lastShopping = new Budget(userId, "Shopping", lastMonth, new BigDecimal("100"));
+        when(budgetRepository.findByUserIdAndMonthAndIsActive(userId, thisMonth, true)).thenReturn(List.of(food, travel, shopping));
+        when(budgetRepository.findByUserIdAndMonthAndIsActive(userId, lastMonth, true)).thenReturn(List.of(lastFood, lastTravel, lastShopping));
+        when(analyticsService.getSpendingByCategory(eq(userId), eq(thisMonth), any()))
+                .thenReturn(Map.of("FOOD_AND_DRINK", new BigDecimal("300")));
+        when(analyticsService.getSpendingByCategory(eq(userId), eq(lastMonth), any()))
+                .thenReturn(Map.of("FOOD_AND_DRINK", new BigDecimal("350"), "TRAVEL", new BigDecimal("260"), "GENERAL_MERCHANDISE", new BigDecimal("20")));
+
+        var summary = budgetService.getBudgetsForMonth(userId, thisMonth);
+
+        BudgetResponse foodResponse = summary.getBudgets().get(0);
+        // 400 + 50 carried in, 350 spent: 100 left over
+        assertThat(foodResponse.getCarriedOver()).isEqualByComparingTo("100");
+        assertThat(foodResponse.getAvailable()).isEqualByComparingTo("500");
+        assertThat(foodResponse.getRemaining()).isEqualByComparingTo("200");
+        assertThat(foodResponse.getPercentageSpent()).isEqualTo(60.0);
+        assertThat(foodResponse.isRollover()).isTrue();
+
+        BudgetResponse travelResponse = summary.getBudgets().get(1);
+        assertThat(travelResponse.getCarriedOver()).isEqualByComparingTo("-60");
+        assertThat(travelResponse.getAvailable()).isEqualByComparingTo("140");
+
+        BudgetResponse shoppingResponse = summary.getBudgets().get(2);
+        assertThat(shoppingResponse.getCarriedOver()).isNull();
+        assertThat(shoppingResponse.getAvailable()).isEqualByComparingTo("100");
+
+        assertThat(summary.getTotalBudget()).isEqualByComparingTo("740");
+    }
+
+    @Test
+    void rollover_overspendingThatUsesItAllUp_isExceededFromTheFirstDollar() {
+        Budget travel = budget("Travel", "100", "0");
+        travel.setCarriedOver(new BigDecimal("-150"));
+        travel.updateSpent(new BigDecimal("10"));
+
+        assertThat(travel.getAvailable()).isEqualByComparingTo("-50");
+        assertThat(travel.getPercentageSpent()).isEqualTo(100.0);
+        assertThat(travel.isExceeded()).isTrue();
+    }
+
+    @Test
+    void createOrUpdateBudget_savesTheRolloverChoice() {
+        when(budgetRepository.findByUserIdAndCategoryAndMonth(userId, "Food & Dining", thisMonth)).thenReturn(Optional.empty());
+        when(analyticsService.getSpendingByCategory(eq(userId), any(), any())).thenReturn(Map.of());
+        when(budgetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        BudgetRequest request = request("Food & Dining", "400", thisMonth);
+        request.setRollover(true);
+
+        assertThat(budgetService.createOrUpdateBudget(userId, request).isRollover()).isTrue();
     }
 
     // --- refresh + copy ---

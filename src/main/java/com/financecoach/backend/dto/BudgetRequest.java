@@ -27,6 +27,8 @@ public class BudgetRequest {
     @Max(value = 100, message = "Alert threshold must be between 0 and 100")
     private Double alertThreshold;  // Optional - defaults to 80%
 
+    private Boolean rollover;  // Optional - carry last month's leftover into this month; null leaves it as is
+
     // Constructors
     public BudgetRequest() {}
 
@@ -81,5 +83,13 @@ public class BudgetRequest {
 
     public void setAlertThreshold(Double alertThreshold) {
         this.alertThreshold = alertThreshold;
+    }
+
+    public Boolean getRollover() {
+        return rollover;
+    }
+
+    public void setRollover(Boolean rollover) {
+        this.rollover = rollover;
     }
 }

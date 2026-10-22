@@ -51,6 +51,14 @@ public class Budget {
     @Column(name = "is_active")
     private Boolean isActive = true;
 
+    // Carry what's left (or overspent) last month into this month
+    @Column(name = "rollover")
+    private Boolean rollover;
+
+    // Last month's leftover in this category (negative when overspent); null without rollover
+    @Column(name = "carried_over", precision = 19, scale = 2)
+    private BigDecimal carriedOver;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 
@@ -77,14 +85,24 @@ public class Budget {
         this.updatedAt = LocalDateTime.now();
     }
 
-    // Calculate percentage spent
+    // What can be spent this month: the budget plus anything rolled over from last month
+    public BigDecimal getAvailable() {
+        if (amount == null) return BigDecimal.ZERO;
+        return carriedOver == null ? amount : amount.add(carriedOver);
+    }
+
+    // Calculate percentage spent of what's available
     public Double getPercentageSpent() {
-        if (amount == null || spent == null || amount.compareTo(BigDecimal.ZERO) == 0) {
+        BigDecimal available = getAvailable();
+        if (spent == null || spent.signum() == 0) {
             return 0.0;
+        }
+        if (available.signum() <= 0) {
+            return 100.0; // last month's overspending used it all up
         }
 
         return spent
-                .divide(amount, 4, RoundingMode.HALF_EVEN)
+                .divide(available, 4, RoundingMode.HALF_EVEN)
                 .multiply(BigDecimal.valueOf(100))
                 .doubleValue();
     }
@@ -93,7 +111,7 @@ public class Budget {
     public Boolean isExceeded() {
         return spent != null
                 && amount != null
-                && spent.compareTo(amount) > 0;
+                && spent.compareTo(getAvailable()) > 0;
     }
 
     // Check if alert threshold is reached
@@ -104,9 +122,25 @@ public class Budget {
     // Get remaining budget
     public BigDecimal getRemainingBudget() {
         if (amount == null) return BigDecimal.ZERO;
-        if (spent == null) return amount;
+        if (spent == null) return getAvailable();
 
-        return amount.subtract(spent);
+        return getAvailable().subtract(spent);
+    }
+
+    public Boolean getRollover() {
+        return rollover;
+    }
+
+    public void setRollover(Boolean rollover) {
+        this.rollover = rollover;
+    }
+
+    public BigDecimal getCarriedOver() {
+        return carriedOver;
+    }
+
+    public void setCarriedOver(BigDecimal carriedOver) {
+        this.carriedOver = carriedOver;
     }
 
     // Getters and Setters

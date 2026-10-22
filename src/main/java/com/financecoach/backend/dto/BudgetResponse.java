@@ -25,6 +25,10 @@ public class BudgetResponse {
     private Boolean isActive;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    // With rollover: last month's leftover (negative when overspent), and amount plus that
+    private boolean rollover;
+    private BigDecimal carriedOver;
+    private BigDecimal available;
 
     // Constructors
     public BudgetResponse() {}

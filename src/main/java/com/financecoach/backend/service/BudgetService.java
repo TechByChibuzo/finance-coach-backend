@@ -144,6 +144,9 @@ public class BudgetService {
             if (request.getAlertThreshold() != null) {
                 budget.setAlertThreshold(request.getAlertThreshold());
             }
+            if (request.getRollover() != null) {
+                budget.setRollover(request.getRollover());
+            }
         } else {
             logger.debug("Creating new budget for category: {}", request.getCategory());
             // Create new budget
@@ -157,6 +160,7 @@ public class BudgetService {
             if (request.getAlertThreshold() != null) {
                 budget.setAlertThreshold(request.getAlertThreshold());
             }
+            budget.setRollover(Boolean.TRUE.equals(request.getRollover()));
         }
 
         // Calculate current spending for this category
@@ -167,6 +171,7 @@ public class BudgetService {
         Map<String, BigDecimal> categorySpending = mapCategoriesToBudgetCategories(plaidSpending);
         BigDecimal spent = categorySpending.getOrDefault(request.getCategory(), BigDecimal.ZERO);
         budget.updateSpent(spent);
+        applyCarryOver(userId, month, List.of(budget));
 
         // Save to database
         Budget savedBudget = budgetRepository.save(budget);
@@ -207,11 +212,15 @@ public class BudgetService {
         Map<String, BigDecimal> rawSpending = analyticsService.getSpendingByCategory(userId, startDate, endDate);
         Map<String, BigDecimal> actualSpending = mapCategoriesToBudgetCategories(rawSpending);
 
-        // Update spent amounts
+        // Update spent amounts and what rolled over from last month
+        Map<UUID, BigDecimal> carriedBefore = new HashMap<>();
+        budgets.forEach(b -> carriedBefore.put(b.getId(), b.getCarriedOver()));
+        applyCarryOver(userId, normalizedMonth, budgets);
         for (Budget budget : budgets) {
             BigDecimal spent = actualSpending.getOrDefault(budget.getCategory(), BigDecimal.ZERO);
+            boolean carryChanged = !sameAmount(carriedBefore.get(budget.getId()), budget.getCarriedOver());
 
-            if (spent.compareTo(budget.getSpent()) != 0) {
+            if (spent.compareTo(budget.getSpent()) != 0 || carryChanged) {
                 budget.updateSpent(spent);
                 budgetRepository.save(budget);
             }
@@ -223,7 +232,7 @@ public class BudgetService {
                 .collect(Collectors.toList());
 
         BigDecimal totalBudget = budgets.stream()
-                .map(Budget::getAmount)
+                .map(Budget::getAvailable)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal totalSpent = budgets.stream()
@@ -340,9 +349,9 @@ public class BudgetService {
      * Get budgets that are exceeded
      */
     public List<BudgetResponse> getExceededBudgets(UUID userId) {
-        List<Budget> exceededBudgets = budgetRepository.findExceededBudgets(userId);
-        return exceededBudgets.stream()
-                .map(this::convertToResponse)
+        // This month's only, with fresh spending: last month's overspend isn't news now
+        return getCurrentMonthBudgets(userId).getBudgets().stream()
+                .filter(b -> Boolean.TRUE.equals(b.getIsExceeded()))
                 .collect(Collectors.toList());
     }
 
@@ -350,9 +359,8 @@ public class BudgetService {
      * Get budgets that need alerts
      */
     public List<BudgetResponse> getBudgetsNeedingAlert(UUID userId) {
-        List<Budget> alertBudgets = budgetRepository.findBudgetsNeedingAlert(userId);
-        return alertBudgets.stream()
-                .map(this::convertToResponse)
+        return getCurrentMonthBudgets(userId).getBudgets().stream()
+                .filter(b -> Boolean.TRUE.equals(b.getShouldAlert()))
                 .collect(Collectors.toList());
     }
 
@@ -373,6 +381,7 @@ public class BudgetService {
         Map<String, BigDecimal> actualSpending = mapCategoriesToBudgetCategories(rawSpending);
 
         // Update each budget
+        applyCarryOver(userId, normalizedMonth, budgets);
         for (Budget budget : budgets) {
             BigDecimal spent = actualSpending.getOrDefault(budget.getCategory(), BigDecimal.ZERO);
             budget.updateSpent(spent);
@@ -425,6 +434,7 @@ public class BudgetService {
                         );
                         newBudget.setNotes(prevBudget.getNotes());
                         newBudget.setAlertThreshold(prevBudget.getAlertThreshold());
+                        newBudget.setRollover(prevBudget.getRollover());
                         return budgetRepository.save(newBudget);
                     }
                     return null;
@@ -460,9 +470,36 @@ public class BudgetService {
                 + " budgets per month. Upgrade to Premium for unlimited budgets.";
     }
 
+    /**
+     * For budgets with rollover, sets what's left of last month's budget in the same category
+     * (negative when it was overspent). Last month's own carry-over counts too, so leftovers
+     * build up month after month. Budgets without rollover carry nothing.
+     */
+    private void applyCarryOver(UUID userId, LocalDate month, List<Budget> budgets) {
+        budgets.stream().filter(b -> !Boolean.TRUE.equals(b.getRollover())).forEach(b -> b.setCarriedOver(null));
+        List<Budget> rolling = budgets.stream().filter(b -> Boolean.TRUE.equals(b.getRollover())).toList();
+        if (rolling.isEmpty()) {
+            return;
+        }
+        LocalDate previousMonth = month.minusMonths(1);
+        Map<String, Budget> previous = budgetRepository.findByUserIdAndMonthAndIsActive(userId, previousMonth, true).stream()
+                .collect(Collectors.toMap(Budget::getCategory, b -> b, (a, b) -> a));
+        Map<String, BigDecimal> previousSpending = previous.isEmpty() ? Map.of() : mapCategoriesToBudgetCategories(
+                analyticsService.getSpendingByCategory(userId, previousMonth, month.minusDays(1)));
+        for (Budget budget : rolling) {
+            Budget last = previous.get(budget.getCategory());
+            budget.setCarriedOver(last == null ? null
+                    : last.getAvailable().subtract(previousSpending.getOrDefault(budget.getCategory(), BigDecimal.ZERO)));
+        }
+    }
+
+    private static boolean sameAmount(BigDecimal a, BigDecimal b) {
+        return a == null ? b == null : b != null && a.compareTo(b) == 0;
+    }
+
     // Helper method to convert Entity to DTO
     private BudgetResponse convertToResponse(Budget budget) {
-        return new BudgetResponse(
+        BudgetResponse response = new BudgetResponse(
                 budget.getId(),
                 budget.getCategory(),
                 budget.getMonth(),
@@ -479,5 +516,9 @@ public class BudgetService {
                 budget.getCreatedAt(),
                 budget.getUpdatedAt()
         );
+        response.setRollover(Boolean.TRUE.equals(budget.getRollover()));
+        response.setCarriedOver(budget.getCarriedOver());
+        response.setAvailable(budget.getAvailable());
+        return response;
     }
 }
