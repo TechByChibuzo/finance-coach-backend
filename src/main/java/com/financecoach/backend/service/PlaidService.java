@@ -76,7 +76,10 @@ public class PlaidService {
             LinkTokenCreateRequest request = new LinkTokenCreateRequest()
                     .user(user)
                     .clientName("Finance Coach")
-                    .products(List.of(Products.TRANSACTIONS, Products.INVESTMENTS))
+                    // Every product in products is required, so a bank without investment accounts
+                    // would refuse to connect; investments are added only where available
+                    .products(List.of(Products.TRANSACTIONS))
+                    .optionalProducts(List.of(Products.INVESTMENTS))
                     .countryCodes(List.of(CountryCode.US))
                     .transactions(new LinkTokenTransactions().daysRequested(730))
                     .language("en");

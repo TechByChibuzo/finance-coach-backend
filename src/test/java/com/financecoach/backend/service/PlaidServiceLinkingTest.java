@@ -87,7 +87,7 @@ class PlaidServiceLinkingTest {
     // --- link token ---
 
     @Test
-    void createLinkToken_requestsTransactionsAndInvestments_withTwoYearsOfHistory() throws Exception {
+    void createLinkToken_requiresTransactions_withInvestmentsOptional_andTwoYearsOfHistory() throws Exception {
         when(plaidClient.linkTokenCreate(any())).thenReturn(ok(new LinkTokenCreateResponse().linkToken("link-123")));
 
         String token = plaidService.createLinkToken(userId, "user");
@@ -96,7 +96,9 @@ class PlaidServiceLinkingTest {
         verify(plaidClient).linkTokenCreate(request.capture());
         assertThat(token).isEqualTo("link-123");
         assertThat(request.getValue().getUser().getClientUserId()).isEqualTo(userId.toString());
-        assertThat(request.getValue().getProducts()).containsExactly(Products.TRANSACTIONS, Products.INVESTMENTS);
+        assertThat(request.getValue().getProducts()).containsExactly(Products.TRANSACTIONS);
+        // Banks without investment accounts must still be able to connect
+        assertThat(request.getValue().getOptionalProducts()).containsExactly(Products.INVESTMENTS);
         assertThat(request.getValue().getTransactions().getDaysRequested()).isEqualTo(730);
     }
 
