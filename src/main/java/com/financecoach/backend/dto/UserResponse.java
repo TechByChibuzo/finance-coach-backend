@@ -8,6 +8,7 @@ public class UserResponse {
     private UUID id;
     private String email;
     private String fullName;
+    private boolean weeklySummaryEmails = true;
     private LocalDateTime createdAt;
 
     // Constructors
@@ -43,6 +44,14 @@ public class UserResponse {
 
     public void setFullName(String fullName) {
         this.fullName = fullName;
+    }
+
+    public boolean isWeeklySummaryEmails() {
+        return weeklySummaryEmails;
+    }
+
+    public void setWeeklySummaryEmails(boolean weeklySummaryEmails) {
+        this.weeklySummaryEmails = weeklySummaryEmails;
     }
 
     public LocalDateTime getCreatedAt() {

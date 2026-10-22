@@ -49,6 +49,42 @@ class EmailServiceTest {
     }
 
     @Test
+    void sendWeeklySummary_showsTheWeek_escapingMerchantNames() throws Exception {
+        when(sendGrid.api(any())).thenReturn(new Response(202, "", null));
+        var summary = new com.financecoach.backend.dto.WeeklySummary(
+                java.time.LocalDate.of(2026, 10, 19), java.time.LocalDate.of(2026, 10, 25),
+                new java.math.BigDecimal("425.00"), new java.math.BigDecimal("200.00"),
+                java.util.List.of(new com.financecoach.backend.dto.WeeklySummary.CategoryTotal("FOOD_AND_DRINK", new java.math.BigDecimal("100.00"))),
+                java.util.List.of(new com.financecoach.backend.dto.RecurringChargeResponse("<b>Evil</b> Co", null, "ENTERTAINMENT",
+                        "subscription", "monthly", new java.math.BigDecimal("9.99"), null,
+                        java.time.LocalDate.of(2026, 9, 28), java.time.LocalDate.of(2026, 10, 28), 3)));
+
+        emailService.sendWeeklySummary("jane@example.com", "Jane", summary);
+
+        String body = sentBody();
+        assertThat(body)
+                .contains("Your week: $425.00 spent")
+                .contains("Oct 19 to Oct 25")
+                .contains("$225.00 more than the week before")
+                .contains("Food and drink")
+                .contains("&lt;b&gt;Evil&lt;/b&gt; Co")
+                .contains("Wed, Oct 28")
+                .contains("https://app.financecoach.test/settings?tab=profile")
+                .doesNotContain("<b>Evil</b>");
+    }
+
+    @Test
+    void buildWeeklySummaryHtml_leavesOutEmptySections_andTheComparisonWithNothingToCompare() {
+        var summary = new com.financecoach.backend.dto.WeeklySummary(
+                java.time.LocalDate.of(2026, 10, 19), java.time.LocalDate.of(2026, 10, 25),
+                new java.math.BigDecimal("50.00"), java.math.BigDecimal.ZERO, java.util.List.of(), java.util.List.of());
+
+        String html = emailService.buildWeeklySummaryHtml(null, summary);
+
+        assertThat(html).contains("Hi there").doesNotContain("Coming up this week").doesNotContain("than the week before");
+    }
+
+    @Test
     void sendPasswordResetEmail_escapesMarkupInTheUsersName() throws Exception {
         when(sendGrid.api(any())).thenReturn(new Response(202, "", null));
 

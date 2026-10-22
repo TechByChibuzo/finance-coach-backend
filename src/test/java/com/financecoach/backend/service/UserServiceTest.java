@@ -154,6 +154,19 @@ class UserServiceTest {
                 .isInstanceOf(com.financecoach.backend.exception.UserNotFoundException.class);
     }
 
+    @Test
+    void weeklySummaryEmails_areOnUnlessTurnedOff() {
+        User user = new User();
+        user.setId(UUID.randomUUID());
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        assertThat(userService.getUserById(user.getId()).isWeeklySummaryEmails()).isTrue();
+
+        user.setWeeklySummaryEmails(false);
+        assertThat(userService.updateWeeklySummaryEmails(user.getId(), false).isWeeklySummaryEmails()).isFalse();
+        verify(userRepository).updateWeeklySummaryEmails(user.getId(), false);
+    }
+
     private UserRegistrationRequest registration(String email) {
         UserRegistrationRequest request = new UserRegistrationRequest();
         request.setEmail(email);

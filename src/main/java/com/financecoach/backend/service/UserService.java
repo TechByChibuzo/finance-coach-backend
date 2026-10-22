@@ -131,11 +131,21 @@ public class UserService {
 
     // Helper method to convert Entity to DTO
     private UserResponse convertToResponse(User user) {
-        return new UserResponse(
+        UserResponse response = new UserResponse(
                 user.getId(),
                 user.getEmail(),
                 user.getFullName(),
                 user.getCreatedAt()
         );
+        response.setWeeklySummaryEmails(!Boolean.FALSE.equals(user.getWeeklySummaryEmails()));
+        return response;
+    }
+
+    /**
+     * Turns the Monday summary email on or off
+     */
+    public UserResponse updateWeeklySummaryEmails(UUID id, boolean enabled) {
+        userRepository.updateWeeklySummaryEmails(id, enabled);
+        return getUserById(id);
     }
 }

@@ -51,6 +51,20 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query("UPDATE User u SET u.lastLogin = :lastLogin WHERE u.id = :id")
     int updateLastLogin(@Param("id") UUID id, @Param("lastLogin") LocalDateTime lastLogin);
 
+    // Touches only the preference, like updateLastLogin
+    @Transactional
+    @Modifying
+    @Query("UPDATE User u SET u.weeklySummaryEmails = :enabled WHERE u.id = :id")
+    int updateWeeklySummaryEmails(@Param("id") UUID id, @Param("enabled") boolean enabled);
+
+    // Claims the user's summary for a week: 1 for the one caller that may send it, 0 if it was
+    // already sent (e.g. by a second instance running during a deploy)
+    @Transactional
+    @Modifying
+    @Query("UPDATE User u SET u.weeklySummarySentFor = :week WHERE u.id = :id "
+            + "AND (u.weeklySummarySentFor IS NULL OR u.weeklySummarySentFor < :week)")
+    int claimWeeklySummary(@Param("id") UUID id, @Param("week") java.time.LocalDate week);
+
     // Checked on every authenticated request, so only load the one column
     @Query("SELECT u.tokenVersion FROM User u WHERE u.id = :id")
     Optional<Integer> findTokenVersionById(@Param("id") UUID id);

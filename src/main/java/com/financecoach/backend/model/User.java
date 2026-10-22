@@ -49,6 +49,14 @@ public class User {
     @Column(name = "last_login")
     private LocalDateTime lastLogin;
 
+    // The Monday summary email; null means on (users turn it off in Settings)
+    @Column(name = "weekly_summary_emails")
+    private Boolean weeklySummaryEmails;
+
+    // Monday of the last week a summary was sent for, so no week is ever sent twice
+    @Column(name = "weekly_summary_sent_for")
+    private java.time.LocalDate weeklySummarySentFor;
+
     // Constructors
     public User() {
         this.createdAt = LocalDateTime.now();

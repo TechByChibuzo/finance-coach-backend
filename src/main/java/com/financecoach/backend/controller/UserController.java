@@ -46,6 +46,22 @@ public class UserController {
     }
 
     /**
+     * Email preferences
+     * PATCH /api/users/me/preferences
+     */
+    @PatchMapping("/me/preferences")
+    public ResponseEntity<UserResponse> updatePreferences(@RequestBody PreferencesRequest request) {
+        UUID userId = getCurrentUserId();
+        UserResponse user = request.weeklySummaryEmails() == null
+                ? userService.getUserById(userId)
+                : userService.updateWeeklySummaryEmails(userId, request.weeklySummaryEmails());
+        return ResponseEntity.ok(user);
+    }
+
+    public record PreferencesRequest(Boolean weeklySummaryEmails) {
+    }
+
+    /**
      * Delete current user and all of their data
      * DELETE /api/users/me
      */

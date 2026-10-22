@@ -11,7 +11,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.HtmlUtils;
 
+import com.financecoach.backend.dto.RecurringChargeResponse;
+import com.financecoach.backend.dto.WeeklySummary;
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.text.NumberFormat;
+import java.time.format.DateTimeFormatter;
+import java.util.Locale;
 
 @Service
 public class EmailService {
@@ -117,6 +123,100 @@ public class EmailService {
             logger.error("Failed to send welcome email to: {}", toEmail, e);
             // Don't throw - welcome email failure shouldn't break registration
         }
+    }
+
+    /**
+     * The Monday summary of last week's spending and the coming week's bills
+     */
+    public void sendWeeklySummary(String toEmail, String userName, WeeklySummary summary) {
+        String subject = "Your week: " + money(summary.spent()) + " spent";
+        Mail mail = new Mail(new Email(fromEmail, fromName), subject, new Email(toEmail),
+                new Content("text/html", buildWeeklySummaryHtml(userName, summary)));
+        try {
+            Request request = new Request();
+            request.setMethod(Method.POST);
+            request.setEndpoint("mail/send");
+            request.setBody(mail.build());
+            Response response = sendGridClient.api(request);
+            if (response.getStatusCode() < 200 || response.getStatusCode() >= 300) {
+                logger.warn("SendGrid returned {} for a weekly summary", response.getStatusCode());
+            }
+        } catch (IOException e) {
+            logger.error("Failed to send weekly summary to: {}", toEmail, e);
+        }
+    }
+
+    String buildWeeklySummaryHtml(String userName, WeeklySummary summary) {
+        DateTimeFormatter day = DateTimeFormatter.ofPattern("MMM d", Locale.US);
+        int compared = summary.spent().compareTo(summary.previousWeekSpent());
+        String change = summary.previousWeekSpent().signum() == 0 || compared == 0
+                ? ""
+                : money(summary.spent().subtract(summary.previousWeekSpent()).abs())
+                        + (compared > 0 ? " more" : " less") + " than the week before.";
+
+        StringBuilder categories = new StringBuilder();
+        for (WeeklySummary.CategoryTotal c : summary.topCategories()) {
+            categories.append(row(categoryName(c.category()), money(c.amount())));
+        }
+        StringBuilder upcoming = new StringBuilder();
+        for (RecurringChargeResponse r : summary.upcoming()) {
+            upcoming.append(row(HtmlUtils.htmlEscape(r.merchant()) + " <span style=\"color:#5e6a75;\">"
+                    + r.nextDate().format(DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US)) + "</span>", money(r.amount())));
+        }
+
+        return """
+            <!DOCTYPE html>
+            <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+            <body style="margin:0;padding:0;background:#f3f5f4;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1d2730;">
+              <table role="presentation" style="width:100%%;border-collapse:collapse;"><tr><td align="center" style="padding:32px 16px;">
+                <table role="presentation" style="width:100%%;max-width:560px;border-collapse:collapse;background:#ffffff;border-radius:16px;">
+                  <tr><td style="padding:28px 32px 8px;">
+                    <p style="margin:0;font-size:14px;font-weight:700;color:#0e6b5c;">Finance Coach</p>
+                    <p style="margin:20px 0 4px;font-size:15px;color:#5e6a75;">Hi %s, here's your week of %s to %s.</p>
+                    <p style="margin:0;font-size:36px;font-weight:800;letter-spacing:-0.5px;">%s <span style="font-size:16px;font-weight:500;color:#5e6a75;">spent</span></p>
+                    <p style="margin:6px 0 0;font-size:15px;color:#5e6a75;">%s</p>
+                  </td></tr>
+                  %s
+                  %s
+                  <tr><td style="padding:24px 32px 28px;">
+                    <a href="%s/dashboard" style="display:inline-block;background:#0e6b5c;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:12px 22px;border-radius:10px;">Open Finance Coach</a>
+                  </td></tr>
+                </table>
+                <p style="margin:16px 0 0;font-size:12px;color:#8d979f;">Transfers and card payments aren't counted as spending.
+                  <a href="%s/settings?tab=profile" style="color:#5e6a75;">Turn off weekly emails</a></p>
+              </td></tr></table>
+            </body></html>
+            """.formatted(
+                displayName(userName),
+                summary.weekStart().format(day), summary.weekEnd().format(day),
+                money(summary.spent()), change,
+                section("Where it went", categories.toString()),
+                section("Coming up this week", upcoming.toString()),
+                frontendUrl, frontendUrl);
+    }
+
+    private static String section(String title, String rows) {
+        if (rows.isEmpty()) {
+            return "";
+        }
+        return "<tr><td style=\"padding:20px 32px 0;\"><p style=\"margin:0 0 8px;font-size:13px;font-weight:700;color:#1d2730;\">"
+                + title + "</p><table role=\"presentation\" style=\"width:100%;border-collapse:collapse;\">" + rows + "</table></td></tr>";
+    }
+
+    private static String row(String label, String amount) {
+        return "<tr><td style=\"padding:8px 0;border-top:1px solid #e6eae8;font-size:15px;\">" + label
+                + "</td><td style=\"padding:8px 0;border-top:1px solid #e6eae8;font-size:15px;font-weight:600;text-align:right;white-space:nowrap;\">"
+                + amount + "</td></tr>";
+    }
+
+    // "FOOD_AND_DRINK" -> "Food and drink"
+    static String categoryName(String code) {
+        String words = code.toLowerCase(Locale.ROOT).replace('_', ' ');
+        return HtmlUtils.htmlEscape(Character.toUpperCase(words.charAt(0)) + words.substring(1));
+    }
+
+    private static String money(BigDecimal amount) {
+        return NumberFormat.getCurrencyInstance(Locale.US).format(amount);
     }
 
     /**
