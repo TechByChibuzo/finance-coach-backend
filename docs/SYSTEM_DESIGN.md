@@ -1,6 +1,6 @@
 # Finance Coach Backend: System Design
 
-> Last updated: 2026-10-20. Describes the code on `main` and the AWS deployment in `infra/terraform`.
+> Last updated: 2026-10-22. Describes the code on `main` and the AWS deployment in `infra/terraform`.
 > For known defects and open improvements, see [REVIEW.md](REVIEW.md).
 
 ---
@@ -101,6 +101,12 @@ HTTP ─► AuthRateLimitFilter ─► JwtAuthenticationFilter ─► Controller
 - **Plan limits**: bank connections (items with an active account) are capped per plan. The check runs before Link opens and again just before saving, under a row lock on the user, so parallel connections can't exceed it; an item refused at that point is revoked at Plaid.
 - **`TransactionService.syncItem`**: calls **`/transactions/sync`** from the item's cursor and applies added, modified and removed transactions, each attributed to the account Plaid reports. The cursor only advances once every change is saved. Balances are refreshed on each sync (only the values Plaid returns).
 - **`TransactionSyncScheduler`**: runs at 06:00 and 18:00 UTC and syncs each item once.
+
+### 3.2a CSV import, categories and recurring charges
+- **`TransactionImportService`** (`POST /api/transactions/import`): rows parsed in the browser from a bank's CSV export. Each row gets a deterministic ID from its content, account name and user, so re-imports skip duplicates; imported rows use a stable account ID derived from the account name (no Plaid bank account). **`TransactionCategorizer`** asks Claude for categories in batches of 150, with keyword rules as the fallback. Each import has a batch ID for undo.
+- **`CategoryRuleService`**: users can change a transaction's category (marked `category_overridden`, so Plaid updates keep it) and save a rule for the merchant, applied to past transactions and to new ones from syncs and imports.
+- **`RecurringChargeService`** (`GET /api/recurring`): groups the last 13 months of outgoing transactions by normalized merchant and keeps steady monthly, quarterly or yearly charges, with the next expected date and price changes.
+- **Logos**: transactions keep Plaid's merchant `logo_url` and website (older ones are back-filled once per item); `/api/plaid/accounts` returns each bank's logo and brand colour from Plaid's institution metadata, fetched once per item.
 
 ### 3.3 Analytics, budgets, anomalies
 - **`AnalyticsService`**: in-memory aggregation over `findByUserIdAndDateBetween`, using Plaid's sign convention (**positive = money out, negative = money in**). Transfers and credit-card / loan payments are excluded from spending and income totals.
@@ -455,11 +461,13 @@ flowchart LR
 | `/api/auth` | public | `POST register`, `POST login`, `POST forgot-password`, `POST reset-password`, `GET validate-reset-token/{token}` |
 | `/api/users` | JWT | `GET health` (public), `GET me`, `DELETE me` |
 | `/api/plaid` | JWT | `POST create-link-token`, `POST exchange-token`, `GET accounts`, `DELETE accounts/{id}` |
-| `/api/transactions` | JWT | `POST sync`, `POST sync/{accountId}`, `GET ?startDate&endDate`, `GET category/{category}` |
+| `/api/transactions` | JWT | `POST sync`, `POST sync/{accountId}`, `GET ?startDate&endDate`, `GET recent?limit`, `GET search?q`, `GET category/{category}`, `PATCH {id}/category`, `POST import`, `DELETE imports/{batchId}` |
+| `/api/category-rules` | JWT | `GET /`, `DELETE {id}` |
+| `/api/recurring` | JWT | `GET /` (bills and subscriptions found in the last 13 months) |
 | `/api/analytics` | JWT | `spending-by-category`, `total-spending`, `total-income`, `top-merchants`, `spending-trend`, `monthly-summary`, `compare-months` |
 | `/api/budgets` | JWT | `POST /`, `GET current`, `GET ?month`, `GET progress`, `DELETE {id}`, `GET recommendations`, `GET exceeded`, `GET alerts`, `POST refresh`, `POST copy-previous` |
 | `/api/anomalies` | JWT | `POST detect`, `GET /`, `GET unreviewed`, `GET count`, `PUT {id}/review` |
-| `/api/ai-coach` | JWT | `POST chat`, `DELETE chat/{sessionId}`, `GET weekly-summary`, `GET monthly-report`, `GET analyze-category/{c}`, `POST savings-recommendations` |
+| `/api/ai-coach` | JWT | `POST chat`, `GET chat/{sessionId}` (history), `DELETE chat/{sessionId}`, `GET weekly-summary`, `GET monthly-report`, `GET analyze-category/{c}`, `POST savings-recommendations` |
 | `/api/net-worth` | JWT | `GET current`, `GET history`, CRUD `assets`, CRUD `liabilities` |
 | `/api/investments` | JWT | `POST sync`, `POST sync/{accountId}`, `GET portfolio`, `GET holdings/{accountId}`, `GET allocation`, `GET history` |
 | `/api/subscriptions` | mixed | `GET plans` (public), `GET current`, `GET features/{f}/access`, `POST checkout`, `POST cancel`, `POST webhook` (public, Stripe-signed) |

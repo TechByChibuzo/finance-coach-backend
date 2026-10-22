@@ -88,7 +88,7 @@ Edge cases, none reachable with today's production data or traffic. Fix before o
 - **`ddl-auto: update` in production.** Hibernate never drops or renames columns and can't add constraints safely (hence `DatabaseConstraints`). Adopt **Flyway**: baseline the current schema, set `ddl-auto: validate`, and move seed data into migrations.
 - **Foreign keys:** only `transaction_embeddings → transactions` exists. See follow-up #1.
 - `UserSubscriptionRepository.findByUserId` returns `Optional`, but users can have many rows. It throws if anything ever calls it; remove it.
-- Lists are unbounded: `GET /api/transactions` returns everything. Add pagination (`Pageable`) to transactions, anomalies and history endpoints.
+- `GET /api/transactions` without a date range still returns everything (the frontend now asks per month, plus `recent` and `search`). Add pagination (`Pageable`) to it and to the anomalies and history endpoints.
 - Unused tables and repositories (`payments` and most `PaymentRepository` queries; `TransactionEmbeddingRepository.findSimilarTransactions`) should be wired up or removed.
 - Rotating `JASYPT_ENCRYPTOR_PASSWORD` makes all stored Plaid tokens undecryptable. Document a key-rotation procedure, or move to KMS envelope encryption.
 
@@ -133,10 +133,8 @@ Service-layer unit tests are at ~98% lines / ~88% branches, enforced by JaCoCo i
 Ideas that build on what's already here:
 
 - **Proactive insights feed.** After each sync, run anomaly detection and budget checks, then push notifications or email ("You've hit 90% of Dining with 12 days left"). The data and the `shouldAlert()` logic already exist.
-- **Recurring-charge detection.** Group by merchant and roughly equal amount at monthly or yearly cadence, to find subscriptions and flag price increases. Plaid also has `/transactions/recurring/get`.
 - **Cash-flow forecast.** Project end-of-month balance from recurring income and bills plus average discretionary spend.
 - **Goals.** Savings goals with target dates, with progress tracked from account balances. The AI coach can reference them.
-- **User-editable categories and rules.** Let users re-categorize ("Costco → Groceries, not Shopping") and remember the rule.
 - **AI coach memory.** Persist durable facts the user shares ("saving for a house, $60k by 2028") per user, and inject them into the system prompt.
 - **Weekly digest email** using the existing `generateWeeklySummary` and SendGrid, sent from a Sunday cron.
 - **Multi-currency.** `currencyCode` is stored but ignored in all sums.
