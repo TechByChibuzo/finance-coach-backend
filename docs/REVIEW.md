@@ -80,7 +80,6 @@ Edge cases, none reachable with today's production data or traffic. Fix before o
 - **GET endpoints write to the DB:** `getBudgetsForMonth` updates `spent` during a read. Compute `spent` on read, or refresh it from the sync pipeline.
 - `BudgetService` validates things Bean Validation already checks. Harmless, but the duplicates can go.
 - **Performance:** analytics calls load all rows into Java. Use SQL `GROUP BY` projections.
-- Plaid `loan` accounts (student loans, mortgages) are ignored by net worth.
 - Money types mix `Double` and `BigDecimal` (`alertThreshold`, percentages, `BudgetRepository` totals). Keep money in `BigDecimal` with explicit `precision/scale` on every money column.
 
 ---
