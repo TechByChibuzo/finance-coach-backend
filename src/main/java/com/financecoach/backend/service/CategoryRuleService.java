@@ -56,7 +56,8 @@ public class CategoryRuleService {
             rule.setSubcategory(category.subcategory());
             ruleRepository.save(rule);
             for (Transaction t : transactionRepository.findByUserId(userId)) {
-                if (key.equals(matchKey(t))) {
+                // Parts of a split keep the categories the user gave them
+                if (t.getSplitFromId() == null && key.equals(matchKey(t))) {
                     apply(t, category);
                     changed.add(t);
                 }
@@ -122,7 +123,7 @@ public class CategoryRuleService {
         t.setCategoryOverridden(true);
     }
 
-    private static TransactionCategorizer.Category parse(String code) {
+    static TransactionCategorizer.Category parse(String code) {
         String normalized = code == null ? "" : code.trim().toUpperCase(Locale.ROOT);
         if (!TransactionCategorizer.CATEGORIES.contains(normalized)) {
             throw new ValidationException("Unknown category: " + code, Map.of("category", "Not a known category"));

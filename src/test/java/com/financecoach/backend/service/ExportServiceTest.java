@@ -38,7 +38,9 @@ class ExportServiceTest {
         Transaction tricky = transaction("Joe's \"Best\" Pizza, Inc", "FOOD_AND_DRINK", "30.00", null);
         Transaction noMerchant = transaction(null, null, "-100.00", "USD");
         noMerchant.setName("Payroll");
-        when(transactionRepository.findByUserId(userId)).thenReturn(List.of(plain, tricky, noMerchant));
+        Transaction splitOriginal = transaction("Costco", "GENERAL_MERCHANDISE", "150.00", "USD");
+        splitOriginal.setSplit(true); // its parts are exported instead
+        when(transactionRepository.findByUserId(userId)).thenReturn(List.of(plain, tricky, splitOriginal, noMerchant));
         when(s3Service.generatePresignedUrl(anyString())).thenReturn("https://s3.example/download");
 
         String url = exportService.exportTransactionsCSV(userId);

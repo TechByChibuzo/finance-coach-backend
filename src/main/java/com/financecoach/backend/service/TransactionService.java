@@ -168,20 +168,32 @@ public class TransactionService {
                 // Keep a category the user chose over Plaid's
                 String userCategory = existing.getCategory();
                 String userSubcategory = existing.getSubcategory();
+                BigDecimal previousAmount = existing.getAmount();
                 applyPlaidFields(existing, plaidTx, bankAccount);
                 if (Boolean.TRUE.equals(existing.getCategoryOverridden())) {
                     existing.setCategory(userCategory);
                     existing.setSubcategory(userSubcategory);
                 }
+                // The bank changed the amount of a transaction the user split: its parts no longer
+                // add up, so undo the split rather than count the wrong amounts
+                if (Boolean.TRUE.equals(existing.getSplit()) && existing.getAmount().compareTo(previousAmount) != 0) {
+                    transactionRepository.deleteBySplitFromId(existing.getId());
+                    existing.setSplit(false);
+                }
                 Transaction saved = transactionRepository.save(existing);
                 vectorStoreService.removeTransaction(saved.getPlaidTransactionId());
-                toIndex.add(saved);
+                if (!TransactionFilters.isExcluded(saved)) {
+                    toIndex.add(saved);
+                }
             });
         }
 
         // Remove deleted transactions - including pending ones replaced by their posted version
         for (RemovedTransaction removed : changes.removed()) {
             transactionRepository.findByPlaidTransactionId(removed.getTransactionId()).ifPresent(existing -> {
+                if (Boolean.TRUE.equals(existing.getSplit())) {
+                    transactionRepository.deleteBySplitFromId(existing.getId());
+                }
                 transactionRepository.delete(existing);
                 vectorStoreService.removeTransaction(existing.getPlaidTransactionId());
             });

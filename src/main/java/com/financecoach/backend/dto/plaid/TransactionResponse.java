@@ -22,6 +22,12 @@ public class TransactionResponse {
     private String importAccountName;
     // Merchant logo from Plaid, when known
     private String logoUrl;
+    private String notes;
+    // Hidden by the user, or split into parts: listed but not counted in totals
+    private boolean hidden;
+    private boolean split;
+    // For a part of a split transaction: the transaction it was split from
+    private UUID splitFromId;
 
     public TransactionResponse() {}
 

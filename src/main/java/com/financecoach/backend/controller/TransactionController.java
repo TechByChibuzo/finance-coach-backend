@@ -2,11 +2,14 @@
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.dto.CategoryUpdateRequest;
+import com.financecoach.backend.dto.TransactionSplitRequest;
+import com.financecoach.backend.dto.TransactionUpdateRequest;
 import com.financecoach.backend.dto.imports.TransactionImportRequest;
 import com.financecoach.backend.dto.imports.TransactionImportResponse;
 import com.financecoach.backend.dto.plaid.TransactionResponse;
 import com.financecoach.backend.model.Transaction;
 import com.financecoach.backend.service.CategoryRuleService;
+import com.financecoach.backend.service.TransactionEditService;
 import com.financecoach.backend.service.TransactionImportService;
 import com.financecoach.backend.service.TransactionService;
 import jakarta.validation.Valid;
@@ -30,14 +33,58 @@ public class TransactionController {
     private final TransactionService transactionService;
     private final TransactionImportService transactionImportService;
     private final CategoryRuleService categoryRuleService;
+    private final TransactionEditService transactionEditService;
 
     @Autowired
     public TransactionController(TransactionService transactionService,
                                  TransactionImportService transactionImportService,
-                                 CategoryRuleService categoryRuleService) {
+                                 CategoryRuleService categoryRuleService,
+                                 TransactionEditService transactionEditService) {
         this.transactionService = transactionService;
         this.transactionImportService = transactionImportService;
         this.categoryRuleService = categoryRuleService;
+        this.transactionEditService = transactionEditService;
+    }
+
+    /**
+     * Change a transaction's note, or hide it from totals
+     * PATCH /api/transactions/{id}
+     */
+    @PatchMapping("/{id}")
+    public ResponseEntity<TransactionResponse> updateTransaction(@PathVariable UUID id,
+                                                                 @Valid @RequestBody TransactionUpdateRequest request) {
+        return ResponseEntity.ok(convertToResponse(
+                transactionEditService.updateDetails(getCurrentUserId(), id, request.notes(), request.hidden())));
+    }
+
+    /**
+     * The parts a transaction was split into
+     * GET /api/transactions/{id}/split
+     */
+    @GetMapping("/{id}/split")
+    public ResponseEntity<List<TransactionResponse>> getSplit(@PathVariable UUID id) {
+        return ResponseEntity.ok(transactionEditService.getParts(getCurrentUserId(), id).stream()
+                .map(this::convertToResponse).toList());
+    }
+
+    /**
+     * Split a transaction across categories, replacing any earlier split
+     * PUT /api/transactions/{id}/split
+     */
+    @PutMapping("/{id}/split")
+    public ResponseEntity<List<TransactionResponse>> splitTransaction(@PathVariable UUID id,
+                                                                      @Valid @RequestBody TransactionSplitRequest request) {
+        return ResponseEntity.ok(transactionEditService.split(getCurrentUserId(), id, request.parts()).stream()
+                .map(this::convertToResponse).toList());
+    }
+
+    /**
+     * Put a split transaction back together
+     * DELETE /api/transactions/{id}/split
+     */
+    @DeleteMapping("/{id}/split")
+    public ResponseEntity<TransactionResponse> unsplitTransaction(@PathVariable UUID id) {
+        return ResponseEntity.ok(convertToResponse(transactionEditService.unsplit(getCurrentUserId(), id)));
     }
 
     /**
@@ -179,6 +226,10 @@ public class TransactionController {
         );
         response.setImportAccountName(transaction.getImportAccountName());
         response.setLogoUrl(transaction.getLogoUrl());
+        response.setNotes(transaction.getNotes());
+        response.setHidden(Boolean.TRUE.equals(transaction.getHidden()));
+        response.setSplit(Boolean.TRUE.equals(transaction.getSplit()));
+        response.setSplitFromId(transaction.getSplitFromId());
         return response;
     }
 }

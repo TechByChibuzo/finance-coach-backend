@@ -222,6 +222,7 @@ public class AICoachService {
 
         List<Transaction> filteredTransactions = categoryTransactions.stream()
                 .filter(t -> t.getDate().isAfter(startDate) && t.getDate().isBefore(endDate))
+                .filter(TransactionFilters::isSpending)
                 .toList();
 
         BigDecimal totalCategorySpending = filteredTransactions.stream()

@@ -69,6 +69,22 @@ public class Transaction {
     private String merchantWebsite;
 
     // Set on transactions imported from a CSV file; null for bank-synced ones
+    // The user's own note about the transaction
+    @Column(name = "notes", length = 500)
+    private String notes;
+
+    // Hidden by the user: still listed, but not counted in any total
+    @Column(name = "hidden")
+    private Boolean hidden;
+
+    // Split by the user into parts (transactions of their own) that are counted instead of this one
+    @Column(name = "is_split")
+    private Boolean split;
+
+    // For a part of a split transaction: the transaction it was split from
+    @Column(name = "split_from_id")
+    private UUID splitFromId;
+
     @Column(name = "import_batch_id")
     private UUID importBatchId;
 

@@ -53,7 +53,7 @@ public class RecurringChargeService {
     List<RecurringChargeResponse> findRecurring(UUID userId, LocalDate today) {
         Map<String, List<Transaction>> byMerchant = new LinkedHashMap<>();
         for (Transaction t : transactionRepository.findByUserIdAndDateBetween(userId, today.minusMonths(13), today)) {
-            if (t.getAmount().signum() > 0 && !TransactionFilters.isTransfer(t) && !Boolean.TRUE.equals(t.getPending())) {
+            if (TransactionFilters.isSpending(t) && !Boolean.TRUE.equals(t.getPending())) {
                 byMerchant.computeIfAbsent(merchantKey(t), k -> new ArrayList<>()).add(t);
             }
         }

@@ -58,9 +58,19 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     @Query("DELETE FROM Transaction t WHERE t.accountId = :accountId")
     int deleteByAccountId(@Param("accountId") UUID accountId);
 
-    // Transactions on these accounts that have no embedding yet (e.g. their batch failed), newest first
-    @Query("SELECT t FROM Transaction t WHERE t.accountId IN :accountIds AND NOT EXISTS "
-            + "(SELECT e.id FROM TransactionEmbedding e WHERE e.transactionId = t.plaidTransactionId) "
+    // The parts a transaction was split into
+    List<Transaction> findBySplitFromIdOrderByAmountDesc(UUID splitFromId);
+
+    @Transactional
+    @Modifying
+    @Query("DELETE FROM Transaction t WHERE t.splitFromId = :splitFromId")
+    int deleteBySplitFromId(@Param("splitFromId") UUID splitFromId);
+
+    // Transactions on these accounts that have no embedding yet (e.g. their batch failed), newest
+    // first. Hidden and split transactions are left out: the coach shouldn't count them either.
+    @Query("SELECT t FROM Transaction t WHERE t.accountId IN :accountIds "
+            + "AND (t.hidden IS NULL OR t.hidden = false) AND (t.split IS NULL OR t.split = false) "
+            + "AND NOT EXISTS (SELECT e.id FROM TransactionEmbedding e WHERE e.transactionId = t.plaidTransactionId) "
             + "ORDER BY t.date DESC")
     List<Transaction> findWithoutEmbedding(@Param("accountIds") Collection<UUID> accountIds, Pageable pageable);
 

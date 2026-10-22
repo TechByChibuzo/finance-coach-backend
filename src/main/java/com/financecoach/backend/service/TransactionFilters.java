@@ -41,13 +41,20 @@ public final class TransactionFilters {
                 || ("Payment".equalsIgnoreCase(category) && "Credit Card".equalsIgnoreCase(subcategory));
     }
 
+    /**
+     * Left out of every total: hidden by the user, or split into parts that are counted instead
+     */
+    public static boolean isExcluded(Transaction t) {
+        return Boolean.TRUE.equals(t.getHidden()) || Boolean.TRUE.equals(t.getSplit());
+    }
+
     /** Money out that isn't a transfer between the user's own accounts */
     public static boolean isSpending(Transaction t) {
-        return t.getAmount().compareTo(BigDecimal.ZERO) > 0 && !isTransfer(t);
+        return t.getAmount().compareTo(BigDecimal.ZERO) > 0 && !isTransfer(t) && !isExcluded(t);
     }
 
     /** Money in that isn't a transfer between the user's own accounts */
     public static boolean isIncome(Transaction t) {
-        return t.getAmount().compareTo(BigDecimal.ZERO) < 0 && !isTransfer(t);
+        return t.getAmount().compareTo(BigDecimal.ZERO) < 0 && !isTransfer(t) && !isExcluded(t);
     }
 }

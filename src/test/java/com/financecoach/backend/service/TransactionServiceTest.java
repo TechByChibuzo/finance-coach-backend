@@ -566,6 +566,49 @@ class TransactionServiceTest {
     }
 
     @Test
+    void syncItem_whenTheBankChangesTheAmountOfASplitTransaction_undoesTheSplit() throws Exception {
+        item.setLogosBackfilled(true);
+        stubItemAccounts(checking);
+        Transaction split = existing("tx-split");
+        split.setId(UUID.randomUUID());
+        split.setAmount(new java.math.BigDecimal("150.00"));
+        split.setSplit(true);
+        Transaction unchanged = existing("tx-same");
+        unchanged.setId(UUID.randomUUID());
+        unchanged.setAmount(new java.math.BigDecimal("40.00"));
+        unchanged.setSplit(true);
+        when(transactionRepository.findByPlaidTransactionId("tx-split")).thenReturn(Optional.of(split));
+        when(transactionRepository.findByPlaidTransactionId("tx-same")).thenReturn(Optional.of(unchanged));
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        stubSyncPages(page(false, "cursor-2", List.of(), List.of(
+                plaidTx("tx-split", "plaid-checking").amount(155.0),
+                plaidTx("tx-same", "plaid-checking").amount(40.0)), List.of()));
+
+        transactionService.syncItem(item);
+
+        assertThat(split.getSplit()).isFalse();
+        verify(transactionRepository).deleteBySplitFromId(split.getId());
+        assertThat(unchanged.getSplit()).isTrue();
+        verify(transactionRepository, never()).deleteBySplitFromId(unchanged.getId());
+    }
+
+    @Test
+    void syncItem_removingASplitTransaction_removesItsParts() throws Exception {
+        Transaction split = existing("tx-split");
+        split.setId(UUID.randomUUID());
+        split.setSplit(true);
+        stubItemAccounts(checking);
+        stubSyncPages(page(false, "cursor-1", List.of(), List.of(),
+                List.of(new RemovedTransaction().transactionId("tx-split").accountId("plaid-checking"))));
+        when(transactionRepository.findByPlaidTransactionId("tx-split")).thenReturn(Optional.of(split));
+
+        transactionService.syncItem(item);
+
+        verify(transactionRepository).deleteBySplitFromId(split.getId());
+        verify(transactionRepository).delete(split);
+    }
+
+    @Test
     void syncItem_appliesTheUsersCategoryRulesToNewTransactions() throws Exception {
         stubItemAccounts(checking);
         stubPlaidTransactions(plaidTx("tx-1", "plaid-checking"));

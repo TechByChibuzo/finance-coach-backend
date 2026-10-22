@@ -75,9 +75,11 @@ class CategoryRuleServiceTest {
         Transaction one = tx("Costco", "COSTCO WHSE #123", "GENERAL_MERCHANDISE");
         Transaction two = tx("COSTCO ", "COSTCO GAS", "TRANSPORTATION");
         Transaction other = tx("Target", "TARGET", "GENERAL_MERCHANDISE");
+        Transaction splitPart = tx("Costco", "COSTCO WHSE #123", "HOME_IMPROVEMENT");
+        splitPart.setSplitFromId(UUID.randomUUID());
         when(transactionRepository.findById(one.getId())).thenReturn(Optional.of(one));
         when(ruleRepository.findByUserIdAndMatchKey(userId, "costco")).thenReturn(Optional.empty());
-        when(transactionRepository.findByUserId(userId)).thenReturn(List.of(one, two, other));
+        when(transactionRepository.findByUserId(userId)).thenReturn(List.of(one, two, other, splitPart));
 
         service.updateCategory(userId, one.getId(), "FOOD_AND_DRINK", true);
 
@@ -88,6 +90,7 @@ class CategoryRuleServiceTest {
         assertThat(rule.getValue().getCategory()).isEqualTo("FOOD_AND_DRINK");
         assertThat(two.getCategory()).isEqualTo("FOOD_AND_DRINK");
         assertThat(other.getCategory()).isEqualTo("GENERAL_MERCHANDISE");
+        assertThat(splitPart.getCategory()).isEqualTo("HOME_IMPROVEMENT"); // parts keep their own category
     }
 
     @Test

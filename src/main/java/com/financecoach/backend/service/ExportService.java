@@ -26,6 +26,9 @@ public class ExportService {
         csv.append("Date,Merchant,Category,Amount,Currency\n");
 
         for (Transaction t : transactions) {
+            if (Boolean.TRUE.equals(t.getSplit())) {
+                continue; // its parts are exported instead
+            }
             csv.append(t.getDate()).append(",")
                     .append(escapeCsv(t.getMerchantName() != null ? t.getMerchantName() : t.getName()))
                     .append(",")
