@@ -507,6 +507,36 @@ class TransactionServiceTest {
         verify(categoryRuleService).applyRules(org.mockito.ArgumentMatchers.eq(userId), anyList());
     }
 
+    // --- recent and search ---
+
+    @Test
+    void getRecentTransactions_asksForTheNewestPage_withASensibleLimit() {
+        transactionService.getRecentTransactions(userId, 6);
+        transactionService.getRecentTransactions(userId, 10_000);
+
+        ArgumentCaptor<org.springframework.data.domain.Pageable> page =
+                ArgumentCaptor.forClass(org.springframework.data.domain.Pageable.class);
+        verify(transactionRepository, org.mockito.Mockito.times(2)).findByUserIdOrderByDateDescIdDesc(
+                org.mockito.ArgumentMatchers.eq(userId), page.capture());
+        assertThat(page.getAllValues()).extracting(org.springframework.data.domain.Pageable::getPageSize)
+                .containsExactly(6, 50);
+    }
+
+    @Test
+    void searchTransactions_matchesTheTextLiterally_caseInsensitive() {
+        transactionService.searchTransactions(userId, "  50%_Off\\Deal ", 200);
+
+        ArgumentCaptor<String> pattern = ArgumentCaptor.forClass(String.class);
+        verify(transactionRepository).searchByUserId(org.mockito.ArgumentMatchers.eq(userId), pattern.capture(), any());
+        assertThat(pattern.getValue()).isEqualTo("%50\\%\\_off\\\\deal%");
+    }
+
+    @Test
+    void searchTransactions_emptyText_returnsNothingWithoutQuerying() {
+        assertThat(transactionService.searchTransactions(userId, "   ", 200)).isEmpty();
+        verify(transactionRepository, never()).searchByUserId(any(), any(), any());
+    }
+
     // --- merchant logos ---
 
     @Test

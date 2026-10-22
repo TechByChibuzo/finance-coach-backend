@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -301,6 +302,26 @@ public class TransactionService {
             return transactionRepository.findByUserIdAndDateBetween(userId, startDate, endDate);
         }
         return transactionRepository.findByUserId(userId);
+    }
+
+    /**
+     * The most recent transactions, newest first
+     */
+    public List<Transaction> getRecentTransactions(UUID userId, int limit) {
+        return transactionRepository.findByUserIdOrderByDateDescIdDesc(userId, PageRequest.of(0, Math.min(Math.max(limit, 1), 50)));
+    }
+
+    /**
+     * Transactions across all months whose merchant name or description contains the text
+     */
+    public List<Transaction> searchTransactions(UUID userId, String text, int limit) {
+        String query = text == null ? "" : text.trim().toLowerCase(Locale.ROOT);
+        if (query.isEmpty()) {
+            return List.of();
+        }
+        // Escape LIKE wildcards so the user's text is matched literally
+        String pattern = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%";
+        return transactionRepository.searchByUserId(userId, pattern, PageRequest.of(0, Math.min(Math.max(limit, 1), 500)));
     }
 
     /**

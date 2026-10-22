@@ -23,6 +23,14 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
     List<Transaction> findByUserIdAndDateBetween(UUID userId, LocalDate startDate, LocalDate endDate);
 
+    List<Transaction> findByUserIdOrderByDateDescIdDesc(UUID userId, Pageable pageable);
+
+    // Case-insensitive match on merchant name or description, newest first (the pattern includes %)
+    @Query("SELECT t FROM Transaction t WHERE t.userId = :userId AND "
+            + "(LOWER(t.name) LIKE :pattern ESCAPE '\\' OR LOWER(t.merchantName) LIKE :pattern ESCAPE '\\') "
+            + "ORDER BY t.date DESC")
+    List<Transaction> searchByUserId(@Param("userId") UUID userId, @Param("pattern") String pattern, Pageable pageable);
+
     List<Transaction> findByAccountId(UUID accountId);
 
     Optional<Transaction> findByPlaidTransactionId(String plaidTransactionId);

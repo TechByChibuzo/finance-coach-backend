@@ -122,6 +122,27 @@ public class TransactionController {
     }
 
     /**
+     * Newest transactions first
+     * GET /api/transactions/recent?limit=6
+     */
+    @GetMapping("/recent")
+    public ResponseEntity<List<TransactionResponse>> getRecentTransactions(@RequestParam(defaultValue = "10") int limit) {
+        return ResponseEntity.ok(transactionService.getRecentTransactions(getCurrentUserId(), limit).stream()
+                .map(this::convertToResponse).toList());
+    }
+
+    /**
+     * Search all transactions by merchant or description
+     * GET /api/transactions/search?q=costco
+     */
+    @GetMapping("/search")
+    public ResponseEntity<List<TransactionResponse>> searchTransactions(@RequestParam String q,
+                                                                         @RequestParam(defaultValue = "200") int limit) {
+        return ResponseEntity.ok(transactionService.searchTransactions(getCurrentUserId(), q, limit).stream()
+                .map(this::convertToResponse).toList());
+    }
+
+    /**
      * Get transactions by category
      * GET /api/transactions/category/{category}
      */
