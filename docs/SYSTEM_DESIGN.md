@@ -193,15 +193,17 @@ sequenceDiagram
     participant DB as Postgres
     C->>P: POST /api/plaid/create-link-token
     P->>DB: check bank connection limit
-    P->>PL: /link/token/create (transactions + investments, 730 days)
+    P->>PL: /link/token/create (transactions required, investments optional, 730 days)
     P-->>C: link_token
     C->>PL: User authenticates with bank in Plaid Link
     PL-->>C: public_token
     C->>P: POST /api/plaid/exchange-token {publicToken}
     P->>PL: /item/public_token/exchange → access_token, item_id
     P->>PL: /accounts/get, /institutions/get_by_id
-    P->>DB: BEGIN; lock user row; re-check limit
-    P->>DB: UPSERT plaid_items (token encrypted); INSERT bank_accounts; COMMIT
+    P->>DB: begin transaction, lock user row, re-check limit
+    P->>DB: upsert plaid_items (token encrypted)
+    P->>DB: insert bank_accounts, skipping cards already connected through another login
+    P->>DB: commit
     P-->>C: [accounts]
 ```
 
@@ -237,7 +239,7 @@ sequenceDiagram
     participant CV as ConversationService
     participant BR as Bedrock (Claude)
     C->>FA: POST /api/ai-coach/chat {message, sessionId}
-    FA->>DB: reserve 1 ai_coach use (atomic; 429 at limit)
+    FA->>DB: reserve 1 ai_coach use (atomic, 429 at limit)
     FA->>AC: chat()
     AC->>DB: exact summary (this and last month: totals, categories, top merchants)
     AC->>VS: retrieveRelevantContext(userId, message) → top 10
