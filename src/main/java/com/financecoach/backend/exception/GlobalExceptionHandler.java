@@ -7,12 +7,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -290,6 +293,35 @@ public class GlobalExceptionHandler {
         error.setPath(request.getRequestURI());
 
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(error);
+    }
+
+    /**
+     * A URL no endpoint serves: a 404, not a server error
+     */
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResourceFound(NoResourceFoundException ex, HttpServletRequest request) {
+        return clientError(HttpStatus.NOT_FOUND, "Not Found", "There's nothing at this address.", "NOT_FOUND", request);
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex,
+                                                                  HttpServletRequest request) {
+        return clientError(HttpStatus.METHOD_NOT_ALLOWED, "Method Not Allowed",
+                ex.getMethod() + " isn't supported here.", "METHOD_NOT_ALLOWED", request);
+    }
+
+    // Missing or malformed JSON body
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadableBody(HttpMessageNotReadableException ex, HttpServletRequest request) {
+        return clientError(HttpStatus.BAD_REQUEST, "Bad Request", "The request body couldn't be read.", "BAD_REQUEST", request);
+    }
+
+    private ResponseEntity<ErrorResponse> clientError(HttpStatus status, String reason, String message, String code,
+                                                      HttpServletRequest request) {
+        logger.warn("{} {}: {}", status.value(), request.getRequestURI(), message);
+        ErrorResponse error = new ErrorResponse(status.value(), reason, message, code);
+        error.setPath(request.getRequestURI());
+        return ResponseEntity.status(status).body(error);
     }
 
     /**

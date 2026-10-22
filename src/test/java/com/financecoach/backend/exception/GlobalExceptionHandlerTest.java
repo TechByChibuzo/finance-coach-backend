@@ -36,4 +36,21 @@ class GlobalExceptionHandlerTest {
                 "password", "Password must be at least 8 characters",
                 "email", "Email must be valid"));
     }
+
+    @Test
+    void unknownAddresses_wrongMethods_andUnreadableBodies_areClientErrors() {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/networth/assets");
+
+        assertThat(handler.handleNoResourceFound(
+                new org.springframework.web.servlet.resource.NoResourceFoundException(
+                        org.springframework.http.HttpMethod.POST, "api/networth/assets"), request)
+                .getStatusCode().value()).isEqualTo(404);
+        assertThat(handler.handleMethodNotSupported(
+                new org.springframework.web.HttpRequestMethodNotSupportedException("PATCH"), request)
+                .getBody().getMessage()).isEqualTo("PATCH isn't supported here.");
+        assertThat(handler.handleUnreadableBody(
+                new org.springframework.http.converter.HttpMessageNotReadableException("bad json",
+                        new org.springframework.mock.http.MockHttpInputMessage(new byte[0])), request)
+                .getStatusCode().value()).isEqualTo(400);
+    }
 }
