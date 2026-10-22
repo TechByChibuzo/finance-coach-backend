@@ -2,6 +2,7 @@ package com.financecoach.backend.service;
 
 import com.financecoach.backend.exception.UserNotFoundException;
 import com.financecoach.backend.repository.CategoryRuleRepository;
+import com.financecoach.backend.repository.SavingsGoalRepository;
 import com.financecoach.backend.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +47,7 @@ public class AccountDeletionService {
     private final UserSubscriptionRepository userSubscriptionRepository;
     private final PaymentRepository paymentRepository;
     private final CategoryRuleRepository categoryRuleRepository;
+    private final SavingsGoalRepository savingsGoalRepository;
     private final TransactionTemplate transactionTemplate;
 
     public AccountDeletionService(UserRepository userRepository,
@@ -68,6 +70,7 @@ public class AccountDeletionService {
                                   UserSubscriptionRepository userSubscriptionRepository,
                                   PaymentRepository paymentRepository,
                                   CategoryRuleRepository categoryRuleRepository,
+                                  SavingsGoalRepository savingsGoalRepository,
                                   TransactionTemplate transactionTemplate) {
         this.userRepository = userRepository;
         this.subscriptionService = subscriptionService;
@@ -89,6 +92,7 @@ public class AccountDeletionService {
         this.userSubscriptionRepository = userSubscriptionRepository;
         this.paymentRepository = paymentRepository;
         this.categoryRuleRepository = categoryRuleRepository;
+        this.savingsGoalRepository = savingsGoalRepository;
         this.transactionTemplate = transactionTemplate;
     }
 
@@ -129,6 +133,7 @@ public class AccountDeletionService {
         userSubscriptionRepository.deleteAllByUserId(userId);
         paymentRepository.deleteAllByUserId(userId);
         categoryRuleRepository.deleteByUserId(userId);
+        savingsGoalRepository.deleteAllByUserId(userId);
         userRepository.deleteById(userId);
     }
 }
