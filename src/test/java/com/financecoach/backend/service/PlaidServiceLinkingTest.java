@@ -434,6 +434,37 @@ class PlaidServiceLinkingTest {
     }
 
     @Test
+    void getItemsWithBranding_afterATemporaryFailure_waitsBeforeAskingAgain() throws Exception {
+        PlaidItem chase = item(userId);
+        chase.setInstitutionId("ins_3");
+        BankAccount card = new BankAccount();
+        card.setItemId(chase.getId());
+        when(plaidItemRepository.findAllById(any())).thenReturn(List.of(chase));
+        when(plaidClient.institutionsGetById(any())).thenReturn(error(500, "INTERNAL_SERVER_ERROR"));
+
+        plaidService.getItemsWithBranding(List.of(card));
+        plaidService.getItemsWithBranding(List.of(card));
+
+        verify(plaidClient, times(1)).institutionsGetById(any());
+    }
+
+    @Test
+    void getItemsWithBranding_unknownInstitution_isNotAskedAgain() throws Exception {
+        PlaidItem gone = item(userId);
+        gone.setInstitutionId("ins_gone");
+        BankAccount account = new BankAccount();
+        account.setItemId(gone.getId());
+        when(plaidItemRepository.findAllById(any())).thenReturn(List.of(gone));
+        when(plaidClient.institutionsGetById(any())).thenReturn(error(400, "INVALID_INSTITUTION"));
+
+        plaidService.getItemsWithBranding(List.of(account));
+        plaidService.getItemsWithBranding(List.of(account));
+
+        verify(plaidClient, times(1)).institutionsGetById(any());
+        assertThat(gone.getInstitutionBrandingFetched()).isTrue();
+    }
+
+    @Test
     void getItemsWithBranding_whenPlaidFails_returnsTheItemAndRetriesNextTime() throws Exception {
         PlaidItem chase = item(userId);
         chase.setInstitutionId("ins_3");
@@ -443,6 +474,7 @@ class PlaidServiceLinkingTest {
         when(plaidClient.institutionsGetById(any()))
                 .thenReturn(error(500, "INTERNAL_SERVER_ERROR"))
                 .thenReturn(networkFailure());
+        plaidService.brandingRetryAfterMillis = 0; // the retry is due straight away
 
         assertThat(plaidService.getItemsWithBranding(List.of(card))).containsKey(chase.getId());
         plaidService.getItemsWithBranding(List.of(card));

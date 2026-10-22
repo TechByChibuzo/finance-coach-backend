@@ -40,6 +40,8 @@ public class PlaidService {
     private final BankAccountRepository bankAccountRepository;
     private final PlaidItemRepository plaidItemRepository;
     private final SubscriptionService subscriptionService;
+    private final Map<UUID, Long> brandingFailedAt = new java.util.concurrent.ConcurrentHashMap<>();
+    long brandingRetryAfterMillis = 60 * 60 * 1000L;
     private final UserRepository userRepository;
     private final TransactionTemplate transactionTemplate;
     @Autowired
@@ -471,7 +473,8 @@ public class PlaidService {
 
         Map<UUID, PlaidItem> items = new LinkedHashMap<>();
         for (PlaidItem item : plaidItemRepository.findAllById(itemIds)) {
-            if (!Boolean.TRUE.equals(item.getInstitutionBrandingFetched()) && item.getInstitutionId() != null) {
+            if (!Boolean.TRUE.equals(item.getInstitutionBrandingFetched()) && item.getInstitutionId() != null
+                    && !inBrandingCooldown(item.getId())) {
                 fetchBranding(item);
             }
             items.put(item.getId(), item);
@@ -489,6 +492,13 @@ public class PlaidService {
                     .execute();
             if (!response.isSuccessful() || response.body() == null) {
                 logger.warn("Couldn't fetch branding for institution {} (HTTP {})", item.getInstitutionId(), response.code());
+                if (response.code() >= 400 && response.code() < 500 && response.code() != 429) {
+                    // Plaid won't have it later either (e.g. unknown institution): stop asking
+                    item.setInstitutionBrandingFetched(true);
+                    plaidItemRepository.save(item);
+                } else {
+                    brandingFailedAt.put(item.getId(), System.currentTimeMillis());
+                }
                 return;
             }
             Institution institution = response.body().getInstitution();
@@ -498,7 +508,15 @@ public class PlaidService {
             plaidItemRepository.save(item);
         } catch (Exception e) {
             logger.warn("Couldn't fetch branding for institution {}: {}", item.getInstitutionId(), e.getMessage());
+            brandingFailedAt.put(item.getId(), System.currentTimeMillis());
         }
+    }
+
+    // After a temporary failure (Plaid down, rate limited), wait before asking again, so listing
+    // accounts doesn't call Plaid on every request while it's failing
+    private boolean inBrandingCooldown(UUID itemId) {
+        Long failedAt = brandingFailedAt.get(itemId);
+        return failedAt != null && System.currentTimeMillis() - failedAt < brandingRetryAfterMillis;
     }
 
     /**
