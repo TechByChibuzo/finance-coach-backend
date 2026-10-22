@@ -43,7 +43,7 @@ class EmailServiceTest {
         assertThat(body)
                 .contains("jane@example.com")
                 .contains("noreply@financecoach.test")
-                .contains("Reset Your Password")
+                .contains("Reset your password")
                 .contains("https://app.financecoach.test/reset-password?token=token-123")
                 .contains("Hi Jane");
     }

@@ -55,7 +55,7 @@ public class EmailService {
 
         Email from = new Email(fromEmail, fromName);
         Email to = new Email(toEmail);
-        String subject = "Reset Your Password - Finance Coach";
+        String subject = "Reset your Finance Coach password";
 
         // HTML content
         Content content = new Content(
@@ -95,7 +95,7 @@ public class EmailService {
 
         Email from = new Email(fromEmail, fromName);
         Email to = new Email(toEmail);
-        String subject = "Welcome to Finance Coach! 🎉";
+        String subject = "Welcome to Finance Coach";
 
         Content content = new Content(
                 "text/html",
@@ -231,177 +231,62 @@ public class EmailService {
      * Build password reset email HTML
      */
     private String buildPasswordResetEmailHtml(String userName, String resetLink) {
-        return String.format("""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Reset Your Password</title>
-            </head>
-            <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6;">
-                <table role="presentation" style="width: 100%%; border-collapse: collapse;">
-                    <tr>
-                        <td align="center" style="padding: 40px 0;">
-                            <table role="presentation" style="width: 600px; border-collapse: collapse; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-                                
-                                <!-- Header -->
-                                <tr>
-                                    <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); border-radius: 12px 12px 0 0;">
-                                        <div style="font-size: 48px; margin-bottom: 10px;">💎</div>
-                                        <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600;">Finance Coach</h1>
-                                    </td>
-                                </tr>
-                                
-                                <!-- Content -->
-                                <tr>
-                                    <td style="padding: 40px;">
-                                        <h2 style="margin: 0 0 20px; color: #1f2937; font-size: 24px; font-weight: 600;">Reset Your Password</h2>
-                                        
-                                        <p style="margin: 0 0 20px; color: #4b5563; font-size: 16px; line-height: 1.6;">
-                                            Hi %s,
-                                        </p>
-                                        
-                                        <p style="margin: 0 0 30px; color: #4b5563; font-size: 16px; line-height: 1.6;">
-                                            We received a request to reset your password. Click the button below to create a new password:
-                                        </p>
-                                        
-                                        <!-- Button -->
-                                        <table role="presentation" style="margin: 0 auto;">
-                                            <tr>
-                                                <td style="border-radius: 8px; background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%);">
-                                                    <a href="%s" 
-                                                       style="display: inline-block; padding: 16px 32px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
-                                                        Reset Password →
-                                                    </a>
-                                                </td>
-                                            </tr>
-                                        </table>
-                                        
-                                        <p style="margin: 30px 0 20px; color: #6b7280; font-size: 14px; line-height: 1.6;">
-                                            Or copy and paste this link into your browser:
-                                        </p>
-                                        
-                                        <div style="padding: 12px; background-color: #f3f4f6; border-radius: 6px; word-break: break-all;">
-                                            <a href="%s" style="color: #667eea; text-decoration: none; font-size: 14px;">%s</a>
-                                        </div>
-                                        
-                                        <div style="margin: 30px 0; padding: 16px; background-color: #fef3c7; border-left: 4px solid #f59e0b; border-radius: 6px;">
-                                            <p style="margin: 0; color: #92400e; font-size: 14px; line-height: 1.6;">
-                                                ⚠️ <strong>This link will expire in 1 hour.</strong>
-                                            </p>
-                                        </div>
-                                        
-                                        <p style="margin: 0 0 10px; color: #6b7280; font-size: 14px; line-height: 1.6;">
-                                            If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.
-                                        </p>
-                                    </td>
-                                </tr>
-                                
-                                <!-- Footer -->
-                                <tr>
-                                    <td style="padding: 30px 40px; background-color: #f9fafb; border-radius: 0 0 12px 12px; text-align: center;">
-                                        <p style="margin: 0 0 10px; color: #6b7280; font-size: 14px;">
-                                            Best regards,<br>
-                                            <strong>Finance Coach Team</strong>
-                                        </p>
-                                        <p style="margin: 10px 0 0; color: #9ca3af; font-size: 12px;">
-                                            © 2025 Finance Coach. All rights reserved.
-                                        </p>
-                                    </td>
-                                </tr>
-                                
-                            </table>
-                        </td>
-                    </tr>
-                </table>
-            </body>
-            </html>
-            """, displayName(userName), resetLink, resetLink, resetLink);
+        String link = HtmlUtils.htmlEscape(resetLink);
+        return emailLayout("Reset your password", """
+                <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#5e6a75;">Hi %s,</p>
+                <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#5e6a75;">We got a request to reset your Finance Coach password. Choose a new one with the button below. The link works for one hour.</p>
+                %s
+                <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#8d979f;">Or paste this link into your browser:<br><a href="%s" style="color:#0e6b5c;word-break:break-all;">%s</a></p>
+                <p style="margin:24px 0 0;font-size:13px;line-height:1.6;color:#8d979f;">If you didn't ask for this, you can ignore this email. Your password stays the same.</p>
+                """.formatted(displayName(userName), button(link, "Choose a new password"), link, link));
     }
 
     /**
-     * Build welcome email HTML (bonus)
+     * Build welcome email HTML
      */
     private String buildWelcomeEmailHtml(String userName) {
-        return String.format("""
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Welcome to Finance Coach</title>
-            </head>
-            <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6;">
-                <table role="presentation" style="width: 100%%; border-collapse: collapse;">
-                    <tr>
-                        <td align="center" style="padding: 40px 0;">
-                            <table role="presentation" style="width: 600px; border-collapse: collapse; background-color: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-                                
-                                <!-- Header -->
-                                <tr>
-                                    <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%); border-radius: 12px 12px 0 0;">
-                                        <div style="font-size: 48px; margin-bottom: 10px;">🎉</div>
-                                        <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 600;">Welcome to Finance Coach!</h1>
-                                    </td>
-                                </tr>
-                                
-                                <!-- Content -->
-                                <tr>
-                                    <td style="padding: 40px;">
-                                        <p style="margin: 0 0 20px; color: #4b5563; font-size: 16px; line-height: 1.6;">
-                                            Hi %s,
-                                        </p>
-                                        
-                                        <p style="margin: 0 0 20px; color: #4b5563; font-size: 16px; line-height: 1.6;">
-                                            Welcome to Finance Coach! We're excited to help you take control of your finances with the power of AI.
-                                        </p>
-                                        
-                                        <h3 style="margin: 30px 0 15px; color: #1f2937; font-size: 18px; font-weight: 600;">Get Started:</h3>
-                                        
-                                        <ul style="margin: 0 0 20px; padding-left: 20px; color: #4b5563; font-size: 16px; line-height: 1.8;">
-                                            <li>Connect your bank accounts</li>
-                                            <li>Set up your budgets</li>
-                                            <li>Chat with your AI financial coach</li>
-                                            <li>Track your spending and savings</li>
-                                        </ul>
-                                        
-                                        <table role="presentation" style="margin: 30px auto;">
-                                            <tr>
-                                                <td style="border-radius: 8px; background: linear-gradient(135deg, #667eea 0%%, #764ba2 100%%);">
-                                                    <a href="%s/dashboard" 
-                                                       style="display: inline-block; padding: 16px 32px; color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 8px;">
-                                                        Go to Dashboard →
-                                                    </a>
-                                                </td>
-                                            </tr>
-                                        </table>
-                                        
-                                        <p style="margin: 30px 0 0; color: #6b7280; font-size: 14px; line-height: 1.6;">
-                                            Need help getting started? Check out our <a href="%s/help" style="color: #667eea; text-decoration: none;">help center</a> or reply to this email.
-                                        </p>
-                                    </td>
-                                </tr>
-                                
-                                <!-- Footer -->
-                                <tr>
-                                    <td style="padding: 30px 40px; background-color: #f9fafb; border-radius: 0 0 12px 12px; text-align: center;">
-                                        <p style="margin: 0 0 10px; color: #6b7280; font-size: 14px;">
-                                            Best regards,<br>
-                                            <strong>Finance Coach Team</strong>
-                                        </p>
-                                        <p style="margin: 10px 0 0; color: #9ca3af; font-size: 12px;">
-                                            © 2025 Finance Coach. All rights reserved.
-                                        </p>
-                                    </td>
-                                </tr>
-                                
-                            </table>
-                        </td>
-                    </tr>
+        return emailLayout("Welcome to Finance Coach", """
+                <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#5e6a75;">Hi %s,</p>
+                <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#5e6a75;">Your account is ready. Three things get you set up:</p>
+                <table role="presentation" style="width:100%%;border-collapse:collapse;margin:0 0 24px;">
+                  %s%s%s
                 </table>
-            </body>
-            </html>
-            """, displayName(userName), frontendUrl, frontendUrl);
+                %s
+                """.formatted(displayName(userName),
+                step("1", "Connect a bank", "Your transactions come in on their own, sorted into categories."),
+                step("2", "Set a budget", "Start from a suggestion based on what you actually spend."),
+                step("3", "Ask the coach", "Try \u201cWhere did most of my money go last month?\u201d It answers with your numbers."),
+                button(frontendUrl + "/dashboard", "Open Finance Coach")));
+    }
+
+    private static String step(String number, String title, String detail) {
+        return "<tr><td style=\"width:32px;vertical-align:top;padding:10px 0;\"><span style=\"display:inline-block;width:24px;height:24px;line-height:24px;text-align:center;border-radius:12px;background:#e6f2ef;color:#0e6b5c;font-size:13px;font-weight:700;\">"
+                + number + "</span></td><td style=\"padding:10px 0;\"><p style=\"margin:0;font-size:15px;font-weight:600;color:#1d2730;\">"
+                + title + "</p><p style=\"margin:2px 0 0;font-size:14px;line-height:1.5;color:#5e6a75;\">" + detail + "</p></td></tr>";
+    }
+
+    private static String button(String href, String label) {
+        return "<a href=\"" + href + "\" style=\"display:inline-block;background:#0e6b5c;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:12px 22px;border-radius:10px;\">"
+                + label + "</a>";
+    }
+
+    // The frame shared by account emails: brand, heading, content, and a quiet footer
+    private static String emailLayout(String heading, String content) {
+        return """
+            <!DOCTYPE html>
+            <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>%s</title></head>
+            <body style="margin:0;padding:0;background:#f3f5f4;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1d2730;">
+              <table role="presentation" style="width:100%%;border-collapse:collapse;"><tr><td align="center" style="padding:32px 16px;">
+                <table role="presentation" style="width:100%%;max-width:560px;border-collapse:collapse;background:#ffffff;border-radius:16px;">
+                  <tr><td style="padding:28px 32px 32px;">
+                    <p style="margin:0;font-size:14px;font-weight:700;color:#0e6b5c;">Finance Coach</p>
+                    <h1 style="margin:20px 0 16px;font-size:24px;font-weight:800;letter-spacing:-0.3px;color:#1d2730;">%s</h1>
+                    %s
+                  </td></tr>
+                </table>
+                <p style="margin:16px 0 0;font-size:12px;color:#8d979f;">Finance Coach</p>
+              </td></tr></table>
+            </body></html>
+            """.formatted(heading, heading, content);
     }
 }
