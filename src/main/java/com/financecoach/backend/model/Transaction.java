@@ -57,6 +57,13 @@ public class Transaction {
     @Column(name = "currency_code")
     private String currencyCode = "USD";
 
+    // Merchant logo and website from Plaid's enrichment, when Plaid knows the merchant
+    @Column(name = "logo_url", length = 1000)
+    private String logoUrl;
+
+    @Column(name = "merchant_website", length = 500)
+    private String merchantWebsite;
+
     // Set on transactions imported from a CSV file; null for bank-synced ones
     @Column(name = "import_batch_id")
     private UUID importBatchId;

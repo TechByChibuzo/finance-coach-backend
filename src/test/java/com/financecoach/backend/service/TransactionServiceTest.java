@@ -213,6 +213,7 @@ class TransactionServiceTest {
     @Test
     void syncItem_resumesFromTheStoredCursor() throws Exception {
         item.setTransactionsCursor("cursor-saved");
+        item.setLogosBackfilled(true); // only the incremental sync, no one-time logo replay
         stubItemAccounts(checking);
         stubPlaidTransactions();
 
@@ -470,6 +471,70 @@ class TransactionServiceTest {
             byPlaidId.put(account.getPlaidAccountId(), account);
         }
         when(plaidService.getActiveAccountsByPlaidId(item)).thenReturn(byPlaidId);
+    }
+
+    // --- merchant logos ---
+
+    @Test
+    void syncItem_storesTheMerchantLogo_fromTheTransactionOrItsCounterparty() throws Exception {
+        stubItemAccounts(checking);
+        stubPlaidTransactions(
+                plaidTx("tx-1", "plaid-checking").logoUrl("https://logos/netflix.png").website("netflix.com"),
+                plaidTx("tx-2", "plaid-checking").counterparties(List.of(new com.plaid.client.model.TransactionCounterparty()
+                        .name("Starbucks").logoUrl("https://logos/starbucks.png").website("starbucks.com"))),
+                plaidTx("tx-3", "plaid-checking"));
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        List<Transaction> saved = transactionService.syncItem(item);
+
+        assertThat(saved).extracting(Transaction::getLogoUrl)
+                .containsExactly("https://logos/netflix.png", "https://logos/starbucks.png", null);
+        assertThat(saved).extracting(Transaction::getMerchantWebsite)
+                .containsExactly("netflix.com", "starbucks.com", null);
+        // A first sync already has every logo, so no backfill is needed later
+        assertThat(item.getLogosBackfilled()).isTrue();
+    }
+
+    @Test
+    void syncItem_onAnItemSyncedBeforeLogos_fillsThemInOnce_withoutMovingTheCursor() throws Exception {
+        item.setTransactionsCursor("cursor-old");
+        stubItemAccounts(checking);
+        Transaction old = existing("tx-old");
+        Transaction alreadyHasLogo = existing("tx-logo");
+        alreadyHasLogo.setLogoUrl("https://logos/kept.png");
+        stubSyncPages(
+                page(false, "cursor-new", List.of(), List.of(), List.of()),
+                page(false, "cursor-replay", List.of(
+                        plaidTx("tx-old", "plaid-checking").logoUrl("https://logos/uber.png"),
+                        plaidTx("tx-logo", "plaid-checking").logoUrl("https://logos/other.png"),
+                        plaidTx("tx-none", "plaid-checking")), List.of(), List.of()));
+        when(transactionRepository.findByPlaidTransactionIdIn(any())).thenReturn(List.of(old, alreadyHasLogo));
+
+        transactionService.syncItem(item);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Transaction>> updated = ArgumentCaptor.forClass(List.class);
+        verify(transactionRepository).saveAll(updated.capture());
+        assertThat(updated.getValue()).containsExactly(old);
+        assertThat(old.getLogoUrl()).isEqualTo("https://logos/uber.png");
+        assertThat(alreadyHasLogo.getLogoUrl()).isEqualTo("https://logos/kept.png");
+        assertThat(item.getTransactionsCursor()).isEqualTo("cursor-new");
+        assertThat(item.getLogosBackfilled()).isTrue();
+    }
+
+    @Test
+    void syncItem_whenTheLogoBackfillFails_stillCompletes_andRetriesNextTime() throws Exception {
+        item.setTransactionsCursor("cursor-old");
+        stubItemAccounts(checking);
+        stubSyncResponses(
+                Response.success(page(false, "cursor-new", List.of(), List.of(), List.of())),
+                Response.error(500, okhttp3.ResponseBody.create("{\"error_code\":\"INTERNAL_SERVER_ERROR\"}",
+                        okhttp3.MediaType.get("application/json"))));
+
+        transactionService.syncItem(item);
+
+        assertThat(item.getTransactionsCursor()).isEqualTo("cursor-new");
+        assertThat(item.getLogosBackfilled()).isNotEqualTo(Boolean.TRUE);
     }
 
     private void stubPlaidTransactions(com.plaid.client.model.Transaction... transactions) throws Exception {

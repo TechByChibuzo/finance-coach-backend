@@ -45,6 +45,10 @@ public class PlaidItem {
     @Column(name = "transactions_cursor", columnDefinition = "TEXT")
     private String transactionsCursor;
 
+    // Whether transactions synced before logos were stored have had them filled in (null = not yet)
+    @Column(name = "logos_backfilled")
+    private Boolean logosBackfilled;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 }

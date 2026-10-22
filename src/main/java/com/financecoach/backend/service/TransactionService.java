@@ -24,9 +24,11 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -38,6 +40,7 @@ public class TransactionService {
     private static final int SYNC_PAGE_SIZE = 500;
     private static final int MAX_SYNC_ATTEMPTS = 3;
     private static final int EMBEDDING_BACKFILL_LIMIT = 500;
+    private static final int LOGO_BACKFILL_CHUNK = 1000;
 
     private final PlaidApi plaidClient;
     private final TransactionRepository transactionRepository;
@@ -114,7 +117,9 @@ public class TransactionService {
             return List.of();
         }
 
-        SyncChanges changes = fetchChanges(item);
+        // A first sync brings every transaction with its logo; later ones only bring changes
+        boolean firstSync = item.getTransactionsCursor() == null;
+        SyncChanges changes = fetchChanges(item, item.getTransactionsCursor());
 
         // Save transactions; embeddings for new and changed ones are built afterwards, in the background
         List<Transaction> savedTransactions = new ArrayList<>();
@@ -158,7 +163,14 @@ public class TransactionService {
 
         // Only advance the cursor once every change is applied, so a failure replays them next time
         item.setTransactionsCursor(changes.nextCursor());
+        if (firstSync) {
+            item.setLogosBackfilled(true);
+        }
         plaidItemRepository.save(item);
+
+        if (!Boolean.TRUE.equals(item.getLogosBackfilled())) {
+            backfillLogos(item);
+        }
 
         // Embed for the AI coach without making the user wait on the embedding API.
         // Skip anything Plaid also removed in this sync (e.g. modified, then removed).
@@ -212,12 +224,12 @@ public class TransactionService {
      * Page through /transactions/sync until has_more is false. If the data changes while
      * paginating, Plaid asks us to restart from the original cursor.
      */
-    private SyncChanges fetchChanges(PlaidItem item) {
+    private SyncChanges fetchChanges(PlaidItem item, String startCursor) {
         for (int attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt++) {
             List<com.plaid.client.model.Transaction> added = new ArrayList<>();
             List<com.plaid.client.model.Transaction> modified = new ArrayList<>();
             List<RemovedTransaction> removed = new ArrayList<>();
-            String cursor = item.getTransactionsCursor();
+            String cursor = startCursor;
             boolean hasMore = true;
             boolean restart = false;
 
@@ -291,6 +303,65 @@ public class TransactionService {
     /**
      * Convert Plaid transaction to our Transaction entity
      */
+    /**
+     * Transactions synced before logos were stored don't have them. Replays the item's history from
+     * Plaid once (without touching the sync cursor) and fills in logos and websites that are missing.
+     * A failure is logged and retried on the next sync, never failing the sync itself.
+     */
+    private void backfillLogos(PlaidItem item) {
+        try {
+            Map<String, com.plaid.client.model.Transaction> withLogos = new HashMap<>();
+            for (com.plaid.client.model.Transaction plaidTx : fetchChanges(item, null).added()) {
+                if (logoUrl(plaidTx) != null || merchantWebsite(plaidTx) != null) {
+                    withLogos.put(plaidTx.getTransactionId(), plaidTx);
+                }
+            }
+
+            List<Transaction> updated = new ArrayList<>();
+            List<String> ids = new ArrayList<>(withLogos.keySet());
+            for (int start = 0; start < ids.size(); start += LOGO_BACKFILL_CHUNK) {
+                for (Transaction existing : transactionRepository.findByPlaidTransactionIdIn(
+                        ids.subList(start, Math.min(start + LOGO_BACKFILL_CHUNK, ids.size())))) {
+                    if (existing.getLogoUrl() == null && existing.getMerchantWebsite() == null) {
+                        com.plaid.client.model.Transaction plaidTx = withLogos.get(existing.getPlaidTransactionId());
+                        existing.setLogoUrl(logoUrl(plaidTx));
+                        existing.setMerchantWebsite(merchantWebsite(plaidTx));
+                        updated.add(existing);
+                    }
+                }
+            }
+            transactionRepository.saveAll(updated);
+
+            item.setLogosBackfilled(true);
+            plaidItemRepository.save(item);
+            logger.info("Filled in merchant logos for {} transactions of item {}", updated.size(), item.getId());
+        } catch (Exception e) {
+            logger.warn("Couldn't fill in merchant logos for item {}, will retry next sync: {}",
+                    item.getId(), e.getMessage());
+        }
+    }
+
+    // Plaid puts the merchant's logo on the transaction, or on its merchant counterparty
+    static String logoUrl(com.plaid.client.model.Transaction plaidTx) {
+        if (plaidTx.getLogoUrl() != null) {
+            return plaidTx.getLogoUrl();
+        }
+        return plaidTx.getCounterparties() == null ? null : plaidTx.getCounterparties().stream()
+                .map(TransactionCounterparty::getLogoUrl)
+                .filter(Objects::nonNull)
+                .findFirst().orElse(null);
+    }
+
+    static String merchantWebsite(com.plaid.client.model.Transaction plaidTx) {
+        if (plaidTx.getWebsite() != null) {
+            return plaidTx.getWebsite();
+        }
+        return plaidTx.getCounterparties() == null ? null : plaidTx.getCounterparties().stream()
+                .map(TransactionCounterparty::getWebsite)
+                .filter(Objects::nonNull)
+                .findFirst().orElse(null);
+    }
+
     private Transaction convertPlaidTransaction(com.plaid.client.model.Transaction plaidTx,
                                                 BankAccount bankAccount) {
         Transaction transaction = new Transaction();
@@ -316,6 +387,8 @@ public class TransactionService {
         // Merchant
         transaction.setMerchantName(plaidTx.getMerchantName());
         transaction.setName(plaidTx.getName());
+        transaction.setLogoUrl(logoUrl(plaidTx));
+        transaction.setMerchantWebsite(merchantWebsite(plaidTx));
 
         // Category
         if (plaidTx.getPersonalFinanceCategory() != null) {

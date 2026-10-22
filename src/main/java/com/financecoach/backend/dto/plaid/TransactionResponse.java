@@ -20,6 +20,8 @@ public class TransactionResponse {
     private String currencyCode;
     // Name the user gave the account when importing a CSV; null for bank-synced transactions
     private String importAccountName;
+    // Merchant logo from Plaid, when known
+    private String logoUrl;
 
     public TransactionResponse() {}
 

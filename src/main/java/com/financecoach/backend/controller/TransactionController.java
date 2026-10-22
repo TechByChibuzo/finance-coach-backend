@@ -141,6 +141,7 @@ public class TransactionController {
                 transaction.getCurrencyCode()
         );
         response.setImportAccountName(transaction.getImportAccountName());
+        response.setLogoUrl(transaction.getLogoUrl());
         return response;
     }
 }
