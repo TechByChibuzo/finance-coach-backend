@@ -59,6 +59,9 @@ public class TransactionSyncScheduler {
         }
 
         for (PlaidItem item : items.values()) {
+            if (Boolean.TRUE.equals(item.getNeedsReconnect())) {
+                continue; // waits for the user to sign in to the bank again; Plaid would refuse
+            }
             try {
                 transactionService.syncItem(item);
                 successCount++;

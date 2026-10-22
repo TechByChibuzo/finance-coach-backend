@@ -19,6 +19,10 @@ public class BankAccountResponse {
     private LocalDateTime lastSyncedAt;
     private Boolean isActive;
     private String mask;
+    // The bank connection (Plaid item) this account came through, and whether the bank wants
+    // the user to sign in again before it shares more data
+    private UUID itemId;
+    private boolean needsReconnect;
     // The bank's logo as a data URL, and its brand colour, when Plaid has them
     private String institutionLogo;
     private String institutionColor;

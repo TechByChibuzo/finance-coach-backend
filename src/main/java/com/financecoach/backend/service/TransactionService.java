@@ -2,6 +2,7 @@
 package com.financecoach.backend.service;
 
 import com.financecoach.backend.exception.BankAccountNotFoundException;
+import com.financecoach.backend.exception.BankReconnectRequiredException;
 import com.financecoach.backend.exception.PlaidIntegrationException;
 import com.financecoach.backend.exception.UnauthorizedAccessException;
 import com.plaid.client.model.*;
@@ -100,7 +101,12 @@ public class TransactionService {
 
         List<Transaction> allTransactions = new ArrayList<>();
         for (PlaidItem item : plaidService.getItems(accounts)) {
-            allTransactions.addAll(syncItem(item));
+            try {
+                allTransactions.addAll(syncItem(item));
+            } catch (BankReconnectRequiredException e) {
+                // The user is asked to reconnect this bank; keep syncing the others
+                logger.info("Skipped item {}: the bank needs the user to sign in again", item.getId());
+            }
         }
 
         return allTransactions;
@@ -122,7 +128,16 @@ public class TransactionService {
 
         // A first sync brings every transaction with its logo; later ones only bring changes
         boolean firstSync = item.getTransactionsCursor() == null;
-        SyncChanges changes = fetchChanges(item, item.getTransactionsCursor());
+        SyncChanges changes;
+        try {
+            changes = fetchChanges(item, item.getTransactionsCursor());
+        } catch (BankReconnectRequiredException e) {
+            if (!Boolean.TRUE.equals(item.getNeedsReconnect())) {
+                item.setNeedsReconnect(true);
+                plaidItemRepository.save(item);
+            }
+            throw e;
+        }
 
         // Save transactions; embeddings for new and changed ones are built afterwards, in the background
         List<Transaction> savedTransactions = new ArrayList<>();
@@ -174,6 +189,9 @@ public class TransactionService {
 
         // Only advance the cursor once every change is applied, so a failure replays them next time
         item.setTransactionsCursor(changes.nextCursor());
+        if (Boolean.TRUE.equals(item.getNeedsReconnect())) {
+            item.setNeedsReconnect(false); // the bank is sharing data again
+        }
         if (firstSync) {
             item.setLogosBackfilled(true);
         }
@@ -251,6 +269,10 @@ public class TransactionService {
      * Page through /transactions/sync until has_more is false. If the data changes while
      * paginating, Plaid asks us to restart from the original cursor.
      */
+    // Plaid errors that only the user can fix, by signing in to the bank again through Link
+    private static final Set<String> RECONNECT_ERRORS =
+            Set.of("ITEM_LOGIN_REQUIRED", "PENDING_EXPIRATION", "PENDING_DISCONNECT");
+
     private SyncChanges fetchChanges(PlaidItem item, String startCursor) {
         for (int attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt++) {
             List<com.plaid.client.model.Transaction> added = new ArrayList<>();
@@ -280,6 +302,9 @@ public class TransactionService {
                         if (errorMsg.contains("TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION")) {
                             restart = true;
                             break;
+                        }
+                        if (RECONNECT_ERRORS.stream().anyMatch(errorMsg::contains)) {
+                            throw new BankReconnectRequiredException("The bank needs the user to sign in again");
                         }
                         throw new PlaidIntegrationException("Failed to fetch transactions: " + errorMsg);
                     }

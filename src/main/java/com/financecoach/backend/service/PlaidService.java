@@ -76,21 +76,52 @@ public class PlaidService {
         // Check before the user goes through the bank login, not after
         ensureCanConnectAnotherBank(userId);
 
+        return requestLinkToken(userId, baseLinkRequest(userId)
+                // Every product in products is required, so a bank without investment accounts
+                // would refuse to connect; investments are added only where available
+                .products(List.of(Products.TRANSACTIONS))
+                .optionalProducts(List.of(Products.INVESTMENTS))
+                .transactions(new LinkTokenTransactions().daysRequested(730)));
+    }
+
+    /**
+     * A link token that opens Plaid Link on an existing connection ("update mode"), so the user
+     * can sign in to the bank again. The connection, its accounts and history stay the same.
+     */
+    public String createUpdateLinkToken(UUID userId, UUID itemId) {
+        PlaidItem item = getOwnedItem(userId, itemId);
+        return requestLinkToken(userId, baseLinkRequest(userId).accessToken(item.getAccessToken()));
+    }
+
+    /**
+     * The user signed in to the bank again through update mode
+     */
+    public void markReconnected(UUID userId, UUID itemId) {
+        PlaidItem item = getOwnedItem(userId, itemId);
+        item.setNeedsReconnect(false);
+        plaidItemRepository.save(item);
+        logger.info("User {} reconnected item {}", userId, itemId);
+    }
+
+    private PlaidItem getOwnedItem(UUID userId, UUID itemId) {
+        PlaidItem item = plaidItemRepository.findById(itemId)
+                .orElseThrow(() -> new BankAccountNotFoundException("Bank connection not found"));
+        if (!userId.equals(item.getUserId())) {
+            throw new UnauthorizedAccessException("bank connection");
+        }
+        return item;
+    }
+
+    private static LinkTokenCreateRequest baseLinkRequest(UUID userId) {
+        return new LinkTokenCreateRequest()
+                .user(new LinkTokenCreateRequestUser().clientUserId(userId.toString()))
+                .clientName("Finance Coach")
+                .countryCodes(List.of(CountryCode.US))
+                .language("en");
+    }
+
+    private String requestLinkToken(UUID userId, LinkTokenCreateRequest request) {
         try {
-            LinkTokenCreateRequestUser user = new LinkTokenCreateRequestUser()
-                    .clientUserId(userId.toString());
-
-            LinkTokenCreateRequest request = new LinkTokenCreateRequest()
-                    .user(user)
-                    .clientName("Finance Coach")
-                    // Every product in products is required, so a bank without investment accounts
-                    // would refuse to connect; investments are added only where available
-                    .products(List.of(Products.TRANSACTIONS))
-                    .optionalProducts(List.of(Products.INVESTMENTS))
-                    .countryCodes(List.of(CountryCode.US))
-                    .transactions(new LinkTokenTransactions().daysRequested(730))
-                    .language("en");
-
             Response<LinkTokenCreateResponse> response = plaidClient
                     .linkTokenCreate(request)
                     .execute();

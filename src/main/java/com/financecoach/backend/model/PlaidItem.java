@@ -60,6 +60,10 @@ public class PlaidItem {
     @Column(name = "institution_icon_fetched")
     private Boolean institutionIconFetched;
 
+    // The bank wants the user to sign in again before it shares more data (null/false = fine)
+    @Column(name = "needs_reconnect")
+    private Boolean needsReconnect;
+
     // Whether transactions synced before logos were stored have had them filled in (null = not yet)
     @Column(name = "logos_backfilled")
     private Boolean logosBackfilled;

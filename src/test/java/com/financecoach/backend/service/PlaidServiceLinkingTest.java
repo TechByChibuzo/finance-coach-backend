@@ -138,6 +138,52 @@ class PlaidServiceLinkingTest {
     }
 
     @Test
+    void createUpdateLinkToken_opensLinkOnTheExistingConnection_evenAtTheLimit() throws Exception {
+        PlaidItem chase = item(userId);
+        chase.setAccessToken("access-chase");
+        when(plaidItemRepository.findById(chase.getId())).thenReturn(Optional.of(chase));
+        org.mockito.Mockito.lenient().when(subscriptionService.getLimit(userId, "bank_account")).thenReturn(1);
+        org.mockito.Mockito.lenient().when(bankAccountRepository.countBankConnections(userId)).thenReturn(1L);
+        when(plaidClient.linkTokenCreate(any())).thenReturn(ok(new LinkTokenCreateResponse().linkToken("link-update")));
+
+        assertThat(plaidService.createUpdateLinkToken(userId, chase.getId())).isEqualTo("link-update");
+
+        ArgumentCaptor<LinkTokenCreateRequest> request = ArgumentCaptor.forClass(LinkTokenCreateRequest.class);
+        verify(plaidClient).linkTokenCreate(request.capture());
+        assertThat(request.getValue().getAccessToken()).isEqualTo("access-chase");
+        assertThat(request.getValue().getProducts()).isNullOrEmpty();
+        assertThat(request.getValue().getUser().getClientUserId()).isEqualTo(userId.toString());
+    }
+
+    @Test
+    void createUpdateLinkToken_forAnotherUsersConnection_isRejected_andUnknown_isNotFound() {
+        PlaidItem someoneElses = item(UUID.randomUUID());
+        when(plaidItemRepository.findById(someoneElses.getId())).thenReturn(Optional.of(someoneElses));
+        UUID missing = UUID.randomUUID();
+        when(plaidItemRepository.findById(missing)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> plaidService.createUpdateLinkToken(userId, someoneElses.getId()))
+                .isInstanceOf(com.financecoach.backend.exception.UnauthorizedAccessException.class);
+        assertThatThrownBy(() -> plaidService.markReconnected(userId, someoneElses.getId()))
+                .isInstanceOf(com.financecoach.backend.exception.UnauthorizedAccessException.class);
+        assertThatThrownBy(() -> plaidService.createUpdateLinkToken(userId, missing))
+                .isInstanceOf(com.financecoach.backend.exception.BankAccountNotFoundException.class);
+        verify(plaidItemRepository, never()).save(any());
+    }
+
+    @Test
+    void markReconnected_clearsTheFlag() {
+        PlaidItem chase = item(userId);
+        chase.setNeedsReconnect(true);
+        when(plaidItemRepository.findById(chase.getId())).thenReturn(Optional.of(chase));
+
+        plaidService.markReconnected(userId, chase.getId());
+
+        assertThat(chase.getNeedsReconnect()).isFalse();
+        verify(plaidItemRepository).save(chase);
+    }
+
+    @Test
     void exchangePublicToken_atTheLimit_isRefusedWithoutExchanging() throws Exception {
         when(subscriptionService.getLimit(userId, "bank_account")).thenReturn(1);
         when(bankAccountRepository.countBankConnections(userId)).thenReturn(1L);

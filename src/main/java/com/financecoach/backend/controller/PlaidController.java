@@ -91,6 +91,26 @@ public class PlaidController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * A link token that reopens Plaid Link on an existing bank connection, to sign in again
+     * POST /api/plaid/items/{itemId}/update-link-token
+     */
+    @PostMapping("/items/{itemId}/update-link-token")
+    public ResponseEntity<LinkTokenResponse> createUpdateLinkToken(@PathVariable UUID itemId) {
+        String linkToken = plaidService.createUpdateLinkToken(getCurrentUserId(), itemId);
+        return ResponseEntity.ok(new LinkTokenResponse(linkToken, null));
+    }
+
+    /**
+     * The user finished signing in to the bank again
+     * POST /api/plaid/items/{itemId}/reconnected
+     */
+    @PostMapping("/items/{itemId}/reconnected")
+    public ResponseEntity<Void> markReconnected(@PathVariable UUID itemId) {
+        plaidService.markReconnected(getCurrentUserId(), itemId);
+        return ResponseEntity.noContent().build();
+    }
+
     // Helper methods
     private UUID getCurrentUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
@@ -114,7 +134,9 @@ public class PlaidController {
                 account.getIsActive()
         );
         response.setMask(account.getMask());
+        response.setItemId(account.getItemId());
         if (item != null) {
+            response.setNeedsReconnect(Boolean.TRUE.equals(item.getNeedsReconnect()));
             String logo = item.getInstitutionLogo();
             if (logo != null) {
                 // Site icons are stored as data URLs already; Plaid's logos are bare base64 PNGs

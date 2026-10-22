@@ -62,6 +62,23 @@ class TransactionSyncSchedulerTest {
     }
 
     @Test
+    void syncAllAccounts_skipsABankWaitingForTheUserToSignInAgain() {
+        PlaidItem expired = item();
+        expired.setNeedsReconnect(true);
+        PlaidItem healthy = item();
+        BankAccount a = account();
+        BankAccount b = account();
+        when(bankAccountRepository.findByIsActive(true)).thenReturn(List.of(a, b));
+        when(plaidService.getItem(a)).thenReturn(expired);
+        when(plaidService.getItem(b)).thenReturn(healthy);
+
+        scheduler.syncAllAccounts();
+
+        verify(transactionService, never()).syncItem(expired);
+        verify(transactionService).syncItem(healthy);
+    }
+
+    @Test
     void syncAllAccounts_withNoAccounts_doesNothing() {
         when(bankAccountRepository.findByIsActive(true)).thenReturn(List.of());
 

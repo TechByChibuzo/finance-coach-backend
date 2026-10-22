@@ -410,18 +410,70 @@ class TransactionServiceTest {
     @Test
     void syncItem_whenPlaidFailsOrIsUnreachable_throws() throws Exception {
         stubItemAccounts(checking);
-        stubSyncResponses(Response.error(400, ResponseBody.create(
-                "{\"error_code\": \"ITEM_LOGIN_REQUIRED\"}", MediaType.get("application/json"))));
+        stubSyncResponses(Response.error(500, ResponseBody.create(
+                "{\"error_code\": \"INTERNAL_SERVER_ERROR\"}", MediaType.get("application/json"))));
 
         assertThatThrownBy(() -> transactionService.syncItem(item))
                 .isInstanceOf(com.financecoach.backend.exception.PlaidIntegrationException.class)
-                .hasMessageContaining("ITEM_LOGIN_REQUIRED");
+                .hasMessageContaining("INTERNAL_SERVER_ERROR");
+        assertThat(item.getNeedsReconnect()).isNull();
 
         @SuppressWarnings("unchecked")
         Call<TransactionsSyncResponse> broken = mock(Call.class);
         when(broken.execute()).thenThrow(new java.io.IOException("reset"));
         when(plaidClient.transactionsSync(any(TransactionsSyncRequest.class))).thenReturn(broken);
         assertThatThrownBy(() -> transactionService.syncItem(item)).hasMessageContaining("Network error");
+    }
+
+    @Test
+    void syncItem_whenTheBankWantsTheUserToSignInAgain_marksTheConnection() throws Exception {
+        stubItemAccounts(checking);
+        item.setTransactionsCursor("cursor-before");
+        stubSyncResponses(Response.error(400, ResponseBody.create(
+                "{\"error_code\": \"ITEM_LOGIN_REQUIRED\"}", MediaType.get("application/json"))));
+
+        assertThatThrownBy(() -> transactionService.syncItem(item))
+                .isInstanceOf(com.financecoach.backend.exception.BankReconnectRequiredException.class);
+
+        assertThat(item.getNeedsReconnect()).isTrue();
+        assertThat(item.getTransactionsCursor()).isEqualTo("cursor-before");
+        verify(plaidItemRepository).save(item);
+    }
+
+    @Test
+    void syncItem_afterTheUserReconnects_clearsTheFlag() throws Exception {
+        stubItemAccounts(checking);
+        stubPlaidTransactions();
+        item.setNeedsReconnect(true);
+
+        transactionService.syncItem(item);
+
+        assertThat(item.getNeedsReconnect()).isFalse();
+    }
+
+    @Test
+    void syncAllTransactions_aBankNeedingSignIn_doesntStopTheOthers() throws Exception {
+        PlaidItem expired = new PlaidItem();
+        expired.setId(UUID.randomUUID());
+        expired.setAccessToken("access-expired");
+        when(bankAccountRepository.findByUserIdAndIsActive(userId, true)).thenReturn(List.of(checking, savings));
+        when(plaidService.getItems(List.of(checking, savings))).thenReturn(List.of(expired, item));
+        when(plaidService.getActiveAccountsByPlaidId(expired)).thenReturn(Map.of("plaid-savings", savings));
+        stubItemAccounts(checking);
+        @SuppressWarnings("unchecked")
+        Call<TransactionsSyncResponse> refused = mock(Call.class);
+        when(refused.execute()).thenReturn(Response.error(400, ResponseBody.create(
+                "{\"error_code\": \"ITEM_LOGIN_REQUIRED\"}", MediaType.get("application/json"))));
+        @SuppressWarnings("unchecked")
+        Call<TransactionsSyncResponse> synced = mock(Call.class);
+        when(synced.execute()).thenReturn(Response.success(
+                page(false, "cursor-1", List.of(plaidTx("tx-1", "plaid-checking")), List.of(), List.of())));
+        when(plaidClient.transactionsSync(any(TransactionsSyncRequest.class))).thenAnswer(inv ->
+                ((TransactionsSyncRequest) inv.getArgument(0)).getAccessToken().equals("access-expired") ? refused : synced);
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(transactionService.syncAllTransactions(userId)).hasSize(1);
+        assertThat(expired.getNeedsReconnect()).isTrue();
     }
 
     @Test
