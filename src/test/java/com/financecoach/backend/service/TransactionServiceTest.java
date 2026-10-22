@@ -292,6 +292,23 @@ class TransactionServiceTest {
     }
 
     @Test
+    void syncItem_afterRefreshingBalances_removesACardLinkedTwice_withItsCopiedTransactions() throws Exception {
+        stubItemAccounts(checking);
+        stubPlaidTransactions();
+        BankAccount copy = new BankAccount();
+        copy.setId(UUID.randomUUID());
+        when(plaidService.findDuplicateAccounts(item.getUserId())).thenReturn(List.of(copy));
+        when(transactionRepository.deleteByAccountId(copy.getId())).thenReturn(88);
+
+        transactionService.syncItem(item);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(plaidService, transactionRepository);
+        order.verify(plaidService).refreshBalances(item);
+        order.verify(transactionRepository).deleteByAccountId(copy.getId());
+        order.verify(plaidService).retireDuplicateAccount(copy);
+    }
+
+    @Test
     void syncItem_whenBalanceRefreshFails_stillSavesTransactions() throws Exception {
         stubItemAccounts(checking);
         stubPlaidTransactions(plaidTx("tx-1", "plaid-checking"));

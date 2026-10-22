@@ -113,6 +113,7 @@ public class PlaidController {
                 account.getLastSyncedAt(),
                 account.getIsActive()
         );
+        response.setMask(account.getMask());
         if (item != null) {
             String logo = item.getInstitutionLogo();
             if (logo != null) {

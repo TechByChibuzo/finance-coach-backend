@@ -105,6 +105,15 @@ class PlaidServiceTest {
     }
 
     @Test
+    void applyBalances_fillsInTheAccountsLastDigits() {
+        when(bankAccountRepository.findByItemIdAndIsActive(item.getId(), true)).thenReturn(List.of(checking));
+
+        plaidService.applyBalances(item, List.of(plaidAccount("plaid-checking", 99.99, 99.99).mask("4321")));
+
+        assertThat(checking.getMask()).isEqualTo("4321");
+    }
+
+    @Test
     void applyBalances_whenPlaidOmitsABalance_keepsTheStoredValue() {
         checking.setAvailableBalance(new BigDecimal("80.00"));
         when(bankAccountRepository.findByItemIdAndIsActive(item.getId(), true)).thenReturn(List.of(checking));

@@ -52,6 +52,12 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     @Query("DELETE FROM Transaction t WHERE t.userId = :userId AND t.importBatchId = :batchId")
     int deleteImportBatch(@Param("userId") UUID userId, @Param("batchId") UUID batchId);
 
+    // A duplicate account's copies of transactions (their embeddings go with them via the foreign key)
+    @Transactional
+    @Modifying
+    @Query("DELETE FROM Transaction t WHERE t.accountId = :accountId")
+    int deleteByAccountId(@Param("accountId") UUID accountId);
+
     // Transactions on these accounts that have no embedding yet (e.g. their batch failed), newest first
     @Query("SELECT t FROM Transaction t WHERE t.accountId IN :accountIds AND NOT EXISTS "
             + "(SELECT e.id FROM TransactionEmbedding e WHERE e.transactionId = t.plaidTransactionId) "

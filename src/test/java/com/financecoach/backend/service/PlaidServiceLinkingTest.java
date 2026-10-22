@@ -41,6 +41,7 @@ import retrofit2.Response;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -240,6 +241,100 @@ class PlaidServiceLinkingTest {
         assertThat(accounts).extracting(BankAccount::getPlaidAccountId).containsExactly("acc-new");
         assertThat(accounts.get(0).getInstitutionName()).isEqualTo("Unknown");
         assertThat(accounts.get(0).getCurrentBalance()).isNull();
+    }
+
+    @Test
+    void exchangePublicToken_cardAlreadyConnectedThroughAnotherLogin_isSkipped() throws Exception {
+        BankAccount existingCard = card(UUID.randomUUID(), "1234", null);
+        stubExchange("access-2", "item-2");
+        when(plaidClient.accountsGet(any())).thenReturn(ok(new AccountsGetResponse()
+                .item(new Item().institutionId("ins_56"))
+                .accounts(List.of(
+                        plaidAccount("acc-same-card", AccountType.CREDIT, AccountSubtype.CREDIT_CARD, 1025.04, null).mask("1234"),
+                        plaidAccount("acc-other-card", AccountType.CREDIT, AccountSubtype.CREDIT_CARD, 264.33, null).mask("9876")))));
+        when(plaidClient.institutionsGetById(any()))
+                .thenReturn(ok(new InstitutionsGetByIdResponse().institution(new Institution().name("Chase"))));
+        when(plaidItemRepository.findByPlaidItemId("item-2")).thenReturn(Optional.empty());
+        when(plaidItemRepository.save(any())).thenAnswer(inv -> {
+            PlaidItem item = inv.getArgument(0);
+            item.setId(UUID.randomUUID());
+            return item;
+        });
+        when(bankAccountRepository.findByUserIdAndIsActive(userId, true)).thenReturn(List.of(existingCard));
+        when(bankAccountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        List<BankAccount> accounts = plaidService.exchangePublicToken(userId, "public-token");
+
+        assertThat(accounts).extracting(BankAccount::getPlaidAccountId).containsExactly("acc-other-card");
+        assertThat(accounts.get(0).getMask()).isEqualTo("9876");
+        verify(plaidClient, never()).itemRemove(any());
+    }
+
+    @Test
+    void exchangePublicToken_everyAccountAlreadyConnected_revokesTheNewLoginAndSaysSo() throws Exception {
+        BankAccount existingCard = card(UUID.randomUUID(), "1234", null);
+        stubExchange("access-2", "item-2");
+        when(plaidClient.accountsGet(any())).thenReturn(ok(new AccountsGetResponse()
+                .item(new Item().institutionId("ins_56"))
+                .accounts(List.of(plaidAccount("acc-same-card", AccountType.CREDIT, AccountSubtype.CREDIT_CARD, 1025.04, null).mask("1234")))));
+        when(plaidClient.institutionsGetById(any()))
+                .thenReturn(ok(new InstitutionsGetByIdResponse().institution(new Institution().name("Chase"))));
+        PlaidItem saved = item(userId);
+        when(plaidItemRepository.findByPlaidItemId("item-2")).thenReturn(Optional.empty(), Optional.empty(), Optional.of(saved));
+        when(plaidItemRepository.save(any())).thenReturn(saved);
+        when(bankAccountRepository.findByUserIdAndIsActive(userId, true)).thenReturn(List.of(existingCard));
+        when(plaidClient.itemRemove(any())).thenReturn(ok(new com.plaid.client.model.ItemRemoveResponse()));
+
+        assertThatThrownBy(() -> plaidService.exchangePublicToken(userId, "public-token"))
+                .isInstanceOf(com.financecoach.backend.exception.ValidationException.class)
+                .hasMessage("These accounts are already connected.");
+
+        verify(plaidClient).itemRemove(any());
+        verify(plaidItemRepository).delete(saved);
+        verify(bankAccountRepository, never()).save(any());
+    }
+
+    // --- the same card linked twice ---
+
+    @Test
+    void findDuplicateAccounts_returnsTheNewerCopyOfACardLinkedTwice() {
+        UUID oldLogin = UUID.randomUUID();
+        UUID newLogin = UUID.randomUUID();
+        BankAccount original = card(oldLogin, "1234", LocalDateTime.now().minusDays(1));
+        BankAccount copy = card(newLogin, "1234", LocalDateTime.now());
+        BankAccount otherCard = card(newLogin, "9876", LocalDateTime.now());
+        BankAccount noDigitsYet = card(newLogin, null, LocalDateTime.now());
+        BankAccount checkingSameDigits = card(newLogin, "1234", LocalDateTime.now());
+        checkingSameDigits.setAccountType("depository");
+        checkingSameDigits.setAccountSubtype("checking");
+        when(bankAccountRepository.findByUserIdAndIsActive(userId, true))
+                .thenReturn(List.of(copy, otherCard, noDigitsYet, checkingSameDigits, original));
+
+        assertThat(plaidService.findDuplicateAccounts(userId)).containsExactly(copy);
+    }
+
+    @Test
+    void findDuplicateAccounts_twoAccountsOfTheSameLogin_areNotDuplicates() {
+        UUID login = UUID.randomUUID();
+        when(bankAccountRepository.findByUserIdAndIsActive(userId, true))
+                .thenReturn(List.of(card(login, "1234", LocalDateTime.now().minusDays(1)), card(login, "1234", LocalDateTime.now())));
+
+        assertThat(plaidService.findDuplicateAccounts(userId)).isEmpty();
+    }
+
+    @Test
+    void retireDuplicateAccount_deactivatesIt_andRevokesItsLoginWhenNothingElseUsesIt() throws Exception {
+        PlaidItem login = item(userId);
+        BankAccount copy = card(login.getId(), "1234", LocalDateTime.now());
+        when(bankAccountRepository.findByItemIdAndIsActive(login.getId(), true)).thenReturn(List.of());
+        when(plaidItemRepository.findById(login.getId())).thenReturn(Optional.of(login));
+        when(plaidClient.itemRemove(any())).thenReturn(ok(new com.plaid.client.model.ItemRemoveResponse()));
+
+        plaidService.retireDuplicateAccount(copy);
+
+        assertThat(copy.getIsActive()).isFalse();
+        verify(bankAccountRepository).save(copy);
+        verify(plaidItemRepository).delete(login);
     }
 
     @Test
@@ -613,6 +708,16 @@ class PlaidServiceLinkingTest {
         item.setUserId(owner);
         item.setAccessToken("access");
         return item;
+    }
+
+    private BankAccount card(UUID itemId, String mask, LocalDateTime createdAt) {
+        BankAccount card = account(userId, itemId);
+        card.setInstitutionId("ins_56");
+        card.setAccountType("credit");
+        card.setAccountSubtype("credit card");
+        card.setMask(mask);
+        card.setCreatedAt(createdAt);
+        return card;
     }
 
     private BankAccount account(UUID owner, UUID itemId) {

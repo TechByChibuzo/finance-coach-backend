@@ -47,6 +47,10 @@ public class BankAccount {
     @Column(name = "account_subtype")
     private String accountSubtype;
 
+    // Last digits of the account number from Plaid; tells cards apart and spots one linked twice
+    @Column(name = "mask", length = 8)
+    private String mask;
+
     @Column(name = "current_balance")
     private BigDecimal currentBalance;
 

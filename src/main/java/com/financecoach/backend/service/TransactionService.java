@@ -215,6 +215,9 @@ public class TransactionService {
                     item.getId(), e.getMessage());
         }
 
+        // The refresh fills in account masks, which is how a card linked twice is recognised
+        removeDuplicateAccounts(item.getUserId());
+
         // Track metrics
         metricsService.recordTransactionsSynced(savedTransactions.size());
         long duration = System.currentTimeMillis() - startTime;
@@ -229,6 +232,19 @@ public class TransactionService {
                 item.getId(), savedTransactions.size(), changes.modified().size(), changes.removed().size());
 
         return savedTransactions;
+    }
+
+    /**
+     * Keeps the oldest connection of a card linked twice and drops the newer copy with the
+     * transactions it brought in, so spending isn't counted twice
+     */
+    void removeDuplicateAccounts(UUID userId) {
+        for (BankAccount duplicate : plaidService.findDuplicateAccounts(userId)) {
+            int removed = transactionRepository.deleteByAccountId(duplicate.getId());
+            plaidService.retireDuplicateAccount(duplicate);
+            logger.info("Removed account {} of user {}: already connected through another bank login ({} duplicate transactions)",
+                    duplicate.getId(), userId, removed);
+        }
     }
 
     /**

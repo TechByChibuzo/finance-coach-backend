@@ -5,6 +5,7 @@ import com.financecoach.backend.exception.BankAccountNotFoundException;
 import com.financecoach.backend.exception.FeatureNotAvailableException;
 import com.financecoach.backend.exception.PlaidIntegrationException;
 import com.financecoach.backend.exception.UnauthorizedAccessException;
+import com.financecoach.backend.exception.ValidationException;
 import com.plaid.client.model.*;
 import com.plaid.client.request.PlaidApi;
 import com.financecoach.backend.model.BankAccount;
@@ -24,10 +25,12 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 
@@ -200,6 +203,13 @@ public class PlaidService {
                 throw e;
             }
 
+            // Every account of this new login is already connected: don't keep a second link to them
+            if (newItem && savedAccounts.isEmpty() && !plaidAccounts.isEmpty()) {
+                revokeQuietly(accessToken);
+                plaidItemRepository.findByPlaidItemId(plaidItemId).ifPresent(plaidItemRepository::delete);
+                throw new ValidationException("These accounts are already connected.");
+            }
+
             savedAccounts.forEach(account -> metricsService.recordBankAccountConnected());
             int accountCount = savedAccounts.size();
 
@@ -240,6 +250,14 @@ public class PlaidService {
             bankAccount.setAccountType(account.getType().toString());
             bankAccount.setAccountSubtype(account.getSubtype() != null ?
                     account.getSubtype().toString() : null);
+            bankAccount.setMask(account.getMask());
+
+            // The same card linked again through a new bank login gets new Plaid IDs: keep the
+            // connection that already has its history instead of importing it all twice
+            if (duplicateOfActiveAccount(userId, bankAccount) != null) {
+                logger.info("Skipping account already connected through another bank login for user {}", userId);
+                continue;
+            }
 
             // Set balances
             if (account.getBalances() != null) {
@@ -411,6 +429,9 @@ public class PlaidService {
             if (balances.getIsoCurrencyCode() != null) {
                 account.setCurrencyCode(balances.getIsoCurrencyCode());
             }
+            if (plaidAccount.getMask() != null) {
+                account.setMask(plaidAccount.getMask()); // fills it in for accounts linked before it was stored
+            }
             bankAccountRepository.save(account);
         }
     }
@@ -548,6 +569,53 @@ public class PlaidService {
             throw new UnauthorizedAccessException("bank account");
         }
 
+        deactivate(account);
+    }
+
+    /**
+     * Active accounts that are the same card or account as an older active one, linked again
+     * through another bank login (same bank, type and last digits). Plaid gives each login its
+     * own account IDs, so these would otherwise count every transaction twice.
+     */
+    public List<BankAccount> findDuplicateAccounts(UUID userId) {
+        List<BankAccount> active = new ArrayList<>(bankAccountRepository.findByUserIdAndIsActive(userId, true));
+        active.sort(Comparator.comparing(BankAccount::getCreatedAt, Comparator.nullsFirst(Comparator.naturalOrder())));
+
+        List<BankAccount> duplicates = new ArrayList<>();
+        for (int i = 0; i < active.size(); i++) {
+            for (int j = 0; j < i; j++) {
+                if (sameAccount(active.get(j), active.get(i)) && !duplicates.contains(active.get(j))) {
+                    duplicates.add(active.get(i));
+                    break;
+                }
+            }
+        }
+        return duplicates;
+    }
+
+    /**
+     * Stop syncing a duplicate account (its transactions are the caller's to remove)
+     */
+    public void retireDuplicateAccount(BankAccount account) {
+        deactivate(account);
+    }
+
+    private BankAccount duplicateOfActiveAccount(UUID userId, BankAccount candidate) {
+        return bankAccountRepository.findByUserIdAndIsActive(userId, true).stream()
+                .filter(existing -> sameAccount(existing, candidate))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static boolean sameAccount(BankAccount a, BankAccount b) {
+        return a.getMask() != null && a.getMask().equals(b.getMask())
+                && a.getInstitutionId() != null && a.getInstitutionId().equals(b.getInstitutionId())
+                && Objects.equals(a.getAccountType(), b.getAccountType())
+                && Objects.equals(a.getAccountSubtype(), b.getAccountSubtype())
+                && !Objects.equals(a.getItemId(), b.getItemId());
+    }
+
+    private void deactivate(BankAccount account) {
         account.setIsActive(false);
         bankAccountRepository.save(account);
 
