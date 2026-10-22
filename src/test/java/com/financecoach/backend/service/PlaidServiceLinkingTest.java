@@ -391,6 +391,67 @@ class PlaidServiceLinkingTest {
                 .hasMessageContaining("Unable to fetch");
     }
 
+    // --- bank branding ---
+
+    @Test
+    void getItemsWithBranding_fetchesTheBanksLogoOnce_andReusesIt() throws Exception {
+        PlaidItem chase = item(userId);
+        chase.setInstitutionId("ins_3");
+        BankAccount card = new BankAccount();
+        card.setItemId(chase.getId());
+        when(plaidItemRepository.findAllById(any())).thenReturn(List.of(chase));
+        when(plaidClient.institutionsGetById(any())).thenReturn(ok(new InstitutionsGetByIdResponse()
+                .institution(new Institution().name("Chase").logo("iVBORw0KGgo=").primaryColor("#117aca"))));
+
+        Map<UUID, PlaidItem> first = plaidService.getItemsWithBranding(List.of(card, card));
+        plaidService.getItemsWithBranding(List.of(card));
+
+        ArgumentCaptor<com.plaid.client.model.InstitutionsGetByIdRequest> request =
+                ArgumentCaptor.forClass(com.plaid.client.model.InstitutionsGetByIdRequest.class);
+        verify(plaidClient, times(1)).institutionsGetById(request.capture());
+        assertThat(request.getValue().getOptions().getIncludeOptionalMetadata()).isTrue();
+        assertThat(first.get(chase.getId()).getInstitutionLogo()).isEqualTo("iVBORw0KGgo=");
+        assertThat(first.get(chase.getId()).getInstitutionColor()).isEqualTo("#117aca");
+        verify(plaidItemRepository).save(chase);
+    }
+
+    @Test
+    void getItemsWithBranding_bankWithoutALogo_isNotAskedAgain() throws Exception {
+        PlaidItem smallBank = item(userId);
+        smallBank.setInstitutionId("ins_999");
+        BankAccount account = new BankAccount();
+        account.setItemId(smallBank.getId());
+        when(plaidItemRepository.findAllById(any())).thenReturn(List.of(smallBank));
+        when(plaidClient.institutionsGetById(any())).thenReturn(ok(new InstitutionsGetByIdResponse()
+                .institution(new Institution().name("Small Credit Union"))));
+
+        plaidService.getItemsWithBranding(List.of(account));
+        plaidService.getItemsWithBranding(List.of(account));
+
+        verify(plaidClient, times(1)).institutionsGetById(any());
+        assertThat(smallBank.getInstitutionLogo()).isNull();
+        assertThat(smallBank.getInstitutionBrandingFetched()).isTrue();
+    }
+
+    @Test
+    void getItemsWithBranding_whenPlaidFails_returnsTheItemAndRetriesNextTime() throws Exception {
+        PlaidItem chase = item(userId);
+        chase.setInstitutionId("ins_3");
+        BankAccount card = new BankAccount();
+        card.setItemId(chase.getId());
+        when(plaidItemRepository.findAllById(any())).thenReturn(List.of(chase));
+        when(plaidClient.institutionsGetById(any()))
+                .thenReturn(error(500, "INTERNAL_SERVER_ERROR"))
+                .thenReturn(networkFailure());
+
+        assertThat(plaidService.getItemsWithBranding(List.of(card))).containsKey(chase.getId());
+        plaidService.getItemsWithBranding(List.of(card));
+
+        verify(plaidClient, times(2)).institutionsGetById(any());
+        assertThat(chase.getInstitutionBrandingFetched()).isNotEqualTo(Boolean.TRUE);
+        verify(plaidItemRepository, never()).save(any());
+    }
+
     // --- helpers ---
 
     private void stubExchange(String accessToken, String itemId) throws Exception {

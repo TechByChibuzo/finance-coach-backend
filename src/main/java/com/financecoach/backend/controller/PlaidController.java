@@ -5,6 +5,7 @@ import com.financecoach.backend.dto.plaid.BankAccountResponse;
 import com.financecoach.backend.dto.plaid.ExchangeTokenRequest;
 import com.financecoach.backend.dto.plaid.LinkTokenResponse;
 import com.financecoach.backend.model.BankAccount;
+import com.financecoach.backend.model.PlaidItem;
 import com.financecoach.backend.service.PlaidService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +15,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -69,9 +71,10 @@ public class PlaidController {
     public ResponseEntity<List<BankAccountResponse>> getAccounts() {
         UUID userId = getCurrentUserId();
         List<BankAccount> accounts = plaidService.getUserBankAccounts(userId);
+        Map<UUID, PlaidItem> items = plaidService.getItemsWithBranding(accounts);
 
         List<BankAccountResponse> response = accounts.stream()
-                .map(this::convertToResponse)
+                .map(account -> convertToResponse(account, items.get(account.getItemId())))
                 .collect(Collectors.toList());
 
         return ResponseEntity.ok(response);
@@ -95,7 +98,11 @@ public class PlaidController {
     }
 
     private BankAccountResponse convertToResponse(BankAccount account) {
-        return new BankAccountResponse(
+        return convertToResponse(account, null);
+    }
+
+    private BankAccountResponse convertToResponse(BankAccount account, PlaidItem item) {
+        BankAccountResponse response = new BankAccountResponse(
                 account.getId(),
                 account.getInstitutionName(),
                 account.getAccountName(),
@@ -106,5 +113,12 @@ public class PlaidController {
                 account.getLastSyncedAt(),
                 account.getIsActive()
         );
+        if (item != null) {
+            if (item.getInstitutionLogo() != null) {
+                response.setInstitutionLogo("data:image/png;base64," + item.getInstitutionLogo());
+            }
+            response.setInstitutionColor(item.getInstitutionColor());
+        }
+        return response;
     }
 }

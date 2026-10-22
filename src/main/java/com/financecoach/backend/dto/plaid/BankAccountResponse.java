@@ -18,6 +18,9 @@ public class BankAccountResponse {
     private String currencyCode;
     private LocalDateTime lastSyncedAt;
     private Boolean isActive;
+    // The bank's logo as a data URL, and its brand colour, when Plaid has them
+    private String institutionLogo;
+    private String institutionColor;
 
     public BankAccountResponse() {}
 

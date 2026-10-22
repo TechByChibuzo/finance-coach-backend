@@ -45,6 +45,16 @@ public class PlaidItem {
     @Column(name = "transactions_cursor", columnDefinition = "TEXT")
     private String transactionsCursor;
 
+    // The bank's logo (base64 PNG) and brand colour from Plaid, fetched once per item
+    @Column(name = "institution_logo", columnDefinition = "TEXT")
+    private String institutionLogo;
+
+    @Column(name = "institution_color", length = 16)
+    private String institutionColor;
+
+    @Column(name = "institution_branding_fetched")
+    private Boolean institutionBrandingFetched;
+
     // Whether transactions synced before logos were stored have had them filled in (null = not yet)
     @Column(name = "logos_backfilled")
     private Boolean logosBackfilled;

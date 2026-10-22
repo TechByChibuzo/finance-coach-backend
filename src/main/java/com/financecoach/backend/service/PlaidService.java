@@ -458,6 +458,50 @@ public class PlaidService {
     }
 
     /**
+     * The items behind these accounts, with the bank's logo and colour filled in. Each item asks
+     * Plaid once (also when Plaid has no logo); a failed lookup is retried next time.
+     */
+    public Map<UUID, PlaidItem> getItemsWithBranding(List<BankAccount> accounts) {
+        Set<UUID> itemIds = new LinkedHashSet<>();
+        accounts.forEach(account -> {
+            if (account.getItemId() != null) {
+                itemIds.add(account.getItemId());
+            }
+        });
+
+        Map<UUID, PlaidItem> items = new LinkedHashMap<>();
+        for (PlaidItem item : plaidItemRepository.findAllById(itemIds)) {
+            if (!Boolean.TRUE.equals(item.getInstitutionBrandingFetched()) && item.getInstitutionId() != null) {
+                fetchBranding(item);
+            }
+            items.put(item.getId(), item);
+        }
+        return items;
+    }
+
+    private void fetchBranding(PlaidItem item) {
+        try {
+            Response<InstitutionsGetByIdResponse> response = plaidClient.institutionsGetById(
+                    new InstitutionsGetByIdRequest()
+                            .institutionId(item.getInstitutionId())
+                            .countryCodes(List.of(CountryCode.US))
+                            .options(new InstitutionsGetByIdRequestOptions().includeOptionalMetadata(true)))
+                    .execute();
+            if (!response.isSuccessful() || response.body() == null) {
+                logger.warn("Couldn't fetch branding for institution {} (HTTP {})", item.getInstitutionId(), response.code());
+                return;
+            }
+            Institution institution = response.body().getInstitution();
+            item.setInstitutionLogo(institution.getLogo());
+            item.setInstitutionColor(institution.getPrimaryColor());
+            item.setInstitutionBrandingFetched(true);
+            plaidItemRepository.save(item);
+        } catch (Exception e) {
+            logger.warn("Couldn't fetch branding for institution {}: {}", item.getInstitutionId(), e.getMessage());
+        }
+    }
+
+    /**
      * Get all bank accounts for a user
      */
     public List<BankAccount> getUserBankAccounts(UUID userId) {
