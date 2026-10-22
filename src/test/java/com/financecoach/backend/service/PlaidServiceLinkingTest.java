@@ -69,6 +69,7 @@ class PlaidServiceLinkingTest {
     @Mock private UserRepository userRepository;
     @Mock private PlatformTransactionManager transactionManager;
     @Mock private MetricsService metricsService;
+    @Mock private InstitutionIconFetcher iconFetcher;
 
     private PlaidService plaidService;
     private UUID userId;
@@ -78,6 +79,7 @@ class PlaidServiceLinkingTest {
         plaidService = new PlaidService(plaidClient, bankAccountRepository, plaidItemRepository, subscriptionService,
                 userRepository, new TransactionTemplate(transactionManager));
         ReflectionTestUtils.setField(plaidService, "metricsService", metricsService);
+        ReflectionTestUtils.setField(plaidService, "iconFetcher", iconFetcher);
         userId = UUID.randomUUID();
         // Unlimited bank connections unless a test says otherwise
         org.mockito.Mockito.lenient().when(subscriptionService.getLimit(any(), org.mockito.ArgumentMatchers.eq("bank_account")))
@@ -476,6 +478,67 @@ class PlaidServiceLinkingTest {
         verify(plaidClient, times(1)).institutionsGetById(any());
         assertThat(smallBank.getInstitutionLogo()).isNull();
         assertThat(smallBank.getInstitutionBrandingFetched()).isTrue();
+    }
+
+    @Test
+    void getItemsWithBranding_bankWithoutAPlaidLogo_usesItsSiteIcon() throws Exception {
+        PlaidItem chase = item(userId);
+        chase.setInstitutionId("ins_56");
+        BankAccount card = new BankAccount();
+        card.setItemId(chase.getId());
+        when(plaidItemRepository.findAllById(any())).thenReturn(List.of(chase));
+        when(plaidClient.institutionsGetById(any())).thenReturn(ok(new InstitutionsGetByIdResponse()
+                .institution(new Institution().name("Chase").primaryColor("#095aa6").url("https://www.chase.com"))));
+        when(iconFetcher.fetchIcon("https://www.chase.com")).thenReturn("data:image/jpeg;base64,/9j/4A==");
+
+        plaidService.getItemsWithBranding(List.of(card));
+        plaidService.getItemsWithBranding(List.of(card));
+
+        verify(plaidClient, times(1)).institutionsGetById(any());
+        verify(iconFetcher, times(1)).fetchIcon(any());
+        assertThat(chase.getInstitutionLogo()).isEqualTo("data:image/jpeg;base64,/9j/4A==");
+        assertThat(chase.getInstitutionColor()).isEqualTo("#095aa6");
+        assertThat(chase.getInstitutionIconFetched()).isTrue();
+    }
+
+    @Test
+    void getItemsWithBranding_bankBrandedBeforeSiteIcons_isLookedUpOnceMore() throws Exception {
+        PlaidItem chase = item(userId);
+        chase.setInstitutionId("ins_56");
+        chase.setInstitutionColor("#095aa6");
+        chase.setInstitutionBrandingFetched(true);
+        BankAccount card = new BankAccount();
+        card.setItemId(chase.getId());
+        when(plaidItemRepository.findAllById(any())).thenReturn(List.of(chase));
+        when(plaidClient.institutionsGetById(any())).thenReturn(ok(new InstitutionsGetByIdResponse()
+                .institution(new Institution().name("Chase").primaryColor("#095aa6").url("https://www.chase.com"))));
+        when(iconFetcher.fetchIcon(any())).thenReturn(null); // the site has no icon either
+
+        plaidService.getItemsWithBranding(List.of(card));
+        plaidService.getItemsWithBranding(List.of(card));
+
+        verify(plaidClient, times(1)).institutionsGetById(any());
+        assertThat(chase.getInstitutionLogo()).isNull();
+        assertThat(chase.getInstitutionIconFetched()).isTrue();
+    }
+
+    @Test
+    void getItemsWithBranding_whenTheIconLookupFails_waitsAndTriesAgain() throws Exception {
+        PlaidItem chase = item(userId);
+        chase.setInstitutionId("ins_56");
+        BankAccount card = new BankAccount();
+        card.setItemId(chase.getId());
+        when(plaidItemRepository.findAllById(any())).thenReturn(List.of(chase));
+        when(plaidClient.institutionsGetById(any())).thenReturn(ok(new InstitutionsGetByIdResponse()
+                .institution(new Institution().name("Chase").url("https://www.chase.com"))));
+        when(iconFetcher.fetchIcon(any())).thenThrow(new java.io.IOException("Icon lookup returned HTTP 503"));
+
+        plaidService.getItemsWithBranding(List.of(card));
+        plaidService.getItemsWithBranding(List.of(card));
+
+        verify(iconFetcher, times(1)).fetchIcon(any());
+        assertThat(chase.getInstitutionBrandingFetched()).isNotEqualTo(Boolean.TRUE);
+        verify(plaidItemRepository, never()).save(any());
     }
 
     @Test

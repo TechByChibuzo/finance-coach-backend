@@ -114,8 +114,10 @@ public class PlaidController {
                 account.getIsActive()
         );
         if (item != null) {
-            if (item.getInstitutionLogo() != null) {
-                response.setInstitutionLogo("data:image/png;base64," + item.getInstitutionLogo());
+            String logo = item.getInstitutionLogo();
+            if (logo != null) {
+                // Site icons are stored as data URLs already; Plaid's logos are bare base64 PNGs
+                response.setInstitutionLogo(logo.startsWith("data:") ? logo : "data:image/png;base64," + logo);
             }
             response.setInstitutionColor(item.getInstitutionColor());
         }

@@ -46,6 +46,8 @@ public class PlaidService {
     private final TransactionTemplate transactionTemplate;
     @Autowired
     private MetricsService metricsService;
+    @Autowired
+    private InstitutionIconFetcher iconFetcher;
 
     @Autowired
     public PlaidService(PlaidApi plaidClient,
@@ -461,7 +463,8 @@ public class PlaidService {
 
     /**
      * The items behind these accounts, with the bank's logo and colour filled in. Each item asks
-     * Plaid once (also when Plaid has no logo); a failed lookup is retried next time.
+     * Plaid once (also when Plaid has no logo, then the bank's site icon is used); a failed lookup
+     * is retried next time.
      */
     public Map<UUID, PlaidItem> getItemsWithBranding(List<BankAccount> accounts) {
         Set<UUID> itemIds = new LinkedHashSet<>();
@@ -473,8 +476,10 @@ public class PlaidService {
 
         Map<UUID, PlaidItem> items = new LinkedHashMap<>();
         for (PlaidItem item : plaidItemRepository.findAllById(itemIds)) {
-            if (!Boolean.TRUE.equals(item.getInstitutionBrandingFetched()) && item.getInstitutionId() != null
-                    && !inBrandingCooldown(item.getId())) {
+            // Banks branded before site icons were used still get one icon lookup
+            boolean needsBranding = !Boolean.TRUE.equals(item.getInstitutionBrandingFetched())
+                    || (item.getInstitutionLogo() == null && !Boolean.TRUE.equals(item.getInstitutionIconFetched()));
+            if (needsBranding && item.getInstitutionId() != null && !inBrandingCooldown(item.getId())) {
                 fetchBranding(item);
             }
             items.put(item.getId(), item);
@@ -495,6 +500,7 @@ public class PlaidService {
                 if (response.code() >= 400 && response.code() < 500 && response.code() != 429) {
                     // Plaid won't have it later either (e.g. unknown institution): stop asking
                     item.setInstitutionBrandingFetched(true);
+                    item.setInstitutionIconFetched(true);
                     plaidItemRepository.save(item);
                 } else {
                     brandingFailedAt.put(item.getId(), System.currentTimeMillis());
@@ -502,9 +508,14 @@ public class PlaidService {
                 return;
             }
             Institution institution = response.body().getInstitution();
-            item.setInstitutionLogo(institution.getLogo());
+            String logo = institution.getLogo();
+            if (logo == null && institution.getUrl() != null) {
+                logo = iconFetcher.fetchIcon(institution.getUrl());
+            }
+            item.setInstitutionLogo(logo);
             item.setInstitutionColor(institution.getPrimaryColor());
             item.setInstitutionBrandingFetched(true);
+            item.setInstitutionIconFetched(true);
             plaidItemRepository.save(item);
         } catch (Exception e) {
             logger.warn("Couldn't fetch branding for institution {}: {}", item.getInstitutionId(), e.getMessage());
