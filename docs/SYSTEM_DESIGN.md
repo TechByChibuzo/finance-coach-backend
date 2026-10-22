@@ -146,7 +146,7 @@ HTTP ─► AuthRateLimitFilter ─► JwtAuthenticationFilter ─► Controller
 | `export_reports` | — | unlimited | unlimited |
 
 ### 3.7 Export
-- **`ExportService`** + **`S3Service`**: builds a CSV of the user's transactions, uploads it to the bucket in `S3_EXPORT_BUCKET` under `exports/{userId}/…`, and returns a 15-minute presigned URL. Paid plans only.
+- **`ExportService`** + **`S3Service`**: builds a CSV of the user's transactions, uploads it to the private bucket in `S3_EXPORT_BUCKET` under `exports/{userId}/…`, and returns a 15-minute presigned URL; a lifecycle rule deletes exports after 7 days. Paid plans only. See §4.6.
 
 ### 3.7a Email
 - **`EmailService`** (SendGrid): password reset, welcome and the weekly summary share one evergreen HTML layout; user-supplied text (names, merchants) is HTML-escaped.
@@ -273,6 +273,27 @@ sequenceDiagram
     S->>DB: mark prior row CANCELLED, INSERT user_subscriptions (ACTIVE, period end from Stripe)
     ST->>S: later: subscription.updated / invoice.* keep status and period end in sync
 ```
+
+### 4.6 Exporting transactions (S3 presigned URL)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant E as ExportController/Service
+    participant DB as Postgres
+    participant S3 as S3 (private bucket)
+    B->>E: GET /api/export/transactions
+    E->>E: @RequiresFeature export_reports (FREE plan gets 403 with an upgrade message)
+    E->>DB: the user's transactions (split originals left out, their parts included)
+    E->>E: build CSV: Date, Merchant, Category, Amount, Currency
+    E->>S3: PutObject exports/{userId}/transactions-{date}-{random}.csv (task role)
+    E->>S3: presign GetObject for that key, valid 15 minutes
+    E-->>B: {downloadUrl, expiresIn}
+    B->>S3: GET downloadUrl (signature checked, file streamed directly)
+    Note over S3: lifecycle rule deletes exports after 7 days
+```
+
+The bucket allows no public access. The link grants reading that one object until it expires, and the random part of the name keeps it unguessable; the browser never holds AWS credentials and the download doesn't pass through the API.
 
 ---
 
