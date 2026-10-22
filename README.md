@@ -275,11 +275,11 @@ java -jar target/*.jar
 |---|---|---|
 | Auth | `/api/auth` | `POST /register`, `POST /login`, `POST /forgot-password`, `POST /reset-password` |
 | Users | `/api/users` | `GET /me`, `DELETE /me` |
-| Plaid | `/api/plaid` | `POST /create-link-token`, `POST /exchange-token`, `GET /accounts`, `DELETE /accounts/{id}` |
-| Transactions | `/api/transactions` | `POST /sync`, `POST /sync/{accountId}`, `GET /` |
+| Plaid | `/api/plaid` | `POST /create-link-token`, `POST /exchange-token`, `GET /accounts`, `DELETE /accounts/{id}`, `POST /items/{itemId}/update-link-token` |
+| Transactions | `/api/transactions` | `POST /sync`, `GET /`, `GET /search`, `PATCH /{id}`, `PATCH /{id}/category`, `PUT /{id}/split`, `POST /import` |
 | AI Coach | `/api/ai-coach` | `POST /chat`, `DELETE /chat/{sessionId}`, `GET /weekly-summary`, `GET /monthly-report` |
 | Anomalies | `/api/anomalies` | `POST /detect`, `GET /unreviewed`, `GET /count`, `PUT /{id}/review` |
-| Analytics | `/api/analytics` | `GET /spending-by-category`, `GET /monthly-summary`, `GET /compare-months`, `GET /spending-trend` |
+| Analytics | `/api/analytics` | `GET /spending-by-category`, `GET /monthly-summary`, `GET /monthly-report`, `GET /compare-months`, `GET /spending-trend` |
 | Budgets | `/api/budgets` | `POST /`, `GET /current`, `GET /recommendations`, `POST /copy-previous`, `GET /exceeded` |
 | Investments | `/api/investments` | `POST /sync`, `GET /portfolio`, `GET /holdings/{accountId}`, `GET /allocation`, `GET /history` |
 | Net Worth | `/api/net-worth` | `GET /current`, `GET /history`, CRUD `/assets`, CRUD `/liabilities` |

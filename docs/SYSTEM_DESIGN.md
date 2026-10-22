@@ -106,7 +106,10 @@ HTTP ─► AuthRateLimitFilter ─► JwtAuthenticationFilter ─► Controller
 - **`TransactionImportService`** (`POST /api/transactions/import`): rows parsed in the browser from a bank's CSV export. Each row gets a deterministic ID from its content, account name and user, so re-imports skip duplicates; imported rows use a stable account ID derived from the account name (no Plaid bank account). **`TransactionCategorizer`** asks Claude for categories in batches of 150, with keyword rules as the fallback. Each import has a batch ID for undo.
 - **`CategoryRuleService`**: users can change a transaction's category (marked `category_overridden`, so Plaid updates keep it) and save a rule for the merchant, applied to past transactions and to new ones from syncs and imports.
 - **`RecurringChargeService`** (`GET /api/recurring`): groups the last 13 months of outgoing transactions by normalized merchant and keeps steady monthly, quarterly or yearly charges, with the next expected date and price changes.
-- **Logos**: transactions keep Plaid's merchant `logo_url` and website (older ones are back-filled once per item); `/api/plaid/accounts` returns each bank's logo and brand colour from Plaid's institution metadata, fetched once per item.
+- **Logos**: transactions keep Plaid's merchant `logo_url` and website (older ones are back-filled once per item); `/api/plaid/accounts` returns each bank's logo and brand colour from Plaid's institution metadata, fetched once per item. When Plaid has no logo (common for large banks), `InstitutionIconFetcher` looks up the bank's site icon by domain, server side, and stores it as a data URL.
+- **`TransactionEditService`**: notes, hiding a transaction from totals, and splitting one purchase across categories. A split keeps the original (so Plaid updates still find it) with `is_split` set, and each part is a transaction of its own (`split_from_id`), so totals by category count the parts unchanged. `TransactionFilters.isExcluded` leaves hidden transactions and split originals out of every total and out of the coach's embeddings. A Plaid change to a split transaction's amount undoes the split; removing it removes the parts.
+- **Same card linked twice**: each account stores its mask (last digits). Linking skips an account matching an active one at the same bank, type and mask on another Plaid item; after each sync, `removeDuplicateAccounts` keeps the older connection and removes a newer copy with its transactions.
+- **Reconnecting a bank**: `ITEM_LOGIN_REQUIRED`, `PENDING_EXPIRATION` or `PENDING_DISCONNECT` from `/transactions/sync` marks the item `needs_reconnect` and the user's other banks keep syncing; the scheduler skips it. `POST /api/plaid/items/{id}/update-link-token` opens Plaid Link in update mode on the same item, and a successful sync (or `POST .../reconnected`) clears the flag.
 
 ### 3.3 Analytics, budgets, anomalies
 - **`AnalyticsService`**: in-memory aggregation over `findByUserIdAndDateBetween`, using Plaid's sign convention (**positive = money out, negative = money in**). Transfers and credit-card / loan payments are excluded from spending and income totals.
@@ -460,11 +463,11 @@ flowchart LR
 |---|---|---|
 | `/api/auth` | public | `POST register`, `POST login`, `POST forgot-password`, `POST reset-password`, `GET validate-reset-token/{token}` |
 | `/api/users` | JWT | `GET health` (public), `GET me`, `DELETE me` |
-| `/api/plaid` | JWT | `POST create-link-token`, `POST exchange-token`, `GET accounts`, `DELETE accounts/{id}` |
-| `/api/transactions` | JWT | `POST sync`, `POST sync/{accountId}`, `GET ?startDate&endDate`, `GET recent?limit`, `GET search?q`, `GET category/{category}`, `PATCH {id}/category`, `POST import`, `DELETE imports/{batchId}` |
+| `/api/plaid` | JWT | `POST create-link-token`, `POST exchange-token`, `GET accounts`, `DELETE accounts/{id}`, `POST items/{itemId}/update-link-token`, `POST items/{itemId}/reconnected` |
+| `/api/transactions` | JWT | `POST sync`, `POST sync/{accountId}`, `GET ?startDate&endDate`, `GET recent?limit`, `GET search?q`, `GET category/{category}`, `PATCH {id}/category`, `PATCH {id}` (note, hidden), `GET/PUT/DELETE {id}/split`, `POST import`, `DELETE imports/{batchId}` |
 | `/api/category-rules` | JWT | `GET /`, `DELETE {id}` |
 | `/api/recurring` | JWT | `GET /` (bills and subscriptions found in the last 13 months) |
-| `/api/analytics` | JWT | `spending-by-category`, `total-spending`, `total-income`, `top-merchants`, `spending-trend`, `monthly-summary`, `compare-months` |
+| `/api/analytics` | JWT | `spending-by-category`, `total-spending`, `total-income`, `top-merchants`, `spending-trend`, `monthly-summary`, `monthly-report?months`, `compare-months` |
 | `/api/budgets` | JWT | `POST /`, `GET current`, `GET ?month`, `GET progress`, `DELETE {id}`, `GET recommendations`, `GET exceeded`, `GET alerts`, `POST refresh`, `POST copy-previous` |
 | `/api/anomalies` | JWT | `POST detect`, `GET /`, `GET unreviewed`, `GET count`, `PUT {id}/review` |
 | `/api/ai-coach` | JWT | `POST chat`, `GET chat/{sessionId}` (history), `DELETE chat/{sessionId}`, `GET weekly-summary`, `GET monthly-report`, `GET analyze-category/{c}`, `POST savings-recommendations` |
