@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.Collection;
@@ -27,6 +28,15 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     Optional<Transaction> findByPlaidTransactionId(String plaidTransactionId);
 
     boolean existsByPlaidTransactionId(String plaidTransactionId);
+
+    // Which of these transaction IDs are already stored (for skipping duplicates on import)
+    @Query("SELECT t.plaidTransactionId FROM Transaction t WHERE t.plaidTransactionId IN :ids")
+    List<String> findExistingPlaidTransactionIds(@Param("ids") Collection<String> ids);
+
+    @Transactional
+    @Modifying
+    @Query("DELETE FROM Transaction t WHERE t.userId = :userId AND t.importBatchId = :batchId")
+    int deleteImportBatch(@Param("userId") UUID userId, @Param("batchId") UUID batchId);
 
     // Transactions on these accounts that have no embedding yet (e.g. their batch failed), newest first
     @Query("SELECT t FROM Transaction t WHERE t.accountId IN :accountIds AND NOT EXISTS "

@@ -1,9 +1,13 @@
 // src/main/java/com/financecoach/backend/controller/TransactionController.java
 package com.financecoach.backend.controller;
 
+import com.financecoach.backend.dto.imports.TransactionImportRequest;
+import com.financecoach.backend.dto.imports.TransactionImportResponse;
 import com.financecoach.backend.dto.plaid.TransactionResponse;
 import com.financecoach.backend.model.Transaction;
+import com.financecoach.backend.service.TransactionImportService;
 import com.financecoach.backend.service.TransactionService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
@@ -13,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -21,10 +26,32 @@ import java.util.stream.Collectors;
 public class TransactionController {
 
     private final TransactionService transactionService;
+    private final TransactionImportService transactionImportService;
 
     @Autowired
-    public TransactionController(TransactionService transactionService) {
+    public TransactionController(TransactionService transactionService,
+                                 TransactionImportService transactionImportService) {
         this.transactionService = transactionService;
+        this.transactionImportService = transactionImportService;
+    }
+
+    /**
+     * Import transactions from a bank's CSV export (parsed in the browser)
+     * POST /api/transactions/import
+     */
+    @PostMapping("/import")
+    public ResponseEntity<TransactionImportResponse> importTransactions(
+            @Valid @RequestBody TransactionImportRequest request) {
+        return ResponseEntity.ok(transactionImportService.importTransactions(getCurrentUserId(), request));
+    }
+
+    /**
+     * Undo an import, removing the transactions it added
+     * DELETE /api/transactions/imports/{batchId}
+     */
+    @DeleteMapping("/imports/{batchId}")
+    public ResponseEntity<Map<String, Integer>> undoImport(@PathVariable UUID batchId) {
+        return ResponseEntity.ok(Map.of("deleted", transactionImportService.undoImport(getCurrentUserId(), batchId)));
     }
 
     /**
@@ -101,7 +128,7 @@ public class TransactionController {
     }
 
     private TransactionResponse convertToResponse(Transaction transaction) {
-        return new TransactionResponse(
+        TransactionResponse response = new TransactionResponse(
                 transaction.getId(),
                 transaction.getAccountId(),
                 transaction.getDate(),
@@ -113,5 +140,7 @@ public class TransactionController {
                 transaction.getPending(),
                 transaction.getCurrencyCode()
         );
+        response.setImportAccountName(transaction.getImportAccountName());
+        return response;
     }
 }

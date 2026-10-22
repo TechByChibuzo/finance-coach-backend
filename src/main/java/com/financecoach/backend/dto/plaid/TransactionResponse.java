@@ -18,6 +18,8 @@ public class TransactionResponse {
     private String subcategory;
     private Boolean pending;
     private String currencyCode;
+    // Name the user gave the account when importing a CSV; null for bank-synced transactions
+    private String importAccountName;
 
     public TransactionResponse() {}
 

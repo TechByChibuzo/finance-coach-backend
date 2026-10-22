@@ -57,6 +57,13 @@ public class Transaction {
     @Column(name = "currency_code")
     private String currencyCode = "USD";
 
+    // Set on transactions imported from a CSV file; null for bank-synced ones
+    @Column(name = "import_batch_id")
+    private UUID importBatchId;
+
+    @Column(name = "import_account_name")
+    private String importAccountName;
+
     @Column(name = "location_address")
     private String locationAddress;
 
