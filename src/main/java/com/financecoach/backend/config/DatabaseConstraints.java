@@ -7,7 +7,6 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Constraints Hibernate's ddl-auto can't express. Runs at startup, after the tables exist,
@@ -18,8 +17,14 @@ import org.springframework.transaction.annotation.Transactional;
  * embedding written in the background for a transaction that's being deleted fails instead of
  * outliving it.
  *
+ * spending_anomalies.user_id references users.id with ON DELETE CASCADE: anomaly detection runs
+ * on a schedule, and a result saved while that user's account is being deleted fails instead of
+ * leaving their spending figures behind.
+ *
  * usage_tracking has a unique index on (user_id, feature_name, period_start), which the atomic
  * usage reservation needs.
+ *
+ * Each step runs on its own (not in one transaction), so one failing doesn't abort the others.
  */
 @Component
 @Order(0)
@@ -29,6 +34,7 @@ public class DatabaseConstraints implements ApplicationRunner {
 
     static final String EMBEDDING_FK = "fk_transaction_embeddings_transaction";
     static final String USAGE_UNIQUE_INDEX = "uk_usage_tracking_user_feature_period";
+    static final String ANOMALY_USER_FK = "fk_spending_anomalies_user";
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -37,7 +43,6 @@ public class DatabaseConstraints implements ApplicationRunner {
     }
 
     @Override
-    @Transactional
     public void run(ApplicationArguments args) {
         try {
             addEmbeddingForeignKey();
@@ -50,6 +55,28 @@ public class DatabaseConstraints implements ApplicationRunner {
         } catch (Exception e) {
             logger.error("Could not add {}: {}", USAGE_UNIQUE_INDEX, e.getMessage());
         }
+        try {
+            addAnomalyUserForeignKey();
+        } catch (Exception e) {
+            logger.error("Could not add {}: {}", ANOMALY_USER_FK, e.getMessage());
+        }
+    }
+
+    private void addAnomalyUserForeignKey() {
+        Integer existing = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM pg_constraint WHERE conname = ?", Integer.class, ANOMALY_USER_FK);
+        if (existing != null && existing > 0) {
+            return;
+        }
+
+        // Anomalies of users that no longer exist would block the constraint (and shouldn't be kept)
+        int orphans = jdbcTemplate.update(
+                "DELETE FROM spending_anomalies a WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = a.user_id)");
+
+        jdbcTemplate.execute("ALTER TABLE spending_anomalies ADD CONSTRAINT " + ANOMALY_USER_FK
+                + " FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE");
+
+        logger.info("Added {} (removed {} anomalies of deleted users)", ANOMALY_USER_FK, orphans);
     }
 
     /**

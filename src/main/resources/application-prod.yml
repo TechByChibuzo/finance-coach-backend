@@ -159,6 +159,11 @@ logging:
     org.springframework.web: WARN
     org.springframework.security: WARN
     org.hibernate: WARN
+    # The base config logs every SQL statement and bound value for local debugging; more specific
+    # loggers win over org.hibernate, so turn them off here explicitly (they'd log users' data)
+    org.hibernate.SQL: WARN
+    org.hibernate.orm.jdbc.bind: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
     com.plaid: INFO
 
   pattern:

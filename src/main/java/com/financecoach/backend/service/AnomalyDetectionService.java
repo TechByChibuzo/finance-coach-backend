@@ -62,7 +62,7 @@ public class AnomalyDetectionService {
                 checked++;
             } catch (Exception e) {
                 failed++;
-                logger.error("Anomaly detection failed for user {}", userId, e);
+                logger.error("Anomaly detection failed for user {}: {}", userId, e.getClass().getSimpleName());
             }
         }
         logger.info("Scheduled anomaly detection finished - users checked: {}, failed: {}", checked, failed);
@@ -132,7 +132,8 @@ public class AnomalyDetectionService {
             double zScoreDouble = zScore.doubleValue();
 
             // ADD THIS DEBUG LOG
-            logger.info("Category: {} | Current: {} | Mean: {} | StdDev: {} | ZScore: {} | Months of history: {}",
+            // Spending figures stay at debug level: they are users' financial data
+            logger.debug("Category: {} | Current: {} | Mean: {} | StdDev: {} | ZScore: {} | Months of history: {}",
                     category, currentSpend, mean, stdDev, zScore, monthlySpends.size());
 
             // Only flag if above threshold and it's higher than usual (not lower)
@@ -163,9 +164,8 @@ public class AnomalyDetectionService {
                     );
                     anomalies.add(anomalyRepository.save(anomaly));
 
-                    logger.info("Anomaly detected for user {} in category {}: " +
-                                    "current=${} avg=${} z-score={} severity={}",
-                            userId, category, currentSpend, mean, zScore, severity);
+                    logger.info("Anomaly detected for user {} in category {} (severity {})",
+                            userId, category, severity);
                 }
             }
         }
