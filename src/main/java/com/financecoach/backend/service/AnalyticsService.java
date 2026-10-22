@@ -1,5 +1,6 @@
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.dto.MonthlyReport;
 import com.financecoach.backend.model.Transaction;
 import com.financecoach.backend.repository.TransactionRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -8,6 +9,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -19,6 +21,38 @@ public class AnalyticsService {
     @Autowired
     public AnalyticsService(TransactionRepository transactionRepository) {
         this.transactionRepository = transactionRepository;
+    }
+
+    /**
+     * Income, spending and spending by category for each of the last few months (this month
+     * included, so far), oldest first. Months without transactions are included as zero.
+     */
+    public List<MonthlyReport> getMonthlyReport(UUID userId, int months, LocalDate today) {
+        int count = Math.min(Math.max(months, 1), 24);
+        YearMonth last = YearMonth.from(today);
+        YearMonth first = last.minusMonths(count - 1L);
+
+        Map<YearMonth, List<Transaction>> byMonth = transactionRepository
+                .findByUserIdAndDateBetween(userId, first.atDay(1), last.atEndOfMonth()).stream()
+                .collect(Collectors.groupingBy(t -> YearMonth.from(t.getDate())));
+
+        List<MonthlyReport> report = new ArrayList<>();
+        for (YearMonth month = first; !month.isAfter(last); month = month.plusMonths(1)) {
+            List<Transaction> transactions = byMonth.getOrDefault(month, List.of());
+            BigDecimal income = transactions.stream().filter(TransactionFilters::isIncome)
+                    .map(t -> t.getAmount().negate()).reduce(BigDecimal.ZERO, BigDecimal::add);
+            Map<String, BigDecimal> byCategory = transactions.stream().filter(TransactionFilters::isSpending)
+                    .collect(Collectors.groupingBy(t -> t.getCategory() != null ? t.getCategory() : "OTHER",
+                            Collectors.reducing(BigDecimal.ZERO, Transaction::getAmount, BigDecimal::add)));
+            BigDecimal spending = byCategory.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            Map<String, BigDecimal> largestFirst = new LinkedHashMap<>();
+            byCategory.entrySet().stream()
+                    .sorted(Map.Entry.<String, BigDecimal>comparingByValue().reversed())
+                    .forEach(e -> largestFirst.put(e.getKey(), e.getValue()));
+            report.add(new MonthlyReport(month.toString(), income, spending, income.subtract(spending), largestFirst));
+        }
+        return report;
     }
 
     /**

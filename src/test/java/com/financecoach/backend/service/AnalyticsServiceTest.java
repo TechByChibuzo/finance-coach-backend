@@ -99,6 +99,55 @@ class AnalyticsServiceTest {
                 .isEqualByComparingTo("40.00");
     }
 
+    // --- monthly report ---
+
+    @Test
+    void getMonthlyReport_countsIncomeAndSpendingPerMonth_leavingOutWhatDoesntCount() {
+        Transaction groceries = expense("FOOD_AND_DRINK", 120.00);
+        groceries.setDate(LocalDate.of(2026, 9, 3));
+        Transaction rent = expense("RENT_AND_UTILITIES", 1500.00);
+        rent.setDate(LocalDate.of(2026, 9, 1));
+        Transaction pay = income(4000.00);
+        pay.setDate(LocalDate.of(2026, 9, 15));
+        Transaction hidden = expense("TRAVEL", 900.00);
+        hidden.setDate(LocalDate.of(2026, 9, 20));
+        hidden.setHidden(true);
+        Transaction splitOriginal = expense("GENERAL_MERCHANDISE", 150.00);
+        splitOriginal.setDate(LocalDate.of(2026, 10, 2));
+        splitOriginal.setSplit(true);
+        Transaction splitPart = expense("FOOD_AND_DRINK", 150.00);
+        splitPart.setDate(LocalDate.of(2026, 10, 2));
+        Transaction transfer = expense("TRANSFER_OUT", 300.00);
+        transfer.setDate(LocalDate.of(2026, 10, 5));
+        when(transactionRepository.findByUserIdAndDateBetween(userId, LocalDate.of(2026, 8, 1), LocalDate.of(2026, 10, 31)))
+                .thenReturn(List.of(groceries, rent, pay, hidden, splitOriginal, splitPart, transfer));
+
+        var report = analyticsService.getMonthlyReport(userId, 3, LocalDate.of(2026, 10, 21));
+
+        assertThat(report).extracting(r -> r.month()).containsExactly("2026-08", "2026-09", "2026-10");
+        assertThat(report.get(0).spending()).isEqualByComparingTo("0");
+        assertThat(report.get(0).spendingByCategory()).isEmpty();
+
+        var september = report.get(1);
+        assertThat(september.income()).isEqualByComparingTo("4000.00");
+        assertThat(september.spending()).isEqualByComparingTo("1620.00");
+        assertThat(september.net()).isEqualByComparingTo("2380.00");
+        assertThat(september.spendingByCategory().keySet()).containsExactly("RENT_AND_UTILITIES", "FOOD_AND_DRINK");
+
+        var october = report.get(2);
+        assertThat(october.spending()).isEqualByComparingTo("150.00");
+        assertThat(october.spendingByCategory()).containsOnlyKeys("FOOD_AND_DRINK");
+        assertThat(october.net()).isEqualByComparingTo("-150.00");
+    }
+
+    @Test
+    void getMonthlyReport_keepsTheRangeBetweenOneAndTwentyFourMonths() {
+        when(transactionRepository.findByUserIdAndDateBetween(eq(userId), any(), any())).thenReturn(List.of());
+
+        assertThat(analyticsService.getMonthlyReport(userId, 0, LocalDate.of(2026, 10, 21))).hasSize(1);
+        assertThat(analyticsService.getMonthlyReport(userId, 100, LocalDate.of(2026, 10, 21))).hasSize(24);
+    }
+
     // --- helpers ---
 
     private Transaction expense(String category, double amount) {

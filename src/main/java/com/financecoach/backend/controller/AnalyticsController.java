@@ -1,6 +1,7 @@
 // src/main/java/com/financecoach/backend/controller/AnalyticsController.java
 package com.financecoach.backend.controller;
 
+import com.financecoach.backend.dto.MonthlyReport;
 import com.financecoach.backend.service.AnalyticsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -106,6 +108,15 @@ public class AnalyticsController {
         LocalDate targetMonth = month != null ? month : LocalDate.now();
         Map<String, Object> summary = analyticsService.getMonthlySummary(userId, targetMonth);
         return ResponseEntity.ok(summary);
+    }
+
+    /**
+     * Income, spending and spending by category per month, oldest first
+     * GET /api/analytics/monthly-report?months=12
+     */
+    @GetMapping("/monthly-report")
+    public ResponseEntity<List<MonthlyReport>> getMonthlyReport(@RequestParam(defaultValue = "12") int months) {
+        return ResponseEntity.ok(analyticsService.getMonthlyReport(getCurrentUserId(), months, LocalDate.now()));
     }
 
     /**
