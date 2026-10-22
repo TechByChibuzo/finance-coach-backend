@@ -10,8 +10,8 @@
 Finance Coach is a personal-finance API. A user signs up, links bank and brokerage accounts through **Plaid**, and the backend:
 
 1. Pulls transactions and investment holdings into PostgreSQL.
-2. Builds analytics (spending by category, trends, month-over-month comparisons), budgets, net worth and portfolio history.
-3. Detects unusual spending with a per-category z-score.
+2. Builds analytics (spending by category, trends, month-over-month comparisons, a monthly income and spending report), budgets with optional rollover, savings goals, net worth and portfolio history.
+3. Detects unusual spending with a per-category z-score, finds recurring bills and subscriptions, and emails a weekly summary.
 4. Runs an **AI coach** (Claude on AWS Bedrock) grounded in the user's own data: exact monthly totals plus the most relevant transactions, retrieved through a RAG pipeline (OpenAI embeddings stored in pgvector).
 5. Sells PREMIUM and PRO tiers through **Stripe Checkout**, and enforces FREE plan limits.
 
@@ -93,7 +93,8 @@ HTTP ─► AuthRateLimitFilter ─► JwtAuthenticationFilter ─► Controller
 - **`JwtAuthenticationFilter`**: reads `Authorization: Bearer …` and sets a principal that **is the `UUID`**. Unauthenticated requests get **401** (`HttpStatusEntryPoint`).
 - **`AuthRateLimitFilter`**: per-IP limits on login (10 / 5 min), register (5 / h), forgot-password (5 / h) and reset-password (10 / h). It trusts `X-Forwarded-For` only from private (ALB) addresses and normalizes paths before matching.
 - **`PasswordResetService`**: single-use token with a 1h TTL, 3 requests per 15 minutes per user, sent through SendGrid.
-- **`AccountDeletionService`** (`DELETE /api/users/me`): cancels Stripe subscriptions and deletes the Stripe customer, revokes every Plaid item, then purges all of the user's rows in one database transaction. If Stripe or Plaid fails, nothing is deleted locally and the request can be retried (each step is idempotent).
+- **`AccountDeletionService`** (`DELETE /api/users/me`): cancels Stripe subscriptions and deletes the Stripe customer, revokes every Plaid item, then purges all of the user's rows (transactions, budgets, goals, category rules and the rest) in one database transaction. If Stripe or Plaid fails, nothing is deleted locally and the request can be retried (each step is idempotent).
+- **Preferences** (`PATCH /api/users/me/preferences`): turns the weekly summary email on or off (`users.weekly_summary_emails`, null means on), written with a single-column update like `lastLogin`.
 
 ### 3.2 Bank connectivity (Plaid)
 - **`PlaidController`** (`/api/plaid/**`, JWT): create link token, exchange public token, list and disconnect accounts.
@@ -105,20 +106,23 @@ HTTP ─► AuthRateLimitFilter ─► JwtAuthenticationFilter ─► Controller
 ### 3.2a CSV import, categories and recurring charges
 - **`TransactionImportService`** (`POST /api/transactions/import`): rows parsed in the browser from a bank's CSV export. Each row gets a deterministic ID from its content, account name and user, so re-imports skip duplicates; imported rows use a stable account ID derived from the account name (no Plaid bank account). **`TransactionCategorizer`** asks Claude for categories in batches of 150, with keyword rules as the fallback. Each import has a batch ID for undo.
 - **`CategoryRuleService`**: users can change a transaction's category (marked `category_overridden`, so Plaid updates keep it) and save a rule for the merchant, applied to past transactions and to new ones from syncs and imports.
-- **`RecurringChargeService`** (`GET /api/recurring`): groups the last 13 months of outgoing transactions by normalized merchant and keeps steady monthly, quarterly or yearly charges, with the next expected date and price changes.
+- **`RecurringChargeService`** (`GET /api/recurring`): groups the last 13 months of spending (same rules as every total) by normalized merchant and keeps steady monthly, quarterly or yearly charges, with the next expected date and price changes. A steady amount makes a charge a subscription, a varying one a bill; housing, utilities, loan payments, bank fees, government and medical charges are always bills.
 - **Logos**: transactions keep Plaid's merchant `logo_url` and website (older ones are back-filled once per item); `/api/plaid/accounts` returns each bank's logo and brand colour from Plaid's institution metadata, fetched once per item. When Plaid has no logo (common for large banks), `InstitutionIconFetcher` looks up the bank's site icon by domain, server side, and stores it as a data URL.
 - **`TransactionEditService`**: notes, hiding a transaction from totals, and splitting one purchase across categories. A split keeps the original (so Plaid updates still find it) with `is_split` set, and each part is a transaction of its own (`split_from_id`), so totals by category count the parts unchanged. `TransactionFilters.isExcluded` leaves hidden transactions and split originals out of every total and out of the coach's embeddings. A Plaid change to a split transaction's amount undoes the split; removing it removes the parts.
 - **Same card linked twice**: each account stores its mask (last digits). Linking skips an account matching an active one at the same bank, type and mask on another Plaid item; after each sync, `removeDuplicateAccounts` keeps the older connection and removes a newer copy with its transactions.
 - **Reconnecting a bank**: `ITEM_LOGIN_REQUIRED`, `PENDING_EXPIRATION` or `PENDING_DISCONNECT` from `/transactions/sync` marks the item `needs_reconnect` and the user's other banks keep syncing; the scheduler skips it. `POST /api/plaid/items/{id}/update-link-token` opens Plaid Link in update mode on the same item, and a successful sync (or `POST .../reconnected`) clears the flag.
 
 ### 3.3 Analytics, budgets, anomalies
-- **`AnalyticsService`**: in-memory aggregation over `findByUserIdAndDateBetween`, using Plaid's sign convention (**positive = money out, negative = money in**). Transfers and credit-card / loan payments are excluded from spending and income totals.
-- **`BudgetService`**: one budget per (user, category, month). It maps Plaid Personal Finance Categories to friendly budget categories (`FOOD_AND_DRINK` → `Food & Dining`, and so on) and recomputes `spent` when budgets are read. FREE users get 3 active budgets per month.
+- **`AnalyticsService`**: in-memory aggregation over `findByUserIdAndDateBetween`, using Plaid's sign convention (**positive = money out, negative = money in**). `TransactionFilters` is the one place deciding what counts: transfers and credit-card payments, hidden transactions and split originals are excluded from spending and income totals everywhere. `getMonthlyReport` (`GET /api/analytics/monthly-report?months=`, 1–24) returns income, spending, net and spending by category per month.
+- **`BudgetService`**: one budget per (user, category, month). It maps Plaid Personal Finance Categories to friendly budget categories (`FOOD_AND_DRINK` → `Food & Dining`, and so on) and recomputes `spent` when budgets are read. FREE users get 3 active budgets per month. With **rollover** on, a budget's `carried_over` is last month's leftover in that category (negative when overspent, and cumulative across months); remaining, percentage, exceeded and alerts use the amount available (budget + carried over). Alerts and exceeded budgets cover the current month only, with fresh spending.
 - **`AnomalyDetectionService`**: compares current-month spend per category against the mean and standard deviation of up to 6 prior months. It flags z ≥ 1.5 as LOW, ≥ 2 as MEDIUM and ≥ 3 as HIGH, one anomaly per category per month, twice a day after the transaction sync, and on demand (`POST /api/anomalies/detect`).
 
 ### 3.4 Net worth & investments
 - **`NetWorthService`**: net worth = cash (depository balances) + holdings value + manual assets − credit-card balances − manual liabilities. A daily 01:00 UTC snapshot is taken for every user.
 - **`InvestmentService`**: calls Plaid `/investments/holdings/get` once per item and upserts on (account_id, security_id); positions no longer returned (sold) are deleted. A daily 02:00 UTC portfolio snapshot, plus an auto-sync every 30 minutes from 09:00 to 16:00 ET on weekdays.
+
+### 3.4a Savings goals
+- **`SavingsGoalService`** (`/api/goals`): up to 20 goals per user, each with a target amount and optional date. Progress is the balance of a linked depository or investment account, or, without one (or once that account is disconnected), an amount the user updates through `POST /api/goals/{id}/saved`. With a date, the response includes what to save per month from now on, and whether the date has passed.
 
 ### 3.5 AI coach (RAG)
 - **`AICoachController`** (`/api/ai-coach/**`): chat, clear session, weekly summary, monthly report, category analysis, savings plan. All but clear-session count against the `ai_coach` limit (FREE: 5 per month).
@@ -144,10 +148,15 @@ HTTP ─► AuthRateLimitFilter ─► JwtAuthenticationFilter ─► Controller
 ### 3.7 Export
 - **`ExportService`** + **`S3Service`**: builds a CSV of the user's transactions, uploads it to the bucket in `S3_EXPORT_BUCKET` under `exports/{userId}/…`, and returns a 15-minute presigned URL. Paid plans only.
 
+### 3.7a Email
+- **`EmailService`** (SendGrid): password reset, welcome and the weekly summary share one evergreen HTML layout; user-supplied text (names, merchants) is HTML-escaped.
+- **`WeeklySummaryService`**: Mondays at 14:00 UTC, for each user with transactions who hasn't turned it off, last week's spending against the week before, the top three categories and bills due in the coming week. Nothing is sent when there's nothing to say. Each user's week is claimed first with a conditional update on `users.weekly_summary_sent_for`, so a second task running during a deploy can't send it twice.
+
 ### 3.8 Observability
 - Actuator: `health` and `info` are public (the ALB health check uses `/actuator/health`). `metrics` and `prometheus` require `Authorization: Bearer $METRICS_TOKEN` and are unreachable when no token is set.
 - **`MetricsService`**: Micrometer counters and timers (registrations, logins, password resets, bank connections, transactions synced, Plaid latency, AI requests, budgets created/exceeded).
 - Logs go to CloudWatch (`/ecs/finance-coach-backend`, 7-day retention) in prod, and to console plus a rolling file in dev.
+- **`GlobalExceptionHandler`** maps domain exceptions to status codes; an unknown address is a 404, an unsupported method a 405 and an unreadable body a 400 (logged at WARN), and only genuinely unexpected errors become a 500.
 
 ---
 
@@ -289,11 +298,15 @@ erDiagram
     users ||--o{ user_subscriptions : "user_id"
     users ||--o{ usage_tracking : "user_id"
     users ||--o{ password_reset_tokens : "user_id"
+    users ||--o{ savings_goals : "user_id"
+    users ||--o{ category_rules : "user_id"
     plaid_items ||--o{ bank_accounts : "item_id"
     bank_accounts ||--o{ transactions : "account_id"
     bank_accounts ||--o{ holdings : "account_id (JPA ManyToOne)"
     subscription_plans ||--o{ user_subscriptions : "plan_id (JPA ManyToOne)"
     transactions ||--o| transaction_embeddings : "plaid_transaction_id = transaction_id (FK, cascade)"
+    transactions ||--o{ transactions : "split_from_id (parts of a split)"
+    bank_accounts ||--o{ savings_goals : "account_id (optional)"
 
     users {
         uuid id PK
@@ -304,6 +317,8 @@ erDiagram
         int token_version
         bigint version "optimistic lock"
         timestamp last_login
+        boolean weekly_summary_emails "null = on"
+        date weekly_summary_sent_for
     }
     plaid_items {
         uuid id PK
@@ -312,6 +327,8 @@ erDiagram
         string access_token "Jasypt-encrypted"
         string institution_name
         string transactions_cursor
+        boolean needs_reconnect
+        text institution_logo "Plaid logo or site icon"
     }
     bank_accounts {
         uuid id PK
@@ -320,6 +337,7 @@ erDiagram
         string plaid_account_id
         string plaid_access_token "Jasypt-encrypted (legacy copy)"
         string account_type "depository|credit|investment|loan"
+        string mask "last digits"
         decimal current_balance
         boolean is_active
     }
@@ -332,7 +350,36 @@ erDiagram
         decimal amount "+ out / - in"
         string merchant_name
         string category "Plaid PFC primary"
+        boolean category_overridden
         boolean pending
+        string notes
+        boolean hidden
+        boolean is_split
+        uuid split_from_id
+    }
+    budgets {
+        uuid id PK
+        uuid user_id
+        string category
+        date month
+        decimal amount
+        boolean rollover
+        decimal carried_over
+    }
+    savings_goals {
+        uuid id PK
+        uuid user_id
+        string name
+        decimal target_amount
+        date target_date
+        uuid account_id "optional"
+        decimal saved_amount "when tracked by hand"
+    }
+    category_rules {
+        uuid id PK
+        uuid user_id
+        string match_key "unique with user_id"
+        string category
     }
     transaction_embeddings {
         uuid id PK
@@ -385,9 +432,10 @@ All jobs run inside the API process on Spring's default **single-threaded** sche
 | `InvestmentService.takePortfolioSnapshots` | 02:00 daily (UTC) | Portfolio snapshot for users with investment accounts |
 | `TransactionSyncScheduler.syncAllAccounts` | 06:00 and 18:00 (UTC) | `/transactions/sync` for every item with an active account |
 | `AnomalyDetectionService.detectForAllUsers` | 06:30 and 18:30 (UTC) | Unusual-spending detection for every user with transactions (feeds notifications) |
+| `WeeklySummaryService.sendWeeklySummaries` | Mondays 14:00 (UTC) | Weekly summary email; each user's week is claimed in the database, so it's sent once even with two tasks |
 | `InvestmentService.autoSyncHoldings` | Every 30 min, 09:00–16:00 ET, Mon–Fri | Holdings pull for every investing user |
 
-Implications: ECS runs one task (`desired_count = 1`). Running more would run every job once per task until ShedLock is added. A long job delays the others because the scheduler has one thread.
+Implications: ECS runs one task (`desired_count = 1`); during a deploy two overlap for a few minutes. Running more would run every job once per task until ShedLock is added (the weekly email already guards itself with a per-user claim). A long job delays the others because the scheduler has one thread.
 
 ---
 
@@ -462,7 +510,7 @@ flowchart LR
 | Base path | Auth | Endpoints |
 |---|---|---|
 | `/api/auth` | public | `POST register`, `POST login`, `POST forgot-password`, `POST reset-password`, `GET validate-reset-token/{token}` |
-| `/api/users` | JWT | `GET health` (public), `GET me`, `DELETE me` |
+| `/api/users` | JWT | `GET health` (public), `GET me`, `PATCH me/preferences`, `DELETE me` |
 | `/api/plaid` | JWT | `POST create-link-token`, `POST exchange-token`, `GET accounts`, `DELETE accounts/{id}`, `POST items/{itemId}/update-link-token`, `POST items/{itemId}/reconnected` |
 | `/api/transactions` | JWT | `POST sync`, `POST sync/{accountId}`, `GET ?startDate&endDate`, `GET recent?limit`, `GET search?q`, `GET category/{category}`, `PATCH {id}/category`, `PATCH {id}` (note, hidden), `GET/PUT/DELETE {id}/split`, `POST import`, `DELETE imports/{batchId}` |
 | `/api/category-rules` | JWT | `GET /`, `DELETE {id}` |
@@ -471,6 +519,7 @@ flowchart LR
 | `/api/budgets` | JWT | `POST /`, `GET current`, `GET ?month`, `GET progress`, `DELETE {id}`, `GET recommendations`, `GET exceeded`, `GET alerts`, `POST refresh`, `POST copy-previous` |
 | `/api/anomalies` | JWT | `POST detect`, `GET /`, `GET unreviewed`, `GET count`, `PUT {id}/review` |
 | `/api/ai-coach` | JWT | `POST chat`, `GET chat/{sessionId}` (history), `DELETE chat/{sessionId}`, `GET weekly-summary`, `GET monthly-report`, `GET analyze-category/{c}`, `POST savings-recommendations` |
+| `/api/goals` | JWT | `GET /`, `POST /`, `PUT {id}`, `DELETE {id}`, `POST {id}/saved` |
 | `/api/net-worth` | JWT | `GET current`, `GET history`, CRUD `assets`, CRUD `liabilities` |
 | `/api/investments` | JWT | `POST sync`, `POST sync/{accountId}`, `GET portfolio`, `GET holdings/{accountId}`, `GET allocation`, `GET history` |
 | `/api/subscriptions` | mixed | `GET plans` (public), `GET current`, `GET features/{f}/access`, `POST checkout`, `POST cancel`, `POST webhook` (public, Stripe-signed) |
@@ -484,7 +533,7 @@ Full interactive docs are at `/swagger-ui.html`.
 
 Open structural changes from [REVIEW.md](REVIEW.md):
 - Parent foreign keys with `ON DELETE CASCADE`, then **Flyway** migrations with `ddl-auto: validate`.
-- **Plaid webhooks** (`SYNC_UPDATES_AVAILABLE`, `ITEM_LOGIN_REQUIRED`) instead of twice-daily polling, plus a reconnect flow.
+- **Plaid webhooks** (`SYNC_UPDATES_AVAILABLE`, `ITEM_LOGIN_REQUIRED`) instead of twice-daily polling; the reconnect flow is in place but only notices an expired login on the next sync.
 - **Tool use** for the AI coach (`get_spending_by_category`, `get_transactions`, …) on top of the summary and RAG.
 - An HNSW index on `transaction_embeddings`.
 - **ShedLock** before running more than one ECS task.

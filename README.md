@@ -33,8 +33,11 @@ For the full architecture, see [docs/SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md). O
 - **RAG Pipeline** — Transaction data is embedded via OpenAI (in the background, in batches) and stored in pgvector; each question gets exact monthly totals plus the most relevant transactions, grounding Claude's answers in real spending data
 - **Spending Anomaly Detection** — Z-score statistical algorithm detects unusual spending patterns per category compared to 6 months of historical data
 - **Plaid Integration** — Full bank connection flow (Link token → public token → access token), incremental transaction sync with `/transactions/sync` (manual + scheduled at 6AM/6PM UTC), balance refresh, investment holdings
-- **Budget Tracking** — Create and manage monthly budgets per category; spending is automatically calculated and mapped from Plaid's Personal Finance Categories (PFC)
-- **Analytics** — Spending by category, top merchants, daily trends, monthly summaries, month-over-month comparisons
+- **Budget Tracking** — Monthly budgets per category with optional rollover of what's left (or overspent); spending is calculated automatically and mapped from Plaid's Personal Finance Categories (PFC)
+- **Savings Goals** — Targets with optional dates that follow a linked account's balance or are tracked by hand, with the monthly amount needed to make the date
+- **Analytics** — Spending by category, top merchants, daily trends, monthly summaries and a monthly income/spending report, month-over-month comparisons
+- **Transactions** — CSV import, category rules per merchant, notes, hiding from totals, splitting across categories, and recurring bill and subscription detection
+- **Weekly Email** — A Monday summary of last week's spending and the coming week's bills (users can turn it off), sent once per user per week even across overlapping tasks
 - **Net Worth Tracking** — Manual assets and liabilities, automated net worth snapshots, portfolio holdings from Plaid
 - **Subscription & Payments** — Stripe-powered subscription tiers (webhooks as the source of truth) with feature gating and atomic usage limits
 - **JWT Authentication** — Stateless auth with token revocation, rate-limited auth endpoints, and password reset via SendGrid email
@@ -274,7 +277,7 @@ java -jar target/*.jar
 | Domain | Base Path | Key Endpoints |
 |---|---|---|
 | Auth | `/api/auth` | `POST /register`, `POST /login`, `POST /forgot-password`, `POST /reset-password` |
-| Users | `/api/users` | `GET /me`, `DELETE /me` |
+| Users | `/api/users` | `GET /me`, `PATCH /me/preferences`, `DELETE /me` |
 | Plaid | `/api/plaid` | `POST /create-link-token`, `POST /exchange-token`, `GET /accounts`, `DELETE /accounts/{id}`, `POST /items/{itemId}/update-link-token` |
 | Transactions | `/api/transactions` | `POST /sync`, `GET /`, `GET /search`, `PATCH /{id}`, `PATCH /{id}/category`, `PUT /{id}/split`, `POST /import` |
 | AI Coach | `/api/ai-coach` | `POST /chat`, `DELETE /chat/{sessionId}`, `GET /weekly-summary`, `GET /monthly-report` |
@@ -282,6 +285,8 @@ java -jar target/*.jar
 | Analytics | `/api/analytics` | `GET /spending-by-category`, `GET /monthly-summary`, `GET /monthly-report`, `GET /compare-months`, `GET /spending-trend` |
 | Budgets | `/api/budgets` | `POST /`, `GET /current`, `GET /recommendations`, `POST /copy-previous`, `GET /exceeded` |
 | Investments | `/api/investments` | `POST /sync`, `GET /portfolio`, `GET /holdings/{accountId}`, `GET /allocation`, `GET /history` |
+| Goals | `/api/goals` | `GET /`, `POST /`, `PUT /{id}`, `DELETE /{id}`, `POST /{id}/saved` |
+| Recurring | `/api/recurring` | `GET /` |
 | Net Worth | `/api/net-worth` | `GET /current`, `GET /history`, CRUD `/assets`, CRUD `/liabilities` |
 | Subscriptions | `/api/subscriptions` | `GET /plans`, `POST /checkout`, `GET /current`, `POST /cancel`, `POST /webhook` |
 | Export | `/api/export` | `GET /transactions` (paid plans) |
