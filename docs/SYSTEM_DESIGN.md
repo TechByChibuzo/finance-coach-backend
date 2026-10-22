@@ -105,7 +105,7 @@ HTTP ─► AuthRateLimitFilter ─► JwtAuthenticationFilter ─► Controller
 ### 3.3 Analytics, budgets, anomalies
 - **`AnalyticsService`**: in-memory aggregation over `findByUserIdAndDateBetween`, using Plaid's sign convention (**positive = money out, negative = money in**). Transfers and credit-card / loan payments are excluded from spending and income totals.
 - **`BudgetService`**: one budget per (user, category, month). It maps Plaid Personal Finance Categories to friendly budget categories (`FOOD_AND_DRINK` → `Food & Dining`, and so on) and recomputes `spent` when budgets are read. FREE users get 3 active budgets per month.
-- **`AnomalyDetectionService`**: compares current-month spend per category against the mean and standard deviation of up to 6 prior months. It flags z ≥ 1.5 as LOW, ≥ 2 as MEDIUM and ≥ 3 as HIGH, one anomaly per category per month, on demand (`POST /api/anomalies/detect`).
+- **`AnomalyDetectionService`**: compares current-month spend per category against the mean and standard deviation of up to 6 prior months. It flags z ≥ 1.5 as LOW, ≥ 2 as MEDIUM and ≥ 3 as HIGH, one anomaly per category per month, twice a day after the transaction sync, and on demand (`POST /api/anomalies/detect`).
 
 ### 3.4 Net worth & investments
 - **`NetWorthService`**: net worth = cash (depository balances) + holdings value + manual assets − credit-card balances − manual liabilities. A daily 01:00 UTC snapshot is taken for every user.
@@ -375,6 +375,7 @@ All jobs run inside the API process on Spring's default **single-threaded** sche
 | `NetWorthService.takeNetWorthSnapshots` | 01:00 daily (UTC) | Net-worth snapshot for every user |
 | `InvestmentService.takePortfolioSnapshots` | 02:00 daily (UTC) | Portfolio snapshot for users with investment accounts |
 | `TransactionSyncScheduler.syncAllAccounts` | 06:00 and 18:00 (UTC) | `/transactions/sync` for every item with an active account |
+| `AnomalyDetectionService.detectForAllUsers` | 06:30 and 18:30 (UTC) | Unusual-spending detection for every user with transactions (feeds notifications) |
 | `InvestmentService.autoSyncHoldings` | Every 30 min, 09:00–16:00 ET, Mon–Fri | Holdings pull for every investing user |
 
 Implications: ECS runs one task (`desired_count = 1`). Running more would run every job once per task until ShedLock is added. A long job delays the others because the scheduler has one thread.

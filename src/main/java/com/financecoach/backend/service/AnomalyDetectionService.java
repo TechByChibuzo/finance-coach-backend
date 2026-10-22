@@ -8,6 +8,7 @@ import com.financecoach.backend.repository.SpendingAnomalyRepository;
 import com.financecoach.backend.repository.TransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -44,6 +45,27 @@ public class AnomalyDetectionService {
                                    SpendingAnomalyRepository anomalyRepository) {
         this.transactionRepository = transactionRepository;
         this.anomalyRepository = anomalyRepository;
+    }
+
+    /**
+     * Runs detection for every user with transactions, half an hour after the scheduled
+     * transaction sync, so unusual spending shows up in notifications without anyone asking.
+     * One user's failure doesn't stop the others.
+     */
+    @Scheduled(cron = "0 30 6,18 * * *")
+    public void detectForAllUsers() {
+        int checked = 0;
+        int failed = 0;
+        for (UUID userId : transactionRepository.findDistinctUserIds()) {
+            try {
+                detectAnomalies(userId);
+                checked++;
+            } catch (Exception e) {
+                failed++;
+                logger.error("Anomaly detection failed for user {}", userId, e);
+            }
+        }
+        logger.info("Scheduled anomaly detection finished - users checked: {}, failed: {}", checked, failed);
     }
 
     /**

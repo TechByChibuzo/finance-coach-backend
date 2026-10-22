@@ -263,4 +263,19 @@ class AnomalyDetectionServiceTest {
                 LocalDate.now().withDayOfMonth(1), LocalDate.now()
         );
     }
+
+    @Test
+    void detectForAllUsers_checksEveryUser_andCarriesOnPastAFailure() {
+        UUID broken = UUID.randomUUID();
+        UUID fine = UUID.randomUUID();
+        org.mockito.Mockito.when(transactionRepository.findDistinctUserIds()).thenReturn(List.of(broken, fine));
+        org.mockito.Mockito.when(transactionRepository.findByUserIdAndDateBetween(
+                        org.mockito.ArgumentMatchers.eq(broken), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new RuntimeException("db hiccup"));
+
+        anomalyDetectionService.detectForAllUsers();
+
+        org.mockito.Mockito.verify(transactionRepository, org.mockito.Mockito.atLeastOnce()).findByUserIdAndDateBetween(
+                org.mockito.ArgumentMatchers.eq(fine), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
 }

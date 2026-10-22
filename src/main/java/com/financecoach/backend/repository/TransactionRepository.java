@@ -29,6 +29,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
     boolean existsByPlaidTransactionId(String plaidTransactionId);
 
+    // Users with any transactions, for jobs that run per user
+    @Query("SELECT DISTINCT t.userId FROM Transaction t")
+    List<UUID> findDistinctUserIds();
+
     // Which of these transaction IDs are already stored (for skipping duplicates on import)
     @Query("SELECT t.plaidTransactionId FROM Transaction t WHERE t.plaidTransactionId IN :ids")
     List<String> findExistingPlaidTransactionIds(@Param("ids") Collection<String> ids);
