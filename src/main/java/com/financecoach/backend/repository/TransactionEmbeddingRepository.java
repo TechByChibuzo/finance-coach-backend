@@ -7,7 +7,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
 import java.util.UUID;
 
 @Repository
@@ -15,22 +14,11 @@ public interface TransactionEmbeddingRepository extends JpaRepository<Transactio
 
     boolean existsByTransactionId(String transactionId);
 
-    void deleteByTransactionId(String transactionId);
-
-    // Core RAG query — cosine similarity search scoped to a user
-    @Query(value = """
-        SELECT * FROM transaction_embeddings
-        WHERE user_id = :userId
-        ORDER BY embedding <=> CAST(:queryEmbedding AS vector)
-        LIMIT :limit
-        """, nativeQuery = true)
-    List<TransactionEmbedding> findSimilarTransactions(
-            @Param("userId") UUID userId,
-            @Param("queryEmbedding") float[] queryEmbedding,
-            @Param("limit") int limit
-    );
-
-    List<TransactionEmbedding> findByUserId(UUID userId);
+    // A bulk delete: Hibernate can't read the vector column, so nothing here may load embedding
+    // entities (a derived deleteBy... would, and fail). Similarity search lives in VectorStoreService.
+    @Modifying
+    @Query("DELETE FROM TransactionEmbedding t WHERE t.transactionId = :transactionId")
+    int deleteByTransactionId(@Param("transactionId") String transactionId);
 
     long countByUserId(UUID userId);
 
