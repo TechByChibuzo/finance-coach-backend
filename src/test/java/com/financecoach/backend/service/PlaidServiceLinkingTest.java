@@ -346,6 +346,51 @@ class PlaidServiceLinkingTest {
     }
 
     @Test
+    void disconnectBankAccount_lastAccountOfABank_revokesTheConnectionAtPlaid() throws Exception {
+        PlaidItem item = item(userId);
+        BankAccount last = account(userId, item.getId());
+        when(bankAccountRepository.findById(last.getId())).thenReturn(Optional.of(last));
+        when(bankAccountRepository.findByItemIdAndIsActive(item.getId(), true)).thenReturn(List.of());
+        when(plaidItemRepository.findById(item.getId())).thenReturn(Optional.of(item));
+        when(plaidClient.itemRemove(any())).thenReturn(ok(new com.plaid.client.model.ItemRemoveResponse()));
+
+        plaidService.disconnectBankAccount(last.getId(), userId);
+
+        verify(plaidClient).itemRemove(any());
+        verify(plaidItemRepository).delete(item);
+    }
+
+    @Test
+    void disconnectBankAccount_otherAccountsStillActive_keepsTheConnection() throws Exception {
+        PlaidItem item = item(userId);
+        BankAccount checking = account(userId, item.getId());
+        when(bankAccountRepository.findById(checking.getId())).thenReturn(Optional.of(checking));
+        when(bankAccountRepository.findByItemIdAndIsActive(item.getId(), true))
+                .thenReturn(List.of(account(userId, item.getId())));
+
+        plaidService.disconnectBankAccount(checking.getId(), userId);
+
+        verify(plaidClient, never()).itemRemove(any());
+    }
+
+    @Test
+    void disconnectBankAccount_whenPlaidCantRevoke_keepsTheItemForLater() throws Exception {
+        PlaidItem item = item(userId);
+        BankAccount last = account(userId, item.getId());
+        when(bankAccountRepository.findById(last.getId())).thenReturn(Optional.of(last));
+        when(bankAccountRepository.findByItemIdAndIsActive(item.getId(), true)).thenReturn(List.of());
+        when(plaidItemRepository.findById(item.getId())).thenReturn(Optional.of(item));
+        when(plaidClient.itemRemove(any())).thenReturn(error(500, "INTERNAL_SERVER_ERROR")).thenReturn(error(400, "ITEM_NOT_FOUND"));
+
+        plaidService.disconnectBankAccount(last.getId(), userId);
+        verify(plaidItemRepository, never()).delete(any(PlaidItem.class));
+
+        // Already gone at Plaid counts as revoked
+        plaidService.disconnectBankAccount(last.getId(), userId);
+        verify(plaidItemRepository).delete(item);
+    }
+
+    @Test
     void disconnectBankAccount_ofAnotherUser_isRejected_andUnknown_isNotFound() {
         BankAccount theirs = account(UUID.randomUUID(), null);
         UUID missing = UUID.randomUUID();

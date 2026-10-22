@@ -539,6 +539,34 @@ public class PlaidService {
 
         account.setIsActive(false);
         bankAccountRepository.save(account);
+
+        // Last account of this bank login gone: revoke the connection at Plaid too, so it stops
+        // pulling data. If Plaid can't be reached, the item is kept so account deletion revokes it later.
+        UUID itemId = account.getItemId();
+        if (itemId != null && bankAccountRepository.findByItemIdAndIsActive(itemId, true).isEmpty()) {
+            plaidItemRepository.findById(itemId).ifPresent(item -> {
+                if (revokeItem(item.getAccessToken())) {
+                    plaidItemRepository.delete(item);
+                    logger.info("Revoked Plaid item {} after its last account was disconnected", itemId);
+                }
+            });
+        }
+    }
+
+    private boolean revokeItem(String accessToken) {
+        try {
+            Response<ItemRemoveResponse> response = plaidClient
+                    .itemRemove(new ItemRemoveRequest().accessToken(accessToken))
+                    .execute();
+            if (response.isSuccessful()) {
+                return true;
+            }
+            String errorBody = response.errorBody() != null ? response.errorBody().string() : "";
+            return ALREADY_REVOKED_ERRORS.stream().anyMatch(errorBody::contains);
+        } catch (Exception e) {
+            logger.warn("Couldn't revoke Plaid item: {}", e.getMessage());
+            return false;
+        }
     }
 
     /**

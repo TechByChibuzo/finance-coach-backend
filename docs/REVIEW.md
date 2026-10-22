@@ -52,7 +52,6 @@ Edge cases, none reachable with today's production data or traffic. Fix before o
 ## 4. Plaid integration (P2)
 
 - **Re-linking a disconnected account is impossible.** `existsByPlaidAccountId` (global, ignores `isActive`) skips it. Reactivate it and update the token instead.
-- **Disconnecting an account doesn't call `/item/remove`** once the item's last active account is gone, so the item stays live at Plaid (account deletion already revokes everything).
 - **No handling of `ITEM_LOGIN_REQUIRED`.** Surface a "reconnect" state and use Link update mode.
 - **`autoSyncHoldings` every 30 min is wasted work.** Plaid refreshes holdings about once a day, and it blocks the single scheduler thread. Run it once daily.
 - `Holding.type` is `nullable=false`, but the type is only set when a matching security is found, so a missing security makes the insert fail.
