@@ -49,6 +49,7 @@ class AccountDeletionServiceTest {
     @Mock private PasswordResetTokenRepository passwordResetTokenRepository;
     @Mock private UserSubscriptionRepository userSubscriptionRepository;
     @Mock private PaymentRepository paymentRepository;
+    @Mock private com.financecoach.backend.repository.CategoryRuleRepository categoryRuleRepository;
     @Mock private TransactionTemplate transactionTemplate;
 
     @InjectMocks
@@ -89,6 +90,7 @@ class AccountDeletionServiceTest {
         verify(passwordResetTokenRepository).deleteByUserId(userId);
         verify(userSubscriptionRepository).deleteAllByUserId(userId);
         verify(paymentRepository).deleteAllByUserId(userId);
+        verify(categoryRuleRepository).deleteByUserId(userId);
     }
 
     @Test

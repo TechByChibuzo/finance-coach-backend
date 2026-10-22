@@ -33,6 +33,7 @@ class TransactionImportServiceTest {
     @Mock private TransactionRepository transactionRepository;
     @Mock private TransactionCategorizer categorizer;
     @Mock private VectorStoreService vectorStoreService;
+    @Mock private CategoryRuleService categoryRuleService;
 
     @InjectMocks
     private TransactionImportService importService;

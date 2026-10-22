@@ -1,10 +1,12 @@
 // src/main/java/com/financecoach/backend/controller/TransactionController.java
 package com.financecoach.backend.controller;
 
+import com.financecoach.backend.dto.CategoryUpdateRequest;
 import com.financecoach.backend.dto.imports.TransactionImportRequest;
 import com.financecoach.backend.dto.imports.TransactionImportResponse;
 import com.financecoach.backend.dto.plaid.TransactionResponse;
 import com.financecoach.backend.model.Transaction;
+import com.financecoach.backend.service.CategoryRuleService;
 import com.financecoach.backend.service.TransactionImportService;
 import com.financecoach.backend.service.TransactionService;
 import jakarta.validation.Valid;
@@ -27,12 +29,26 @@ public class TransactionController {
 
     private final TransactionService transactionService;
     private final TransactionImportService transactionImportService;
+    private final CategoryRuleService categoryRuleService;
 
     @Autowired
     public TransactionController(TransactionService transactionService,
-                                 TransactionImportService transactionImportService) {
+                                 TransactionImportService transactionImportService,
+                                 CategoryRuleService categoryRuleService) {
         this.transactionService = transactionService;
         this.transactionImportService = transactionImportService;
+        this.categoryRuleService = categoryRuleService;
+    }
+
+    /**
+     * Change a transaction's category, optionally for every transaction from that merchant
+     * PATCH /api/transactions/{id}/category
+     */
+    @PatchMapping("/{id}/category")
+    public ResponseEntity<TransactionResponse> updateCategory(@PathVariable UUID id,
+                                                              @Valid @RequestBody CategoryUpdateRequest request) {
+        return ResponseEntity.ok(convertToResponse(
+                categoryRuleService.updateCategory(getCurrentUserId(), id, request.category(), request.remember())));
     }
 
     /**

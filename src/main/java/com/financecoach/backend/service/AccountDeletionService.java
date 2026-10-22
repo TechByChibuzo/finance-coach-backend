@@ -1,6 +1,7 @@
 package com.financecoach.backend.service;
 
 import com.financecoach.backend.exception.UserNotFoundException;
+import com.financecoach.backend.repository.CategoryRuleRepository;
 import com.financecoach.backend.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,6 +45,7 @@ public class AccountDeletionService {
     private final PasswordResetTokenRepository passwordResetTokenRepository;
     private final UserSubscriptionRepository userSubscriptionRepository;
     private final PaymentRepository paymentRepository;
+    private final CategoryRuleRepository categoryRuleRepository;
     private final TransactionTemplate transactionTemplate;
 
     public AccountDeletionService(UserRepository userRepository,
@@ -65,6 +67,7 @@ public class AccountDeletionService {
                                   PasswordResetTokenRepository passwordResetTokenRepository,
                                   UserSubscriptionRepository userSubscriptionRepository,
                                   PaymentRepository paymentRepository,
+                                  CategoryRuleRepository categoryRuleRepository,
                                   TransactionTemplate transactionTemplate) {
         this.userRepository = userRepository;
         this.subscriptionService = subscriptionService;
@@ -85,6 +88,7 @@ public class AccountDeletionService {
         this.passwordResetTokenRepository = passwordResetTokenRepository;
         this.userSubscriptionRepository = userSubscriptionRepository;
         this.paymentRepository = paymentRepository;
+        this.categoryRuleRepository = categoryRuleRepository;
         this.transactionTemplate = transactionTemplate;
     }
 
@@ -124,6 +128,7 @@ public class AccountDeletionService {
         passwordResetTokenRepository.deleteByUserId(userId);
         userSubscriptionRepository.deleteAllByUserId(userId);
         paymentRepository.deleteAllByUserId(userId);
+        categoryRuleRepository.deleteByUserId(userId);
         userRepository.deleteById(userId);
     }
 }

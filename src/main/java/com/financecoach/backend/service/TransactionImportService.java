@@ -38,13 +38,16 @@ public class TransactionImportService {
     private final TransactionRepository transactionRepository;
     private final TransactionCategorizer categorizer;
     private final VectorStoreService vectorStoreService;
+    private final CategoryRuleService categoryRuleService;
 
     public TransactionImportService(TransactionRepository transactionRepository,
                                     TransactionCategorizer categorizer,
-                                    VectorStoreService vectorStoreService) {
+                                    VectorStoreService vectorStoreService,
+                                    CategoryRuleService categoryRuleService) {
         this.transactionRepository = transactionRepository;
         this.categorizer = categorizer;
         this.vectorStoreService = vectorStoreService;
+        this.categoryRuleService = categoryRuleService;
     }
 
     public TransactionImportResponse importTransactions(UUID userId, TransactionImportRequest request) {
@@ -99,6 +102,9 @@ public class TransactionImportService {
             t.setCreatedAt(LocalDateTime.now());
             toSave.add(t);
         }
+
+        // The user's own merchant rules win over the automatic categories
+        categoryRuleService.applyRules(userId, toSave);
 
         // Saved (and committed) before indexing: the background embedding only indexes rows that exist
         List<Transaction> saved = transactionRepository.saveAll(toSave);

@@ -33,6 +33,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -50,6 +51,7 @@ class TransactionServiceTest {
     @Mock private PlaidService plaidService;
     @Mock private MetricsService metricsService;
     @Mock private PlaidItemRepository plaidItemRepository;
+    @Mock private CategoryRuleService categoryRuleService;
 
     private TransactionService transactionService;
 
@@ -64,6 +66,7 @@ class TransactionServiceTest {
                 plaidClient, transactionRepository, bankAccountRepository, vectorStoreService, plaidService,
                 plaidItemRepository);
         ReflectionTestUtils.setField(transactionService, "metricsService", metricsService);
+        ReflectionTestUtils.setField(transactionService, "categoryRuleService", categoryRuleService);
 
         userId = UUID.randomUUID();
         item = new PlaidItem();
@@ -471,6 +474,37 @@ class TransactionServiceTest {
             byPlaidId.put(account.getPlaidAccountId(), account);
         }
         when(plaidService.getActiveAccountsByPlaidId(item)).thenReturn(byPlaidId);
+    }
+
+    @Test
+    void syncItem_modifiedTransaction_keepsACategoryTheUserChose() throws Exception {
+        item.setLogosBackfilled(true);
+        stubItemAccounts(checking);
+        Transaction corrected = existing("tx-1");
+        corrected.setCategory("FOOD_AND_DRINK");
+        corrected.setCategoryOverridden(true);
+        when(transactionRepository.findByPlaidTransactionId("tx-1")).thenReturn(Optional.of(corrected));
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        stubSyncPages(page(false, "cursor-2", List.of(), List.of(plaidTx("tx-1", "plaid-checking")
+                .personalFinanceCategory(new com.plaid.client.model.PersonalFinanceCategory().primary("GENERAL_MERCHANDISE")
+                        .detailed("GENERAL_MERCHANDISE_SUPERSTORES"))
+                .amount(99.0)), List.of()));
+
+        transactionService.syncItem(item);
+
+        assertThat(corrected.getCategory()).isEqualTo("FOOD_AND_DRINK");
+        assertThat(corrected.getAmount()).isEqualByComparingTo("99.0");
+    }
+
+    @Test
+    void syncItem_appliesTheUsersCategoryRulesToNewTransactions() throws Exception {
+        stubItemAccounts(checking);
+        stubPlaidTransactions(plaidTx("tx-1", "plaid-checking"));
+        when(transactionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        transactionService.syncItem(item);
+
+        verify(categoryRuleService).applyRules(org.mockito.ArgumentMatchers.eq(userId), anyList());
     }
 
     // --- merchant logos ---

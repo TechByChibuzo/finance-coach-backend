@@ -57,6 +57,10 @@ public class Transaction {
     @Column(name = "currency_code")
     private String currencyCode = "USD";
 
+    // The user chose this category (directly or with a rule); Plaid updates leave it alone
+    @Column(name = "category_overridden")
+    private Boolean categoryOverridden;
+
     // Merchant logo and website from Plaid's enrichment, when Plaid knows the merchant
     @Column(name = "logo_url", length = 1000)
     private String logoUrl;

@@ -47,6 +47,8 @@ public class TransactionService {
     private final BankAccountRepository bankAccountRepository;
     @Autowired
     private MetricsService metricsService;
+    @Autowired
+    private CategoryRuleService categoryRuleService;
     private final VectorStoreService vectorStoreService;
     private final PlaidService plaidService;
     private final PlaidItemRepository plaidItemRepository;
@@ -134,6 +136,7 @@ public class TransactionService {
             }
 
             Transaction transaction = convertPlaidTransaction(plaidTx, bankAccount);
+            categoryRuleService.applyRules(bankAccount.getUserId(), List.of(transaction));
             Transaction saved = transactionRepository.save(transaction);
             savedTransactions.add(saved);
             toIndex.add(saved);
@@ -146,7 +149,14 @@ public class TransactionService {
                 continue;
             }
             transactionRepository.findByPlaidTransactionId(plaidTx.getTransactionId()).ifPresent(existing -> {
+                // Keep a category the user chose over Plaid's
+                String userCategory = existing.getCategory();
+                String userSubcategory = existing.getSubcategory();
                 applyPlaidFields(existing, plaidTx, bankAccount);
+                if (Boolean.TRUE.equals(existing.getCategoryOverridden())) {
+                    existing.setCategory(userCategory);
+                    existing.setSubcategory(userSubcategory);
+                }
                 Transaction saved = transactionRepository.save(existing);
                 vectorStoreService.removeTransaction(saved.getPlaidTransactionId());
                 toIndex.add(saved);

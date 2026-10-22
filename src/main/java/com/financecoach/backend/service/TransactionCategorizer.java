@@ -127,7 +127,7 @@ public class TransactionCategorizer {
         return moneyIn ? "INCOME" : "GENERAL_MERCHANDISE";
     }
 
-    private static Category toCategory(String code) {
+    static Category toCategory(String code) {
         return CARD_PAYMENT.equals(code)
                 ? new Category("LOAN_PAYMENTS", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT")
                 : new Category(code, null);
