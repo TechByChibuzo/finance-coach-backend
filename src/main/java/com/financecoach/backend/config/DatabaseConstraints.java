@@ -17,9 +17,11 @@ import org.springframework.stereotype.Component;
  * embedding written in the background for a transaction that's being deleted fails instead of
  * outliving it.
  *
- * spending_anomalies.user_id references users.id with ON DELETE CASCADE: anomaly detection runs
- * on a schedule, and a result saved while that user's account is being deleted fails instead of
- * leaving their spending figures behind.
+ * spending_anomalies, transactions, bank_accounts and plaid_items reference users.id with
+ * ON DELETE CASCADE: anomaly detection and bank syncs run in the background, and a row they save
+ * while that user's account is being deleted fails instead of outliving it (for plaid_items, with
+ * the bank access token). transactions don't reference bank_accounts: CSV imports use a derived
+ * account ID that has no bank_accounts row.
  *
  * usage_tracking has a unique index on (user_id, feature_name, period_start), which the atomic
  * usage reservation needs.
@@ -34,7 +36,7 @@ public class DatabaseConstraints implements ApplicationRunner {
 
     static final String EMBEDDING_FK = "fk_transaction_embeddings_transaction";
     static final String USAGE_UNIQUE_INDEX = "uk_usage_tracking_user_feature_period";
-    static final String ANOMALY_USER_FK = "fk_spending_anomalies_user";
+    static final String[] USER_OWNED_TABLES = {"spending_anomalies", "transactions", "bank_accounts", "plaid_items"};
 
     private final JdbcTemplate jdbcTemplate;
 
@@ -55,28 +57,31 @@ public class DatabaseConstraints implements ApplicationRunner {
         } catch (Exception e) {
             logger.error("Could not add {}: {}", USAGE_UNIQUE_INDEX, e.getMessage());
         }
-        try {
-            addAnomalyUserForeignKey();
-        } catch (Exception e) {
-            logger.error("Could not add {}: {}", ANOMALY_USER_FK, e.getMessage());
+        for (String table : USER_OWNED_TABLES) {
+            String constraint = "fk_" + table + "_user";
+            try {
+                addUserForeignKey(table, constraint);
+            } catch (Exception e) {
+                logger.error("Could not add {}: {}", constraint, e.getMessage());
+            }
         }
     }
 
-    private void addAnomalyUserForeignKey() {
+    private void addUserForeignKey(String table, String constraint) {
         Integer existing = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM pg_constraint WHERE conname = ?", Integer.class, ANOMALY_USER_FK);
+                "SELECT COUNT(*) FROM pg_constraint WHERE conname = ?", Integer.class, constraint);
         if (existing != null && existing > 0) {
             return;
         }
 
-        // Anomalies of users that no longer exist would block the constraint (and shouldn't be kept)
+        // Rows of users that no longer exist would block the constraint (and shouldn't be kept)
         int orphans = jdbcTemplate.update(
-                "DELETE FROM spending_anomalies a WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = a.user_id)");
+                "DELETE FROM " + table + " r WHERE NOT EXISTS (SELECT 1 FROM users u WHERE u.id = r.user_id)");
 
-        jdbcTemplate.execute("ALTER TABLE spending_anomalies ADD CONSTRAINT " + ANOMALY_USER_FK
+        jdbcTemplate.execute("ALTER TABLE " + table + " ADD CONSTRAINT " + constraint
                 + " FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE");
 
-        logger.info("Added {} (removed {} anomalies of deleted users)", ANOMALY_USER_FK, orphans);
+        logger.info("Added {} (removed {} rows of deleted users)", constraint, orphans);
     }
 
     /**
