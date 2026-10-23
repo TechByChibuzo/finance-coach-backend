@@ -27,6 +27,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private volatile String dummyPasswordHash;
     @Autowired
     private MetricsService metricsService;
 
@@ -74,12 +75,23 @@ public class UserService {
         return convertToResponse(savedUser);
     }
 
+    private String dummyPasswordHash() {
+        if (dummyPasswordHash == null) {
+            dummyPasswordHash = passwordEncoder.encode(UUID.randomUUID().toString());
+        }
+        return dummyPasswordHash;
+    }
+
     public User authenticate(String email, String password) {
         logger.debug("Authentication attempt for email: {}", email);
 
-        // Find user by email
-        User user = userRepository.lookupByEmail(normalizeEmail(email))
-                .orElseThrow(InvalidCredentialsException::new);
+        // Find user by email. An unknown email still costs a password check, so the response
+        // time doesn't reveal which emails have an account.
+        User user = userRepository.lookupByEmail(normalizeEmail(email)).orElse(null);
+        if (user == null) {
+            passwordEncoder.matches(password, dummyPasswordHash());
+            throw new InvalidCredentialsException();
+        }
 
         // Check password
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
