@@ -31,10 +31,15 @@ public interface BankAccountRepository extends JpaRepository<BankAccount, UUID> 
             + "WHERE a.userId = :userId AND a.isActive = true AND a.itemId IS NOT NULL")
     long countConnectedItems(@Param("userId") UUID userId);
 
-    // Active connections linked before items were stored (no itemId): one per access token
-    @Query("SELECT COUNT(DISTINCT a.plaidAccessToken) FROM BankAccount a "
-            + "WHERE a.userId = :userId AND a.isActive = true AND a.itemId IS NULL")
-    long countLegacyConnections(@Param("userId") UUID userId);
+    // Active connections linked before items were stored (no itemId): one per access token.
+    // Counted after decryption: tokens are salted, so SQL sees a different value on every account.
+    default long countLegacyConnections(UUID userId) {
+        return findByUserIdAndIsActive(userId, true).stream()
+                .filter(a -> a.getItemId() == null)
+                .map(BankAccount::getPlaidAccessToken)
+                .distinct()
+                .count();
+    }
 
     default long countBankConnections(UUID userId) {
         return countConnectedItems(userId) + countLegacyConnections(userId);

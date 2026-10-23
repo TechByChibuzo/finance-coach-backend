@@ -225,6 +225,26 @@ class PlaidServiceLinkingTest {
         assertThat(repository.countBankConnections(userId)).isEqualTo(3L);
     }
 
+    @Test
+    void countLegacyConnections_countsEachDecryptedAccessTokenOnce() {
+        // Stored tokens are salted, so the same token encrypts differently on every account;
+        // two accounts from one legacy connection must still count as one
+        BankAccountRepository repository = mock(BankAccountRepository.class, org.mockito.Mockito.CALLS_REAL_METHODS);
+        BankAccount checking = new BankAccount();
+        checking.setPlaidAccessToken("access-legacy");
+        BankAccount savings = new BankAccount();
+        savings.setPlaidAccessToken("access-legacy");
+        BankAccount otherBank = new BankAccount();
+        otherBank.setPlaidAccessToken("access-other");
+        BankAccount linkedViaItem = new BankAccount();
+        linkedViaItem.setItemId(UUID.randomUUID());
+        linkedViaItem.setPlaidAccessToken("access-new");
+        org.mockito.Mockito.doReturn(List.of(checking, savings, otherBank, linkedViaItem))
+                .when(repository).findByUserIdAndIsActive(userId, true);
+
+        assertThat(repository.countLegacyConnections(userId)).isEqualTo(2L);
+    }
+
     // --- public token exchange ---
 
     @Test
