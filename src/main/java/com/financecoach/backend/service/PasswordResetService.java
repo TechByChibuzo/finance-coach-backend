@@ -11,7 +11,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
 import java.util.UUID;
 
 @Service
@@ -75,8 +79,8 @@ public class PasswordResetService {
         // Invalidate any existing active tokens instead of deleting
         tokenRepository.markActiveTokensAsUsed(user.getId(), LocalDateTime.now());
 
-        // Create new token
-        PasswordResetToken resetToken = new PasswordResetToken(token, user.getId(), expiryDate);
+        // Create new token. Only its hash is stored; the token itself is only in the email.
+        PasswordResetToken resetToken = new PasswordResetToken(hash(token), user.getId(), expiryDate);
         tokenRepository.save(resetToken);
 
         // TRACK METRIC
@@ -90,7 +94,7 @@ public class PasswordResetService {
      * Validate reset token
      */
     public boolean validateToken(String token) {
-        PasswordResetToken resetToken = tokenRepository.findByToken(token).orElse(null);
+        PasswordResetToken resetToken = tokenRepository.findByToken(hash(token)).orElse(null);
         return resetToken != null && resetToken.isValid();
     }
 
@@ -109,7 +113,7 @@ public class PasswordResetService {
 //        }
 
         // Find and validate token
-        PasswordResetToken resetToken = tokenRepository.findByToken(token)
+        PasswordResetToken resetToken = tokenRepository.findByToken(hash(token))
                 .orElseThrow(() -> new RuntimeException("Invalid or expired reset token"));
 
         if (!resetToken.isValid()) {
@@ -128,6 +132,15 @@ public class PasswordResetService {
         // Mark token as used
         resetToken.setUsed(true);
         tokenRepository.save(resetToken);
+    }
+
+    private static String hash(String token) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is not available", e);
+        }
     }
 
     /**

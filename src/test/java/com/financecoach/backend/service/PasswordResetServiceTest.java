@@ -65,7 +65,12 @@ class PasswordResetServiceTest {
         assertThat(token.getValue().getUserId()).isEqualTo(user.getId());
         assertThat(token.getValue().getExpiryDate())
                 .isBetween(LocalDateTime.now().plusMinutes(59), LocalDateTime.now().plusMinutes(61));
-        verify(emailService).sendPasswordResetEmail("jane@example.com", token.getValue().getToken(), "Jane");
+        // Only a hash is stored, so a leaked database can't be used to reset passwords
+        ArgumentCaptor<String> emailed = ArgumentCaptor.forClass(String.class);
+        verify(emailService).sendPasswordResetEmail(eq("jane@example.com"), emailed.capture(), eq("Jane"));
+        assertThat(token.getValue().getToken())
+                .isEqualTo(sha256(emailed.getValue()))
+                .isNotEqualTo(emailed.getValue());
         verify(metricsService).recordPasswordReset();
     }
 
@@ -98,10 +103,10 @@ class PasswordResetServiceTest {
         PasswordResetToken expired = token(LocalDateTime.now().minusMinutes(1));
         PasswordResetToken used = token(LocalDateTime.now().plusMinutes(30));
         used.setUsed(true);
-        when(tokenRepository.findByToken("valid")).thenReturn(Optional.of(valid));
-        when(tokenRepository.findByToken("expired")).thenReturn(Optional.of(expired));
-        when(tokenRepository.findByToken("used")).thenReturn(Optional.of(used));
-        when(tokenRepository.findByToken("unknown")).thenReturn(Optional.empty());
+        when(tokenRepository.findByToken(sha256("valid"))).thenReturn(Optional.of(valid));
+        when(tokenRepository.findByToken(sha256("expired"))).thenReturn(Optional.of(expired));
+        when(tokenRepository.findByToken(sha256("used"))).thenReturn(Optional.of(used));
+        when(tokenRepository.findByToken(sha256("unknown"))).thenReturn(Optional.empty());
 
         assertThat(passwordResetService.validateToken("valid")).isTrue();
         assertThat(passwordResetService.validateToken("expired")).isFalse();
@@ -114,7 +119,7 @@ class PasswordResetServiceTest {
     @Test
     void resetPassword_setsTheNewPassword_usesUpTheToken_andLogsOutEverySession() {
         PasswordResetToken token = token(LocalDateTime.now().plusMinutes(30));
-        when(tokenRepository.findByToken("reset-token")).thenReturn(Optional.of(token));
+        when(tokenRepository.findByToken(sha256("reset-token"))).thenReturn(Optional.of(token));
         when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
         when(passwordEncoder.encode("newPassword123")).thenReturn("new-hash");
 
@@ -131,8 +136,8 @@ class PasswordResetServiceTest {
     void resetPassword_rejectsShortPasswords_andBadOrUsedTokens() {
         PasswordResetToken used = token(LocalDateTime.now().plusMinutes(30));
         used.setUsed(true);
-        when(tokenRepository.findByToken("unknown")).thenReturn(Optional.empty());
-        when(tokenRepository.findByToken("used")).thenReturn(Optional.of(used));
+        when(tokenRepository.findByToken(sha256("unknown"))).thenReturn(Optional.empty());
+        when(tokenRepository.findByToken(sha256("used"))).thenReturn(Optional.of(used));
 
         assertThatThrownBy(() -> passwordResetService.resetPassword("any", "short"))
                 .hasMessageContaining("at least 8");
@@ -147,7 +152,7 @@ class PasswordResetServiceTest {
 
     @Test
     void resetPassword_forADeletedUser_fails() {
-        when(tokenRepository.findByToken("reset-token")).thenReturn(Optional.of(token(LocalDateTime.now().plusMinutes(30))));
+        when(tokenRepository.findByToken(sha256("reset-token"))).thenReturn(Optional.of(token(LocalDateTime.now().plusMinutes(30))));
         when(userRepository.findById(user.getId())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> passwordResetService.resetPassword("reset-token", "newPassword123"))
@@ -163,5 +168,14 @@ class PasswordResetServiceTest {
 
     private PasswordResetToken token(LocalDateTime expiry) {
         return new PasswordResetToken(UUID.randomUUID().toString(), user.getId(), expiry);
+    }
+
+    private static String sha256(String value) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }
