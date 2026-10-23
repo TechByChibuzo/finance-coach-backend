@@ -107,6 +107,8 @@ class UserServiceTest {
         when(userRepository.lookupByEmail("nobody@example.com")).thenReturn(Optional.empty());
         when(passwordEncoder.matches("wrong", "hash")).thenReturn(false);
         when(passwordEncoder.matches("right", "hash")).thenReturn(true);
+        when(passwordEncoder.encode(anyString())).thenReturn("dummy-hash");
+        when(passwordEncoder.matches("right", "dummy-hash")).thenReturn(false);
 
         assertThatThrownBy(() -> userService.authenticate("jane@example.com", "wrong"))
                 .isInstanceOf(com.financecoach.backend.exception.InvalidCredentialsException.class);
@@ -116,6 +118,22 @@ class UserServiceTest {
 
         assertThat(user.getLastLogin()).isNotNull();
         verify(metricsService).recordUserLogin();
+    }
+
+    @Test
+    void authenticate_withAnUnknownEmail_stillChecksAPassword_soTimingDoesntRevealWhichEmailsExist() {
+        when(userRepository.lookupByEmail("nobody@example.com")).thenReturn(Optional.empty());
+        when(passwordEncoder.encode(anyString())).thenReturn("dummy-hash");
+
+        assertThatThrownBy(() -> userService.authenticate("nobody@example.com", "guess"))
+                .isInstanceOf(com.financecoach.backend.exception.InvalidCredentialsException.class);
+        assertThatThrownBy(() -> userService.authenticate("nobody@example.com", "guess2"))
+                .isInstanceOf(com.financecoach.backend.exception.InvalidCredentialsException.class);
+
+        verify(passwordEncoder).matches("guess", "dummy-hash");
+        verify(passwordEncoder).matches("guess2", "dummy-hash");
+        // The dummy hash is made once, not on every attempt
+        verify(passwordEncoder, org.mockito.Mockito.times(1)).encode(anyString());
     }
 
     @Test
