@@ -93,17 +93,28 @@ public class VectorStoreService {
         // Runs in the background, so the transaction may have been deleted (or the account erased)
         // since it was synced: only insert while the transaction still exists. The foreign key with
         // ON DELETE CASCADE (DatabaseConstraints) covers a delete racing this statement.
+        // Plaid may also have modified it since: only insert while it still has the fields the text
+        // was built from, and replace older text, so the job for the newest version wins.
         jdbcTemplate.update(
                 "INSERT INTO transaction_embeddings (id, transaction_id, user_id, embedding, content, metadata, created_at) " +
                         "SELECT gen_random_uuid(), ?, ?, ?::vector, ?, ?::jsonb, NOW() " +
-                        "WHERE EXISTS (SELECT 1 FROM transactions WHERE plaid_transaction_id = ?) " +
-                        "ON CONFLICT (transaction_id) DO NOTHING",
+                        "WHERE EXISTS (SELECT 1 FROM transactions WHERE plaid_transaction_id = ? " +
+                        "AND amount = ? AND date = ? AND merchant_name IS NOT DISTINCT FROM ? " +
+                        "AND name IS NOT DISTINCT FROM ? AND category IS NOT DISTINCT FROM ? AND account_id = ?) " +
+                        "ON CONFLICT (transaction_id) DO UPDATE SET embedding = EXCLUDED.embedding, " +
+                        "content = EXCLUDED.content, metadata = EXCLUDED.metadata, created_at = EXCLUDED.created_at",
                 transaction.getPlaidTransactionId(),
                 transaction.getUserId(),
                 buildVectorString(embedding),
                 content,
                 objectMapper.writeValueAsString(metadata),
-                transaction.getPlaidTransactionId()
+                transaction.getPlaidTransactionId(),
+                transaction.getAmount(),
+                transaction.getDate(),
+                transaction.getMerchantName(),
+                transaction.getName(),
+                transaction.getCategory(),
+                transaction.getAccountId()
         );
     }
 
