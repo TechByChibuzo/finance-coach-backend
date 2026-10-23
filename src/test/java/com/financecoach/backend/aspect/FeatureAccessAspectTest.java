@@ -101,6 +101,16 @@ class FeatureAccessAspectTest {
     }
 
     @Test
+    void chat_withoutAnAuthenticatedUser_isAnAuthenticationError_soItsA401NotA500() {
+        SecurityContextHolder.clearContext();
+
+        assertThatThrownBy(() -> aiCoachController.chat(chatRequest()))
+                .isInstanceOf(org.springframework.security.core.AuthenticationException.class);
+
+        verify(aiCoachService, never()).chat(any(), anyString(), anyString());
+    }
+
+    @Test
     void chat_withoutPlanAccess_isBlockedWithoutReservingAUse() {
         when(subscriptionService.hasFeatureAccess(userId, "ai_coach")).thenReturn(false);
 
