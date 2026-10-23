@@ -19,6 +19,7 @@ import java.util.UUID;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.AdditionalMatchers.and;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
@@ -54,9 +55,33 @@ class VectorStoreServiceTest {
 
         vectorStoreService.indexTransaction(tx);
 
-        verify(jdbcTemplate).update(contains("WHERE EXISTS (SELECT 1 FROM transactions WHERE plaid_transaction_id = ?)"),
+        verify(jdbcTemplate).update(contains("WHERE EXISTS (SELECT 1 FROM transactions WHERE plaid_transaction_id = ?"),
                 eq("tx-1"), eq(userId), eq("[0.5,-1.25]"), eq("Transaction: $5.00 at Uber"),
-                contains("\"merchant\":\"Uber\""), eq("tx-1"));
+                contains("\"merchant\":\"Uber\""), eq("tx-1"), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void indexTransaction_onlyStoresTextBuiltFromTheTransactionAsItStillIs_andReplacesOlderText() {
+        // A job that started before Plaid modified the transaction must not store its stale text,
+        // and the job for the modified version must replace whatever is there
+        Transaction tx = transaction("tx-1");
+        UUID accountId = UUID.randomUUID();
+        tx.setAccountId(accountId);
+        tx.setName("UBER *TRIP");
+        when(embeddingRepository.existsByTransactionId("tx-1")).thenReturn(false);
+        when(embeddingService.buildTransactionText(tx)).thenReturn("text");
+        when(embeddingService.embedTexts(List.of("text"))).thenReturn(List.of(new float[]{1f}));
+
+        vectorStoreService.indexTransaction(tx);
+
+        verify(jdbcTemplate).update(
+                and(contains("WHERE EXISTS (SELECT 1 FROM transactions WHERE plaid_transaction_id = ? "
+                                + "AND amount = ? AND date = ? AND merchant_name IS NOT DISTINCT FROM ? "
+                                + "AND name IS NOT DISTINCT FROM ? AND category IS NOT DISTINCT FROM ? AND account_id = ?)"),
+                        contains("ON CONFLICT (transaction_id) DO UPDATE SET")),
+                eq("tx-1"), eq(userId), eq("[1.0]"), eq("text"), anyString(),
+                eq("tx-1"), eq(new BigDecimal("5.00")), eq(LocalDate.of(2026, 9, 15)), eq("Uber"),
+                eq("UBER *TRIP"), eq("TRANSPORTATION"), eq(accountId));
     }
 
     @Test
@@ -72,7 +97,7 @@ class VectorStoreServiceTest {
         ArgumentCaptor<List<String>> batches = ArgumentCaptor.forClass(List.class);
         verify(embeddingService, times(3)).embedTexts(batches.capture());
         assertThat(batches.getAllValues()).extracting(List::size).containsExactly(100, 100, 49);
-        verify(jdbcTemplate, times(249)).update(anyString(), any(), any(), any(), any(), any(), any());
+        verify(jdbcTemplate, times(249)).update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -86,7 +111,7 @@ class VectorStoreServiceTest {
 
         vectorStoreService.indexTransactions(transactions);
 
-        verify(jdbcTemplate, times(50)).update(anyString(), any(), any(), any(), any(), any(), any());
+        verify(jdbcTemplate, times(50)).update(anyString(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
