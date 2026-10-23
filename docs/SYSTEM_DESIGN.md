@@ -92,7 +92,7 @@ HTTP ─► AuthRateLimitFilter ─► JwtAuthenticationFilter ─► Controller
 - **`JwtTokenProvider`**: HS256 token, 24h TTL. `sub` is the user UUID, plus `email` and a `tokenVersion` claim. The filter rejects tokens whose version no longer matches `users.token_version`, which is bumped on password reset and account deletion, so those revoke every existing token.
 - **`JwtAuthenticationFilter`**: reads `Authorization: Bearer …` and sets a principal that **is the `UUID`**. Unauthenticated requests get **401** (`HttpStatusEntryPoint`).
 - **`AuthRateLimitFilter`**: per-IP limits on login (10 / 5 min), register (5 / h), forgot-password (5 / h) and reset-password (10 / h). It trusts `X-Forwarded-For` only from private (ALB) addresses and normalizes paths before matching.
-- **`PasswordResetService`**: single-use token with a 1h TTL, 3 requests per 15 minutes per user, sent through SendGrid.
+- **`PasswordResetService`**: single-use token with a 1h TTL, 3 requests per 15 minutes per user, sent through SendGrid. Only the token's SHA-256 is stored.
 - **`AccountDeletionService`** (`DELETE /api/users/me`): cancels Stripe subscriptions and deletes the Stripe customer, revokes every Plaid item, then purges all of the user's rows (transactions, budgets, goals, category rules and the rest) in one database transaction. If Stripe or Plaid fails, nothing is deleted locally and the request can be retried (each step is idempotent).
 - **Preferences** (`PATCH /api/users/me/preferences`): turns the weekly summary email on or off (`users.weekly_summary_emails`, null means on), written with a single-column update like `lastLogin`.
 
@@ -127,7 +127,7 @@ HTTP ─► AuthRateLimitFilter ─► JwtAuthenticationFilter ─► Controller
 ### 3.5 AI coach (RAG)
 - **`AICoachController`** (`/api/ai-coach/**`): chat, clear session, weekly summary, monthly report, category analysis, savings plan. All but clear-session count against the `ai_coach` limit (FREE: 5 per month).
 - **`EmbeddingService`**: turns a transaction into one sentence and embeds it with OpenAI `text-embedding-3-small` (1536-dim) through Spring AI, in batches of 100.
-- **`VectorStoreService`**: indexing runs **asynchronously** on the `embeddingExecutor` (1–2 threads, queue of 200). The insert only lands while the transaction still exists. Retrieval returns the top-K rows by cosine distance (`<=>`), scoped to `user_id`.
+- **`VectorStoreService`**: indexing runs **asynchronously** on the `embeddingExecutor` (1–2 threads, queue of 200). The insert only lands while the transaction still exists with the fields the text was built from, and replaces older text, so a job that started before Plaid modified the transaction can't leave stale text behind. Retrieval returns the top-K rows by cosine distance (`<=>`), scoped to `user_id`.
 - **`AICoachService`**: the system prompt combines an exact financial summary (spending, income, spending by category and top merchants, for this month to date and last month), so "how much" questions get real numbers, with the top 10 retrieved transactions for specific lookups.
 - **`ConversationService`**: stores each turn (user message + assistant reply) keyed by `(user_id, session_id)` and replays the last 10 turns.
 - **`ClaudeService`**: Bedrock `InvokeModel` with the Anthropic Messages body, using the ECS task role. The reply's text blocks are read by type (newer models can return thinking blocks first), an optional `CLAUDE_EFFORT` sets the effort level, and a safety decline (`stop_reason: refusal`) returns a polite fixed reply. Bedrock failures throw `AiServiceUnavailableException` (→ 503); failed turns aren't saved and don't use up the allowance.
@@ -430,7 +430,7 @@ erDiagram
     }
 ```
 
-Most relationships above are **logical**: apart from the embeddings foreign key and the two JPA associations, links are bare UUID columns. Account deletion removes everything explicitly in `AccountDeletionService`. Adding the remaining parent foreign keys is open (REVIEW.md, follow-up #1).
+Most relationships above are **logical**: apart from the foreign keys `DatabaseConstraints` adds (embeddings → transactions; spending_anomalies, transactions, bank_accounts and plaid_items → users, all `ON DELETE CASCADE`) and the two JPA associations, links are bare UUID columns. Account deletion removes everything explicitly in `AccountDeletionService`; the user foreign keys make a background sync or anomaly run that finishes after the purge fail instead of writing data back.
 
 ### Indexes
 | Table | Index |
@@ -470,10 +470,10 @@ Implications: ECS runs one task (`desired_count = 1`); during a deploy two overl
 | Authorization | Ownership checks inside services (`entity.userId == currentUserId`). There are no roles |
 | Public routes | `/api/auth/**`, `/api/users/health`, `/actuator/health/**`, `/actuator/info`, Swagger, `/api/subscriptions/plans`, `/api/subscriptions/webhook` |
 | Brute force | Per-IP rate limits on the auth endpoints (§3.1) |
-| Passwords | BCrypt (strength 10) |
+| Passwords | BCrypt (strength 10). Login with an unknown email still runs a BCrypt check, so timing doesn't reveal which emails exist |
 | Secrets | AWS Secrets Manager (`finance-coach/prod`) → ECS env vars. Local: gitignored `application-dev.yml` |
 | Data at rest | Plaid access tokens encrypted with Jasypt AES-256. RDS storage encryption for the rest |
-| CORS | `http://localhost:*`, `https://*.vercel.app`, with credentials allowed (pinning is open in REVIEW.md) |
+| CORS | `http://localhost:*` plus the origin(s) in `app.frontend-url` (comma-separated), with credentials allowed |
 | Webhooks | Stripe signature verification (`Webhook.constructEvent`) |
 | CSRF | Disabled (fine for a bearer-token API) |
 
