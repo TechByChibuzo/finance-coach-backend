@@ -36,7 +36,21 @@ class DatabaseConstraintsTest {
         verify(jdbcTemplate).update(contains("DELETE FROM usage_tracking"));
         verify(jdbcTemplate).execute(contains("CREATE UNIQUE INDEX IF NOT EXISTS uk_usage_tracking_user_feature_period"));
         verify(jdbcTemplate).update(contains("DELETE FROM spending_anomalies"));
-        verify(jdbcTemplate).execute(contains("REFERENCES users (id) ON DELETE CASCADE"));
+        verify(jdbcTemplate).execute(contains("ALTER TABLE spending_anomalies ADD CONSTRAINT fk_spending_anomalies_user"));
+    }
+
+    @Test
+    void tiesBankDataToTheUser_soASyncFinishingAfterAccountDeletionCantWriteItBack() {
+        when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any()))
+                .thenReturn(0);
+
+        databaseConstraints.run(null);
+
+        for (String table : new String[] {"transactions", "bank_accounts", "plaid_items"}) {
+            verify(jdbcTemplate).update(contains("DELETE FROM " + table));
+            verify(jdbcTemplate).execute(contains("ALTER TABLE " + table + " ADD CONSTRAINT fk_" + table
+                    + "_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE"));
+        }
     }
 
     @Test
@@ -49,6 +63,8 @@ class DatabaseConstraintsTest {
         verify(jdbcTemplate, never()).execute(contains("ADD CONSTRAINT"));
         verify(jdbcTemplate, never()).update(contains("DELETE FROM transaction_embeddings"));
         verify(jdbcTemplate, never()).update(contains("DELETE FROM spending_anomalies"));
+        verify(jdbcTemplate, never()).update(contains("DELETE FROM transactions"));
+        verify(jdbcTemplate, never()).update(contains("DELETE FROM plaid_items"));
         // The usage index is created with IF NOT EXISTS, so it's always (cheaply) ensured
         verify(jdbcTemplate).execute(contains("CREATE UNIQUE INDEX IF NOT EXISTS"));
     }
