@@ -10,6 +10,7 @@ import com.financecoach.backend.exception.UnauthorizedAccessException;
 import com.financecoach.backend.exception.ValidationException;
 import com.financecoach.backend.model.Budget;
 import com.financecoach.backend.repository.BudgetRepository;
+import com.financecoach.backend.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,16 +35,18 @@ public class BudgetService {
     private final BudgetRepository budgetRepository;
     private final AnalyticsService analyticsService;
     private final SubscriptionService subscriptionService;
+    private final UserRepository userRepository;
 
     @Autowired
     private MetricsService metricsService;
 
     @Autowired
     public BudgetService(BudgetRepository budgetRepository, AnalyticsService analyticsService,
-                         SubscriptionService subscriptionService) {
+                         SubscriptionService subscriptionService, UserRepository userRepository) {
         this.budgetRepository = budgetRepository;
         this.analyticsService = analyticsService;
         this.subscriptionService = subscriptionService;
+        this.userRepository = userRepository;
     }
 
     /**
@@ -454,13 +457,16 @@ public class BudgetService {
     }
 
     /**
-     * How many more active budgets the user's plan allows for the month; -1 means unlimited
+     * How many more active budgets the user's plan allows for the month; -1 means unlimited.
+     * Locks the user row until the caller's transaction ends, so two requests at the last slot
+     * can't both count the same number of budgets and both take it.
      */
     private int remainingBudgetSlots(UUID userId, LocalDate month) {
         int limit = subscriptionService.getLimit(userId, BUDGET_LIMIT_FEATURE);
         if (limit < 0) {
             return -1;
         }
+        userRepository.lockById(userId);
         int active = budgetRepository.findByUserIdAndMonthAndIsActive(userId, month, true).size();
         return Math.max(0, limit - active);
     }

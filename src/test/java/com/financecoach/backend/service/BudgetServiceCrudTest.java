@@ -9,6 +9,7 @@ import com.financecoach.backend.exception.UnauthorizedAccessException;
 import com.financecoach.backend.exception.ValidationException;
 import com.financecoach.backend.model.Budget;
 import com.financecoach.backend.repository.BudgetRepository;
+import com.financecoach.backend.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,6 +44,7 @@ class BudgetServiceCrudTest {
     @Mock private AnalyticsService analyticsService;
     @Mock private MetricsService metricsService;
     @Mock private SubscriptionService subscriptionService;
+    @Mock private UserRepository userRepository;
 
     private BudgetService budgetService;
     private UUID userId;
@@ -50,7 +52,7 @@ class BudgetServiceCrudTest {
 
     @BeforeEach
     void setUp() {
-        budgetService = new BudgetService(budgetRepository, analyticsService, subscriptionService);
+        budgetService = new BudgetService(budgetRepository, analyticsService, subscriptionService, userRepository);
         // Unlimited budgets unless a test says otherwise
         org.mockito.Mockito.lenient().when(subscriptionService.getLimit(any(), eq("budget_create"))).thenReturn(-1);
         ReflectionTestUtils.setField(budgetService, "metricsService", metricsService);
@@ -193,6 +195,39 @@ class BudgetServiceCrudTest {
 
         assertThatThrownBy(() -> budgetService.copyPreviousMonthBudgets(userId))
                 .isInstanceOf(com.financecoach.backend.exception.FeatureNotAvailableException.class);
+    }
+
+    @Test
+    void create_onALimitedPlan_locksTheUserBeforeCounting_soParallelRequestsCantBothTakeTheLastSlot() {
+        when(subscriptionService.getLimit(userId, "budget_create")).thenReturn(3);
+        when(budgetRepository.findByUserIdAndCategoryAndMonth(userId, "Travel", thisMonth)).thenReturn(Optional.empty());
+        when(budgetRepository.findByUserIdAndMonthAndIsActive(userId, thisMonth, true)).thenReturn(List.of(
+                budget("Food & Dining", "1", "0"), budget("Shopping", "1", "0"), budget("Entertainment", "1", "0")));
+
+        assertThatThrownBy(() -> budgetService.createOrUpdateBudget(userId, request("Travel", "200", thisMonth)))
+                .isInstanceOf(com.financecoach.backend.exception.FeatureNotAvailableException.class);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(userRepository, budgetRepository);
+        order.verify(userRepository).lockById(userId);
+        order.verify(budgetRepository).findByUserIdAndMonthAndIsActive(userId, thisMonth, true);
+    }
+
+    @Test
+    void copyPreviousMonth_onALimitedPlan_locksTheUserBeforeCounting() {
+        when(subscriptionService.getLimit(userId, "budget_create")).thenReturn(3);
+        LocalDate lastMonth = thisMonth.minusMonths(1);
+        Budget food = budget("Food & Dining", "100", "0");
+        food.setMonth(lastMonth);
+        when(budgetRepository.findByUserIdAndMonthAndIsActive(userId, lastMonth, true)).thenReturn(List.of(food));
+        when(budgetRepository.findByUserIdAndMonthAndIsActive(userId, thisMonth, true)).thenReturn(List.of(
+                budget("Shopping", "1", "0"), budget("Travel", "1", "0"), budget("Entertainment", "1", "0")));
+
+        assertThatThrownBy(() -> budgetService.copyPreviousMonthBudgets(userId))
+                .isInstanceOf(com.financecoach.backend.exception.FeatureNotAvailableException.class);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(userRepository, budgetRepository);
+        order.verify(userRepository).lockById(userId);
+        order.verify(budgetRepository).findByUserIdAndMonthAndIsActive(userId, thisMonth, true);
     }
 
     // --- monthly summary ---
