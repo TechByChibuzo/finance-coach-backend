@@ -20,13 +20,15 @@ import java.util.UUID;
 
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * Runs the real Spring Security filter chain (SecurityConfig + JWT filter) in front of a
  * controller, to check how unauthenticated and revoked requests are answered.
  */
-@WebMvcTest(controllers = UserController.class)
+@WebMvcTest(controllers = UserController.class, properties = "app.frontend-url=https://app.example.com")
 @Import({SecurityConfig.class, MetricsAccessManager.class})
 class SecurityConfigTest {
 
@@ -79,5 +81,25 @@ class SecurityConfigTest {
     @Test
     void publicEndpoints_needNoToken() throws Exception {
         mockMvc.perform(get("/api/users/health")).andExpect(status().isOk());
+    }
+
+    @Test
+    void cors_allowsTheConfiguredFrontend_andLocalDevelopment() throws Exception {
+        for (String origin : new String[] {"https://app.example.com", "http://localhost:5173"}) {
+            mockMvc.perform(options("/api/users/me")
+                            .header("Origin", origin)
+                            .header("Access-Control-Request-Method", "GET"))
+                    .andExpect(status().isOk())
+                    .andExpect(header().string("Access-Control-Allow-Origin", origin));
+        }
+    }
+
+    @Test
+    void cors_refusesOtherVercelApps() throws Exception {
+        // Anyone can deploy to *.vercel.app, so only the configured frontend may call the API from a browser
+        mockMvc.perform(options("/api/users/me")
+                        .header("Origin", "https://attacker.vercel.app")
+                        .header("Access-Control-Request-Method", "GET"))
+                .andExpect(status().isForbidden());
     }
 }

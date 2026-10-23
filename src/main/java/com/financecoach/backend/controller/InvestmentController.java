@@ -21,7 +21,6 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/investments")
-@CrossOrigin(origins = "${app.frontend-url}")
 public class InvestmentController {
 
     private static final Logger logger = LoggerFactory.getLogger(InvestmentController.class);
