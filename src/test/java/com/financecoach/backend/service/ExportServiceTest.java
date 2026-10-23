@@ -60,6 +60,23 @@ class ExportServiceTest {
         assertThat(lines[3]).isEqualTo("2026-09-15,Payroll,,-100.00,USD");
     }
 
+    @Test
+    void exportTransactionsCSV_textThatASpreadsheetWouldRunAsAFormula_isExportedAsText() {
+        // Merchant names come from banks and CSV imports; Excel runs a cell starting with = + - @ as a formula
+        when(transactionRepository.findByUserId(userId)).thenReturn(List.of(
+                transaction("=HYPERLINK(\"http://evil\")", "+cmd", "1.00", "USD"),
+                transaction("-2+3", "@SUM(A1)", "-2.00", "USD")));
+
+        exportService.exportTransactionsCSV(userId);
+
+        ArgumentCaptor<byte[]> body = ArgumentCaptor.forClass(byte[].class);
+        verify(s3Service).uploadFile(anyString(), body.capture(), eq("text/csv"));
+        String[] lines = new String(body.getValue(), StandardCharsets.UTF_8).split("\n");
+        assertThat(lines[1]).isEqualTo("2026-09-15,\"'=HYPERLINK(\"\"http://evil\"\")\",'+cmd,1.00,USD");
+        // Amounts stay numbers
+        assertThat(lines[2]).isEqualTo("2026-09-15,'-2+3,'@SUM(A1),-2.00,USD");
+    }
+
     private Transaction transaction(String merchant, String category, String amount, String currency) {
         Transaction t = new Transaction();
         t.setDate(LocalDate.of(2026, 9, 15));

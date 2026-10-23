@@ -50,6 +50,10 @@ public class ExportService {
 
     private String escapeCsv(String value) {
         if (value == null) return "";
+        // Spreadsheets run a cell starting with one of these as a formula; a leading ' keeps it text
+        if (!value.isEmpty() && "=+-@\t\r".indexOf(value.charAt(0)) >= 0) {
+            value = "'" + value;
+        }
         if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
             return "\"" + value.replace("\"", "\"\"") + "\"";
         }
