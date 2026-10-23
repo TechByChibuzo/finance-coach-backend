@@ -17,10 +17,10 @@ import java.util.UUID;
 public interface UserSubscriptionRepository extends JpaRepository<UserSubscription, UUID> {
 
     /**
-     * Find user's active subscription
+     * Find user's active subscription: a paid one, or a trial (its endDate is the trial's end)
      */
     @Query("SELECT s FROM UserSubscription s WHERE s.userId = :userId " +
-            "AND s.status = 'ACTIVE' AND (s.endDate IS NULL OR s.endDate > CURRENT_TIMESTAMP)")
+            "AND s.status IN ('ACTIVE', 'TRIAL') AND (s.endDate IS NULL OR s.endDate > CURRENT_TIMESTAMP)")
     Optional<UserSubscription> findActiveByUserId(@Param("userId") UUID userId);
 
     /**
