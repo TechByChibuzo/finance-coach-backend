@@ -7,7 +7,7 @@
 	<parent>
 		<groupId>org.springframework.boot</groupId>
 		<artifactId>spring-boot-starter-parent</artifactId>
-		<version>3.3.6</version> <!-- Downgraded from 4.0.0: Spring AI 1.0.0 targets Boot 3.3.x -->
+		<version>4.1.1</version> <!-- Downgraded from 4.0.0: Spring AI 1.0.0 targets Boot 3.3.x -->
 		<relativePath/>
 	</parent>
 
