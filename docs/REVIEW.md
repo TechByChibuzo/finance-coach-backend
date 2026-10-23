@@ -11,7 +11,6 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 
 ## 1. Billing (Stripe)
 
-- `TRIAL` status isn't treated as active (`findActiveByUserId` only matches `ACTIVE`), so `startTrial` subscriptions would never grant access. Nothing calls `startTrial` yet; fix it (and cover the query with a repository test) before offering trials.
 - `findPlanByStripePriceId` uses `findAll()` + filter. Minor, but add `findByStripePriceIdMonthlyOrStripePriceIdYearly`.
 - Idempotency relies on checking whether the Stripe subscription is already recorded. A `processed_stripe_events(event_id PK)` table, skipping events already seen, would cover every event type.
 - Offer the Stripe Billing **Customer Portal** for card updates and cancellation, so you don't build those screens.
@@ -71,7 +70,7 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 ## 7. Reliability & operations
 
 - **Schedulers vs multiple tasks.** With ECS desired count > 1, every cron job runs N times. Add **ShedLock** (JDBC lock provider) and a thread-pool scheduler before scaling out.
-- **`contextLoads` (`UserServiceApplicationTests`) is skipped in CI** because it needs a real DB and secrets. Run it against Testcontainers.
+- **`contextLoads` (`UserServiceApplicationTests`) is skipped in CI** because it needs a real DB and secrets. Point it at the Testcontainers Postgres the repository tests use (`PostgresRepositoryTest`), with dummy values for the secrets.
 - **Timeouts:** Plaid (retrofit), Bedrock and OpenAI clients use default timeouts. Set explicit connect and read timeouts, and add retries with backoff for Plaid and OpenAI.
 - **Logging:** structured JSON logs with a request ID and user ID in MDC.
 - **Errors:** some services still throw a bare `RuntimeException`, which becomes a 500. Map them to typed exceptions. `SubscriptionController` catches exceptions itself and echoes `e.getMessage()` to clients; let `GlobalExceptionHandler` own this.
@@ -95,7 +94,7 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 
 Service-layer unit tests are at ~98% lines / ~88% branches, enforced by JaCoCo in CI, with `@WebMvcTest` security tests. The remaining gap:
 
-- **Repository tests on Testcontainers Postgres + pgvector.** Repository calls are mocked, so SQL, encryption and locking are never exercised (that's how a legacy bank-connection count that never matched shipped). Cover the custom queries: usage reservation, connection counts, the guarded embedding insert, `findWithoutEmbedding`, and the user foreign keys.
+- **More repository tests.** `src/test/java/.../repository` runs against Postgres 16 + pgvector in Testcontainers and covers usage reservation, bank connection counts, the guarded embedding insert, `findWithoutEmbedding`, the active-subscription query and the user foreign keys. Not covered yet: `UserRepository.lockById`, the `BudgetRepository` totals, and the analytics and search queries.
 - **Anomaly detection** edge cases (zero months, partial month).
 
 ---
