@@ -62,7 +62,7 @@ For the full architecture, see [docs/SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md). O
 | Auth | JWT (jjwt 0.12.5) + Spring Security |
 | Property Encryption | Jasypt |
 | Infrastructure | Terraform |
-| Tests | JUnit 5, Mockito, JaCoCo |
+| Tests | JUnit 5, Mockito, Testcontainers, JaCoCo |
 | Metrics | Micrometer + Prometheus |
 | API Docs | SpringDoc OpenAPI (Swagger UI) |
 | Build | Maven |
@@ -358,6 +358,8 @@ Application logs go to CloudWatch Logs (`/ecs/finance-coach-backend`). CloudWatc
 ```
 
 Runs the unit tests and enforces a coverage gate on the service layer (≥ 90% lines, ≥ 80% branches) with JaCoCo. The HTML report is written to `target/site/jacoco/index.html`. CI runs the same command before every deploy.
+
+The repository tests (`src/test/java/.../repository`) run against Postgres 16 with pgvector in a Docker container (Testcontainers), so the SQL, encryption and constraints are exercised for real. Start Docker first; without it, those tests are skipped and the rest still run.
 
 `UserServiceApplicationTests` (the full Spring context) needs a real database and secrets, so CI skips it with `-Dtest='!UserServiceApplicationTests'`.
 
