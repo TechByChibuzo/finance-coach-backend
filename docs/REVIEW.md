@@ -63,7 +63,7 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 - **Foreign keys:** `transaction_embeddings → transactions` and `spending_anomalies`, `transactions`, `bank_accounts`, `plaid_items → users` exist (added by `DatabaseConstraints`). Other user-owned tables have none; move them all into Flyway migrations.
 - `UserSubscriptionRepository.findByUserId` returns `Optional`, but users can have many rows. It throws if anything ever calls it; remove it.
 - `GET /api/transactions` without a date range still returns everything (the frontend now asks per month, plus `recent` and `search`). Add pagination (`Pageable`) to it and to the anomalies and history endpoints.
-- Unused tables and repositories (`payments` and most `PaymentRepository` queries; `TransactionEmbeddingRepository.findSimilarTransactions`) should be wired up or removed.
+- The `payments` table and `PaymentRepository` are unused (only account deletion touches them). Wire them up or remove them.
 - Rotating `JASYPT_ENCRYPTOR_PASSWORD` makes all stored Plaid tokens undecryptable. Document a key-rotation procedure, or move to KMS envelope encryption.
 
 ---
@@ -75,8 +75,7 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 - **Timeouts:** Plaid (retrofit), Bedrock and OpenAI clients use default timeouts. Set explicit connect and read timeouts, and add retries with backoff for Plaid and OpenAI.
 - **Logging:** structured JSON logs with a request ID and user ID in MDC.
 - **Errors:** some services still throw a bare `RuntimeException`, which becomes a 500. Map them to typed exceptions. `SubscriptionController` catches exceptions itself and echoes `e.getMessage()` to clients; let `GlobalExceptionHandler` own this.
-- **Stale config:** `OpenApiConfig` lists old server URLs, and `render.yaml` is unused. Update or remove them.
-- Add an S3 lifecycle rule to expire `exports/` after a few days.
+- **Stale config:** `render.yaml` is unused. Remove it.
 
 ---
 
