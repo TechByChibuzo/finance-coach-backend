@@ -274,6 +274,28 @@ class SubscriptionServiceTest {
         assertThat(previous.getStatus()).isEqualTo(SubscriptionStatus.CANCELLED);
     }
 
+    @Test
+    void createSubscription_onUpgradeFromARowWithoutAStripeId_cancelsTheCustomersOtherRunningSubscriptions()
+            throws Exception {
+        // Older rows never stored the Stripe ID, but Stripe still bills that subscription
+        UserSubscription previous = activeSubscription(null);
+        when(subscriptionRepository.findActiveByUserId(userId)).thenReturn(Optional.of(previous));
+        Subscription upgrade = stripeSubscription("sub_new", "active", false);
+        upgrade.setCustomer("cus_1");
+        when(stripeService.listSubscriptions("cus_1")).thenReturn(List.of(
+                stripeSubscription("sub_new", "active", false),
+                stripeSubscription("sub_legacy", "active", false),
+                stripeSubscription("sub_dead", "canceled", false)
+        ));
+
+        subscriptionService.createSubscription(userId, plan("PRO"), BillingCycle.MONTHLY, upgrade);
+
+        verify(stripeService).cancelSubscription("sub_legacy");
+        verify(stripeService, never()).cancelSubscription("sub_new");
+        verify(stripeService, never()).cancelSubscription("sub_dead");
+        assertThat(previous.getStatus()).isEqualTo(SubscriptionStatus.CANCELLED);
+    }
+
     // --- feature limits (names must match the seeded feature_flags) ---
 
     @Test

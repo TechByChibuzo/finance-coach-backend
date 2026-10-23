@@ -374,12 +374,16 @@ public class SubscriptionService {
         // error and Stripe retries the event, and cancelSubscription is safe to repeat.
         current.ifPresent(existing -> {
             logger.info("Cancelling existing subscription: {}", existing.getId());
-            if (existing.getStripeSubscriptionId() != null) {
+            // Older rows never stored the Stripe ID - cancel whatever else the customer is still billed for
+            List<String> toCancel = existing.getStripeSubscriptionId() != null
+                    ? List.of(existing.getStripeSubscriptionId())
+                    : findOtherRunningStripeSubscriptionIds(stripeSubscription);
+            for (String stripeSubscriptionId : toCancel) {
                 try {
-                    stripeService.cancelSubscription(existing.getStripeSubscriptionId());
+                    stripeService.cancelSubscription(stripeSubscriptionId);
                 } catch (StripeException e) {
                     throw new IllegalStateException("Could not cancel previous Stripe subscription "
-                            + existing.getStripeSubscriptionId() + "; the event will be retried", e);
+                            + stripeSubscriptionId + "; the event will be retried", e);
                 }
             }
             existing.setStatus(SubscriptionStatus.CANCELLED);
@@ -402,6 +406,22 @@ public class SubscriptionService {
         logger.info("Subscription created successfully - User: {}, Plan: {}, Cycle: {}",
                 userId, plan.getName(), cycle);
 
+    }
+
+    private List<String> findOtherRunningStripeSubscriptionIds(Subscription newSubscription) {
+        if (newSubscription.getCustomer() == null) {
+            return List.of();
+        }
+        try {
+            return stripeService.listSubscriptions(newSubscription.getCustomer()).stream()
+                    .filter(s -> STILL_RUNNING_STATUSES.contains(s.getStatus()))
+                    .map(Subscription::getId)
+                    .filter(id -> !id.equals(newSubscription.getId()))
+                    .toList();
+        } catch (StripeException e) {
+            throw new IllegalStateException("Could not list Stripe subscriptions for customer "
+                    + newSubscription.getCustomer() + "; the event will be retried", e);
+        }
     }
 
     /**
