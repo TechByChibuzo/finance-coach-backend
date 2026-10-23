@@ -14,7 +14,6 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/anomalies")
-@CrossOrigin(origins = "${app.frontend-url}")
 public class AnomalyDetectionController {
 
     private final AnomalyDetectionService anomalyDetectionService;

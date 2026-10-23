@@ -22,7 +22,6 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/ai-coach")
-@CrossOrigin(origins = "${app.frontend-url}")
 public class AICoachController {
 
     private final AICoachService aiCoachService;

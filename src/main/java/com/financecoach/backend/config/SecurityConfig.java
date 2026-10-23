@@ -3,7 +3,10 @@ package com.financecoach.backend.config;
 
 import com.financecoach.backend.security.JwtAuthenticationFilter;
 import com.financecoach.backend.security.MetricsAccessManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -18,17 +21,25 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
+
+    private static final Logger logger = LoggerFactory.getLogger(SecurityConfig.class);
 
     @Autowired
     private JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @Autowired
     private MetricsAccessManager metricsAccessManager;
+
+    // The deployed frontend(s), comma-separated. Not *.vercel.app: anyone can deploy there.
+    @Value("${app.frontend-url}")
+    private String frontendUrls;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -75,13 +86,14 @@ public class SecurityConfig {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        System.out.println("=== CORS Configuration Loading ===");
         CorsConfiguration configuration = new CorsConfiguration();
 
-        configuration.setAllowedOriginPatterns(Arrays.asList(
-                "http://localhost:*",
-                "https://*.vercel.app"
-        ));
+        List<String> origins = new ArrayList<>(List.of("http://localhost:*"));
+        Arrays.stream(frontendUrls.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .forEach(origins::add);
+        configuration.setAllowedOriginPatterns(origins);
 
         configuration.setAllowedMethods(Arrays.asList(
                 "GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"
@@ -94,7 +106,7 @@ public class SecurityConfig {
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
 
-        System.out.println("CORS configured for: localhost:* and *.vercel.app");
+        logger.info("CORS allowed origins: {}", origins);
         return source;
     }
 }

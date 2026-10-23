@@ -22,7 +22,6 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/net-worth")
-@CrossOrigin(origins = "${app.frontend-url}")
 public class NetWorthController {
 
     private static final Logger logger = LoggerFactory.getLogger(NetWorthController.class);
