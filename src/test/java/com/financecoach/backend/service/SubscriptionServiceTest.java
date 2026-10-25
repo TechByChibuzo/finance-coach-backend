@@ -613,6 +613,53 @@ class SubscriptionServiceTest {
     }
 
     @Test
+    void limits_comeFromThePlansLimitsJson_soTheyCanChangeWithoutADeploy() {
+        stubCurrentPlan("FREE", "{\"max_budgets\": 7, \"ai_messages_per_month\": 20, \"bank_accounts\": 2, \"exports_per_month\": 4}");
+
+        assertThat(subscriptionService.getLimit(userId, "budget_create")).isEqualTo(7);
+        assertThat(subscriptionService.getLimit(userId, "ai_coach")).isEqualTo(20);
+        assertThat(subscriptionService.getLimit(userId, "bank_account")).isEqualTo(2);
+        assertThat(subscriptionService.getLimit(userId, "export_reports")).isEqualTo(4);
+    }
+
+    @Test
+    void aLimitOfMinusOneInTheJson_isUnlimited() {
+        stubCurrentPlan("PREMIUM", "{\"bank_accounts\": -1}");
+
+        assertThat(subscriptionService.getLimit(userId, "bank_account")).isEqualTo(-1);
+    }
+
+    @Test
+    void aMissingKeyOrUnreadableJson_fallsBackToTheBuiltInLimit_neverToUnlimited() {
+        stubCurrentPlan("FREE", "{\"max_budgets\": 7}");
+        assertThat(subscriptionService.getLimit(userId, "bank_account")).isEqualTo(1);
+        assertThat(subscriptionService.getLimit(userId, "export_reports")).isZero();
+
+        stubCurrentPlan("FREE", "not json");
+        assertThat(subscriptionService.getLimit(userId, "budget_create")).isEqualTo(3);
+    }
+
+    @Test
+    void theLimitsJsonAlreadyStoredInProduction_givesTheSameLimitsAsBefore() {
+        // What SubscriptionPlanSeeder wrote when the plans were created (no export key)
+        String free = "{\"max_budgets\": 3, \"ai_messages_per_month\": 5, \"bank_accounts\": 1, \"transaction_history_days\": 30}";
+        String premium = "{\"max_budgets\": -1, \"ai_messages_per_month\": -1, \"bank_accounts\": 5, \"transaction_history_days\": -1}";
+        String pro = "{\"max_budgets\": -1, \"ai_messages_per_month\": -1, \"bank_accounts\": -1, \"transaction_history_days\": -1, \"family_members\": 5}";
+
+        stubCurrentPlan("FREE", free);
+        assertThat(limits()).containsExactly(5, 3, 1, 0);
+        stubCurrentPlan("PREMIUM", premium);
+        assertThat(limits()).containsExactly(-1, -1, 5, -1);
+        stubCurrentPlan("PRO", pro);
+        assertThat(limits()).containsExactly(-1, -1, -1, -1);
+    }
+
+    private List<Integer> limits() {
+        return List.of("ai_coach", "budget_create", "bank_account", "export_reports").stream()
+                .map(feature -> subscriptionService.getLimit(userId, feature)).toList();
+    }
+
+    @Test
     void featureLimits_dependOnThePlan() {
         stubCurrentPlan("PREMIUM");
         when(usageRepository.findByUserIdAndFeatureNameAndPeriod(any(), any(), any(), any()))
@@ -857,6 +904,20 @@ class SubscriptionServiceTest {
         flag.setIsEnabled(true);
         flag.setRequiredPlan(requiredPlan);
         when(featureFlagRepository.findByFeatureName(featureName)).thenReturn(Optional.of(flag));
+    }
+
+    private void stubCurrentPlan(String planName, String limitsJson) {
+        SubscriptionPlan plan = plan(planName);
+        plan.setLimits(limitsJson);
+        if ("FREE".equals(planName)) {
+            org.mockito.Mockito.lenient().when(subscriptionRepository.findActiveByUserId(userId)).thenReturn(Optional.empty());
+            org.mockito.Mockito.lenient().when(planRepository.findByName("FREE")).thenReturn(Optional.of(plan));
+        } else {
+            UserSubscription sub = activeSubscription("sub_1");
+            sub.setPlan(plan);
+            org.mockito.Mockito.lenient().when(subscriptionRepository.findActiveByUserId(userId)).thenReturn(Optional.of(sub));
+            org.mockito.Mockito.lenient().when(planRepository.findByName("FREE")).thenReturn(Optional.of(plan("FREE")));
+        }
     }
 
     private void stubCurrentPlan(String planName) {
