@@ -5,6 +5,7 @@
 
 package com.financecoach.backend.controller;
 
+import com.financecoach.backend.security.CurrentUser;
 import com.financecoach.backend.exception.BillingUnavailableException;
 import com.stripe.exception.StripeException;
 import com.financecoach.backend.dto.*;
@@ -14,9 +15,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -32,21 +30,6 @@ public class SubscriptionController {
 
     @Autowired
     private SubscriptionService subscriptionService;
-
-    /**
-     * Get current authenticated user's ID from SecurityContext
-     * This is automatically populated by your JwtAuthenticationFilter
-     */
-    private UUID getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new AuthenticationCredentialsNotFoundException("User not authenticated");
-        }
-
-        // Your JwtAuthenticationFilter sets the UUID as the principal
-        return (UUID) authentication.getPrincipal();
-    }
 
     /**
      * Get all available plans (PUBLIC - no auth required)
@@ -65,7 +48,7 @@ public class SubscriptionController {
      */
     @GetMapping("/current")
     public ResponseEntity<?> getCurrentSubscription() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
 
         return subscriptionService.getUserSubscription(userId)
                 .map(sub -> ResponseEntity.ok(toSubscriptionResponse(sub)))
@@ -79,7 +62,7 @@ public class SubscriptionController {
     public ResponseEntity<FeatureAccessResponse> checkFeatureAccess(
             @PathVariable String featureName) {
 
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
 
         boolean hasAccess = subscriptionService.hasFeatureAccess(userId, featureName);
         boolean canUse = subscriptionService.canUseFeature(userId, featureName);
@@ -105,7 +88,7 @@ public class SubscriptionController {
      */
     @PostMapping("/checkout")
     public ResponseEntity<?> createCheckout(@RequestBody CheckoutRequest request) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
 
         // Errors go to GlobalExceptionHandler, which picks the status and a safe message;
         // Stripe's own error text is only logged
@@ -126,7 +109,7 @@ public class SubscriptionController {
      */
     @PostMapping("/cancel")
     public ResponseEntity<?> cancelSubscription() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
 
         UserSubscription subscription = subscriptionService.cancelSubscription(userId);
 

@@ -4,16 +4,15 @@ import com.financecoach.backend.dto.networth.ManualAssetRequest;
 import com.financecoach.backend.dto.networth.ManualAssetResponse;
 import com.financecoach.backend.dto.networth.ManualLiabilityRequest;
 import com.financecoach.backend.dto.networth.ManualLiabilityResponse;
-import com.financecoach.backend.dto.networth.NetWorthSummaryDTO;
 import com.financecoach.backend.dto.networth.NetWorthSnapshotDTO;
+import com.financecoach.backend.dto.networth.NetWorthSummaryDTO;
+import com.financecoach.backend.security.CurrentUser;
 import com.financecoach.backend.service.NetWorthService;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -39,7 +38,7 @@ public class NetWorthController {
      */
     @GetMapping("/current")
     public ResponseEntity<NetWorthSummaryDTO> getCurrentNetWorth() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Getting current net worth for user: {}", userId);
 
         NetWorthSummaryDTO summary = netWorthService.calculateNetWorth(userId);
@@ -54,7 +53,7 @@ public class NetWorthController {
     public ResponseEntity<List<NetWorthSnapshotDTO>> getNetWorthHistory(
             @RequestParam(defaultValue = "30") int days) {
 
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Getting net worth history for user: {} (last {} days)", userId, days);
 
         LocalDate endDate = LocalDate.now();
@@ -72,7 +71,7 @@ public class NetWorthController {
      */
     @GetMapping("/assets")
     public ResponseEntity<List<ManualAssetResponse>> getAllAssets() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Getting all manual assets for user: {}", userId);
 
         List<ManualAssetResponse> assets = netWorthService.getAllAssets(userId);
@@ -85,7 +84,7 @@ public class NetWorthController {
      */
     @PostMapping("/assets")
     public ResponseEntity<ManualAssetResponse> addAsset(@Valid @RequestBody ManualAssetRequest request) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Adding manual asset for user: {} - {}", userId, request.getName());
 
         ManualAssetResponse asset = netWorthService.addAsset(userId, request);
@@ -101,7 +100,7 @@ public class NetWorthController {
             @PathVariable UUID assetId,
             @Valid @RequestBody ManualAssetRequest request) {
 
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Updating manual asset: {} for user: {}", assetId, userId);
 
         ManualAssetResponse asset = netWorthService.updateAsset(userId, assetId, request);
@@ -114,7 +113,7 @@ public class NetWorthController {
      */
     @DeleteMapping("/assets/{assetId}")
     public ResponseEntity<Void> deleteAsset(@PathVariable UUID assetId) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Deleting manual asset: {} for user: {}", assetId, userId);
 
         netWorthService.deleteAsset(userId, assetId);
@@ -129,7 +128,7 @@ public class NetWorthController {
      */
     @GetMapping("/liabilities")
     public ResponseEntity<List<ManualLiabilityResponse>> getAllLiabilities() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Getting all manual liabilities for user: {}", userId);
 
         List<ManualLiabilityResponse> liabilities = netWorthService.getAllLiabilities(userId);
@@ -142,7 +141,7 @@ public class NetWorthController {
      */
     @PostMapping("/liabilities")
     public ResponseEntity<ManualLiabilityResponse> addLiability(@Valid @RequestBody ManualLiabilityRequest request) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Adding manual liability for user: {} - {}", userId, request.getName());
 
         ManualLiabilityResponse liability = netWorthService.addLiability(userId, request);
@@ -158,7 +157,7 @@ public class NetWorthController {
             @PathVariable UUID liabilityId,
             @Valid @RequestBody ManualLiabilityRequest request) {
 
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Updating manual liability: {} for user: {}", liabilityId, userId);
 
         ManualLiabilityResponse liability = netWorthService.updateLiability(userId, liabilityId, request);
@@ -171,17 +170,11 @@ public class NetWorthController {
      */
     @DeleteMapping("/liabilities/{liabilityId}")
     public ResponseEntity<Void> deleteLiability(@PathVariable UUID liabilityId) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Deleting manual liability: {} for user: {}", liabilityId, userId);
 
         netWorthService.deleteLiability(userId, liabilityId);
         return ResponseEntity.noContent().build();
     }
 
-    // ==================== HELPER METHODS ====================
-
-    private UUID getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return (UUID) authentication.getPrincipal();
-    }
 }

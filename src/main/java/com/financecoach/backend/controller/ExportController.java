@@ -1,12 +1,12 @@
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.annotation.RequiresFeature;
+import com.financecoach.backend.security.CurrentUser;
 import com.financecoach.backend.service.ExportService;
 import com.financecoach.backend.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -25,7 +25,7 @@ public class ExportController {
     @RequiresFeature(value = "export_reports", message = "Upgrade to Premium to export your transactions")
     @GetMapping("/transactions")
     public ResponseEntity<?> exportTransactions(Authentication authentication) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         String downloadUrl = exportService.exportTransactionsCSV(userId);
         return ResponseEntity.ok(Map.of(
                 "downloadUrl", downloadUrl,
@@ -33,8 +33,4 @@ public class ExportController {
         ));
     }
 
-    private UUID getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return (UUID) authentication.getPrincipal();
-    }
 }

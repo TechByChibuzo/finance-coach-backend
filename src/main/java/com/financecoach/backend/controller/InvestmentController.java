@@ -5,13 +5,13 @@ import com.financecoach.backend.dto.investment.PortfolioSnapshotDTO;
 import com.financecoach.backend.dto.investment.PortfolioSummaryDTO;
 import com.financecoach.backend.model.Holding;
 import com.financecoach.backend.model.PortfolioSnapshot;
+import com.financecoach.backend.security.CurrentUser;
 import com.financecoach.backend.service.InvestmentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -33,7 +33,7 @@ public class InvestmentController {
      */
     @PostMapping("/sync")
     public ResponseEntity<Map<String, String>> syncHoldings(Authentication authentication) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Syncing holdings for user: {}", userId);
 
         try {
@@ -58,7 +58,7 @@ public class InvestmentController {
     public ResponseEntity<Map<String, String>> syncHoldingsForAccount(
             @PathVariable UUID accountId,
             Authentication authentication) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Syncing holdings for account: {}, user: {}", accountId, userId);
 
         try {
@@ -81,7 +81,7 @@ public class InvestmentController {
      */
     @GetMapping("/portfolio")
     public ResponseEntity<PortfolioSummaryDTO> getPortfolio(Authentication authentication) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Getting portfolio summary for user: {}", userId);
 
         try {
@@ -110,7 +110,7 @@ public class InvestmentController {
     public ResponseEntity<List<HoldingDTO>> getHoldingsByAccount(
             @PathVariable UUID accountId,
             Authentication authentication) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Getting holdings for account: {}, user: {}", accountId, userId);
 
         try {
@@ -128,7 +128,7 @@ public class InvestmentController {
      */
     @GetMapping("/allocation")
     public ResponseEntity<Map<String, Object>> getAllocation(Authentication authentication) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Getting allocation breakdown for user: {}", userId);
 
         try {
@@ -150,7 +150,7 @@ public class InvestmentController {
     public ResponseEntity<List<PortfolioSnapshotDTO>> getPortfolioHistory(
             @RequestParam(defaultValue = "30") int days,
             Authentication authentication) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         logger.info("Getting portfolio history for user: {} - {} days", userId, days);
 
         try {
@@ -195,10 +195,4 @@ public class InvestmentController {
                 .collect(Collectors.toList());
     }
 
-
-    // Helper method to get current authenticated user ID
-    private UUID getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return (UUID) authentication.getPrincipal();
-    }
 }

@@ -2,12 +2,11 @@
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.dto.UserResponse;
+import com.financecoach.backend.security.CurrentUser;
 import com.financecoach.backend.service.AccountDeletionService;
 import com.financecoach.backend.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -40,7 +39,7 @@ public class UserController {
      */
     @GetMapping("/me")
     public ResponseEntity<UserResponse> getCurrentUser() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         UserResponse user = userService.getUserById(userId);
         return ResponseEntity.ok(user);
     }
@@ -51,7 +50,7 @@ public class UserController {
      */
     @PatchMapping("/me/preferences")
     public ResponseEntity<UserResponse> updatePreferences(@RequestBody PreferencesRequest request) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         UserResponse user = request.weeklySummaryEmails() == null
                 ? userService.getUserById(userId)
                 : userService.updateWeeklySummaryEmails(userId, request.weeklySummaryEmails());
@@ -67,14 +66,9 @@ public class UserController {
      */
     @DeleteMapping("/me")
     public ResponseEntity<Void> deleteCurrentUser() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         accountDeletionService.deleteAccount(userId);
         return ResponseEntity.noContent().build();
     }
 
-    // Helper method to get current authenticated user ID
-    private UUID getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return (UUID) authentication.getPrincipal();
-    }
 }
