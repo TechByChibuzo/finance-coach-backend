@@ -1,6 +1,6 @@
 # Backend Review: Open Items
 
-> First reviewed 2026-10-13 against `main` @ `8dbebbc`; updated 2026-10-23. Companion to [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md).
+> First reviewed 2026-10-13 against `main` @ `8dbebbc`; updated 2026-10-25. Companion to [SYSTEM_DESIGN.md](SYSTEM_DESIGN.md).
 >
 > Only **open** items are listed. Everything fixed since the first review (all P0 and P1 findings, among others)
 > has been removed; `git log 8dbebbc..main` has the fixes.
@@ -23,62 +23,46 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 
 ---
 
-## 3. Plaid integration (P2)
-
-- **Re-linking a disconnected account is impossible.** `existsByPlaidAccountId` (global, ignores `isActive`) skips it. Reactivate it and update the token instead.
-- **`autoSyncHoldings` every 30 min is wasted work.** Plaid refreshes holdings about once a day, and it blocks the single scheduler thread. Run it once daily.
-- `Holding.type` is `nullable=false`, but the type is only set when a matching security is found, so a missing security makes the insert fail.
-- `PlaidConfig` maps only sandbox and production. Log a warning on unknown values.
-
----
-
-## 4. AI coach & RAG (P2)
+## 3. AI coach & RAG (P2)
 
 - **Tool use.** The coach now gets exact monthly totals in its prompt. For questions beyond that ("what did I spend at Costco in March?"), give Claude tools such as `get_spending_by_category(start,end)`, `get_transactions(filter)` and `get_budget_status(month)` backed by the existing services. Bedrock's Anthropic Messages API supports `tools`.
-- The embedded text includes the account **UUID** (`EmbeddingService`). It's random noise that hurts similarity. Use the institution or account name, or drop it.
 - **No ANN index.** Add `CREATE INDEX ON transaction_embeddings USING hnsw (embedding vector_cosine_ops);` and a `user_id` b-tree index as data grows.
-- No similarity threshold, so irrelevant rows still get injected. Filter by distance (`< 0.6` or similar).
-- **Prompt injection:** merchant names come from banks and go straight into the system prompt. Low risk, but wrap the context in delimiters and tell the model that context is data, not instructions.
+- No similarity threshold, so irrelevant rows still get injected. Filter by distance, but pick the cutoff from real query distances (a guess like `< 0.6` could drop everything).
 - **Cost controls:** set a max-tokens cap per endpoint, and consider caching weekly and monthly reports per user per period.
 - **Streaming:** `InvokeModelWithResponseStream` + SSE would make chat feel far faster.
-- `ConversationService.getHistory` loads the whole session, then slices it. Query `ORDER BY created_at DESC LIMIT 10` instead.
-- `anthropic-java` and the unused `CLAUDE_API_KEY` env var can go, since you call Claude through Bedrock.
 
 ---
 
-## 5. Analytics, budgets, anomalies: correctness
+## 4. Analytics, budgets, anomalies: correctness
 
-- **Anomaly statistics:** months with zero spend in a category are missing from the history list, which biases the mean up and the standard deviation down. Fill missing months with 0. A *partial* current month is also compared to *full* past months; pro-rate it or compare month-to-date.
-- **GET endpoints write to the DB:** `getBudgetsForMonth` updates `spent` during a read. Compute `spent` on read, or refresh it from the sync pipeline.
+- **GET endpoints write to the DB:** `getBudgetsForMonth` saves `spent` and `carriedOver` during a read (only when they changed). It can't simply stop: rollover builds each month's carry-over from last month's *stored* `carriedOver`, which only stays current because reads save it. Refresh budgets from the sync pipeline (after each transaction sync), then make the read pure.
 - `BudgetService` validates things Bean Validation already checks. Harmless, but the duplicates can go.
 - **Performance:** analytics calls load all rows into Java. Use SQL `GROUP BY` projections.
 - Money types mix `Double` and `BigDecimal` (`alertThreshold`, percentages, `BudgetRepository` totals). Keep money in `BigDecimal` with explicit `precision/scale` on every money column.
 
 ---
 
-## 6. Data & persistence
+## 5. Data & persistence
 
 - **`ddl-auto: update` in production.** Hibernate never drops or renames columns and can't add constraints safely (hence `DatabaseConstraints`). Adopt **Flyway**: baseline the current schema, set `ddl-auto: validate`, and move seed data into migrations.
 - **Foreign keys:** `transaction_embeddings → transactions` and `spending_anomalies`, `transactions`, `bank_accounts`, `plaid_items → users` exist (added by `DatabaseConstraints`). Other user-owned tables have none; move them all into Flyway migrations.
-- `UserSubscriptionRepository.findByUserId` returns `Optional`, but users can have many rows. It throws if anything ever calls it; remove it.
 - `GET /api/transactions` without a date range still returns everything (the frontend now asks per month, plus `recent` and `search`). Add pagination (`Pageable`) to it and to the anomalies and history endpoints.
 - The `payments` table and `PaymentRepository` are unused (only account deletion touches them). Wire them up or remove them.
 - Rotating `JASYPT_ENCRYPTOR_PASSWORD` makes all stored Plaid tokens undecryptable. Document a key-rotation procedure, or move to KMS envelope encryption.
 
 ---
 
-## 7. Reliability & operations
+## 6. Reliability & operations
 
 - **Schedulers vs multiple tasks.** With ECS desired count > 1, every cron job runs N times. Add **ShedLock** (JDBC lock provider) and a thread-pool scheduler before scaling out.
 - **`contextLoads` (`UserServiceApplicationTests`) is skipped in CI** because it needs a real DB and secrets. Point it at the Testcontainers Postgres the repository tests use (`PostgresRepositoryTest`), with dummy values for the secrets.
-- **Timeouts:** Plaid (retrofit), Bedrock and OpenAI clients use default timeouts. Set explicit connect and read timeouts, and add retries with backoff for Plaid and OpenAI.
+- **Retries:** Plaid calls have no retry with backoff (timeouts are set: Plaid 60s, Bedrock 2 min per call, OpenAI 5s/30s).
 - **Logging:** structured JSON logs with a request ID and user ID in MDC.
-- **Errors:** some services still throw a bare `RuntimeException`, which becomes a 500. Map them to typed exceptions. `SubscriptionController` catches exceptions itself and echoes `e.getMessage()` to clients; let `GlobalExceptionHandler` own this.
-- **Stale config:** `render.yaml` is unused. Remove it.
+- **Errors:** the remaining bare `RuntimeException`s are internal (Stripe webhook processing, a missing seeded plan or price ID, `EmailService`) and answer 500 on purpose; webhooks rely on it for Stripe's retries. Give them typed exceptions if they ever reach users.
 
 ---
 
-## 8. Code quality
+## 7. Code quality
 
 - **Duplicated `getCurrentUserId()`** in 11 controllers. Replace it with `@AuthenticationPrincipal UUID userId`, or a small `CurrentUser` helper.
 - **Mixed injection styles**: field `@Autowired` remains in places (`MetricsService` everywhere, `FeatureAccessAspect`). Standardize on constructor injection.
@@ -90,16 +74,15 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 
 ---
 
-## 9. Testing
+## 8. Testing
 
 Service-layer unit tests are at ~98% lines / ~88% branches, enforced by JaCoCo in CI, with `@WebMvcTest` security tests. The remaining gap:
 
 - **More repository tests.** `src/test/java/.../repository` runs against Postgres 16 + pgvector in Testcontainers and covers usage reservation, bank connection counts, the guarded embedding insert, `findWithoutEmbedding`, the active-subscription query and the user foreign keys. Not covered yet: `UserRepository.lockById`, the `BudgetRepository` totals, and the analytics and search queries.
-- **Anomaly detection** edge cases (zero months, partial month).
 
 ---
 
-## 10. Product & feature ideas
+## 9. Product & feature ideas
 
 Ideas that build on what's already here:
 
