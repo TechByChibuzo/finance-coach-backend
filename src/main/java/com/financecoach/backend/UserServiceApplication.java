@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/userservice/UserServiceApplication.java
 package com.financecoach.backend;
 
 import org.springframework.boot.SpringApplication;

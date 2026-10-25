@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/userservice/config/SecurityBeans.java
 package com.financecoach.backend.config;
 
 import org.springframework.context.annotation.Bean;

@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/userservice/dto/UserResponse.java
 package com.financecoach.backend.dto;
 
 import java.time.LocalDateTime;

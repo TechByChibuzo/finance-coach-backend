@@ -48,11 +48,6 @@ public interface UserSubscriptionRepository extends JpaRepository<UserSubscripti
      */
     Optional<UserSubscription> findByStripeSubscriptionId(String stripeSubscriptionId);
 
-//    /**
-//     * Find by Stripe customer ID
-//     */
-//    Optional<UserSubscription> findByStripeCustomerId(String stripeCustomerId);
-
     /**
      * Count active subscriptions by plan
      */

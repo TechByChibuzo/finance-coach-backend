@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/config/JasyptConfig.java
 package com.financecoach.backend.config;
 
 import org.jasypt.encryption.StringEncryptor;

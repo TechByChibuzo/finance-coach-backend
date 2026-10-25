@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/controller/AnalyticsController.java
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.dto.MonthlyReport;
@@ -28,7 +27,6 @@ public class AnalyticsController {
 
     /**
      * Get spending by category
-     * ✅ UPDATED: Returns BigDecimal map
      */
     @GetMapping("/spending-by-category")
     public ResponseEntity<Map<String, BigDecimal>> getSpendingByCategory(
@@ -42,7 +40,6 @@ public class AnalyticsController {
 
     /**
      * Get total spending
-     * ✅ UPDATED: Returns BigDecimal
      */
     @GetMapping("/total-spending")
     public ResponseEntity<Map<String, BigDecimal>> getTotalSpending(

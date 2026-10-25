@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/exception/ValidationException.java
 package com.financecoach.backend.exception;
 
 import java.util.Map;

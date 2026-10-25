@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/exception/FinanceCoachException.java
 package com.financecoach.backend.exception;
 
 /**

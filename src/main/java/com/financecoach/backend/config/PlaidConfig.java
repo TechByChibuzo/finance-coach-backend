@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/userservice/config/PlaidConfig.java
 package com.financecoach.backend.config;
 
 import com.plaid.client.ApiClient;

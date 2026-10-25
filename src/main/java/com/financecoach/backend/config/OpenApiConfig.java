@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/config/OpenApiConfig.java
 package com.financecoach.backend.config;
 
 import io.swagger.v3.oas.models.Components;

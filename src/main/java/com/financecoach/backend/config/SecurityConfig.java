@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/config/SecurityConfig.java
 package com.financecoach.backend.config;
 
 import com.financecoach.backend.security.JwtAuthenticationFilter;

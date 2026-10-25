@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/userservice/service/MetricsService.java
 package com.financecoach.backend.service;
 
 import io.micrometer.core.instrument.Counter;

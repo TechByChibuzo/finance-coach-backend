@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/controller/TransactionController.java
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.dto.CategoryUpdateRequest;

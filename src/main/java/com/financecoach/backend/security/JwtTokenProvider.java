@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/userservice/security/JwtTokenProvider.java
 package com.financecoach.backend.security;
 
 import io.jsonwebtoken.*;

@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/controller/PlaidController.java
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.dto.plaid.BankAccountResponse;

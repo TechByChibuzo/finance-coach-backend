@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/exception/PlaidIntegrationException.java
 package com.financecoach.backend.exception;
 
 public class PlaidIntegrationException extends FinanceCoachException {

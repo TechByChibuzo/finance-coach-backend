@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/userservice/dto/plaid/LinkTokenResponse.java
 package com.financecoach.backend.dto.plaid;
 
 public class LinkTokenResponse {
