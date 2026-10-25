@@ -219,6 +219,12 @@
 			<artifactId>bedrockruntime</artifactId>
 		</dependency>
 
+		<!-- Used directly to set Bedrock's HTTP timeouts (ClaudeService); version from the AWS SDK BOM -->
+		<dependency>
+			<groupId>software.amazon.awssdk</groupId>
+			<artifactId>apache-client</artifactId>
+		</dependency>
+
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>
 			<artifactId>s3</artifactId>
