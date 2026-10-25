@@ -359,9 +359,8 @@ Application logs go to CloudWatch Logs (`/ecs/finance-coach-backend`). CloudWatc
 
 Runs the unit tests and enforces a coverage gate on the service layer (≥ 90% lines, ≥ 80% branches) with JaCoCo. The HTML report is written to `target/site/jacoco/index.html`. CI runs the same command before every deploy.
 
-The repository tests (`src/test/java/.../repository`) run against Postgres 16 with pgvector in a Docker container (Testcontainers), so the SQL, encryption and constraints are exercised for real. Start Docker first; without it, those tests are skipped and the rest still run.
+The repository tests (`src/test/java/.../repository`) and `FinanceCoachApplicationTests`, which starts the whole application, run against Postgres 16 with pgvector in a Docker container (Testcontainers), so the SQL, encryption, constraints and wiring are exercised for real. Start Docker first; without it, those tests are skipped and the rest still run.
 
-`FinanceCoachApplicationTests` (the full Spring context) needs a real database and secrets, so CI skips it with `-Dtest='!FinanceCoachApplicationTests'`.
 
 ---
 
