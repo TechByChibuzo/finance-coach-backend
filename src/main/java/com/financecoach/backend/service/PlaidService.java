@@ -264,13 +264,15 @@ public class PlaidService {
         List<BankAccount> savedAccounts = new ArrayList<>();
 
         for (AccountBase account : plaidAccounts) {
-            // Check if account already exists
-            if (bankAccountRepository.existsByPlaidAccountId(account.getAccountId())) {
+            BankAccount existing = bankAccountRepository.findByPlaidAccountId(account.getAccountId()).orElse(null);
+            if (existing != null && (Boolean.TRUE.equals(existing.getIsActive()) || !userId.equals(existing.getUserId()))) {
                 logger.debug("Account already exists, skipping: {}", account.getAccountId());
                 continue;
             }
 
-            BankAccount bankAccount = new BankAccount();
+            // An account this user disconnected earlier: reactivate the same row, so its
+            // transaction history stays attached, now on the new login
+            BankAccount bankAccount = existing != null ? existing : new BankAccount();
             bankAccount.setUserId(userId);
             bankAccount.setItemId(item.getId());
             bankAccount.setPlaidAccountId(account.getAccountId());
