@@ -263,7 +263,6 @@ class PlaidServiceLinkingTest {
             item.setId(UUID.randomUUID());
             return item;
         });
-        when(bankAccountRepository.existsByPlaidAccountId(any())).thenReturn(false);
         when(bankAccountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         List<BankAccount> accounts = plaidService.exchangePublicToken(userId, "public-token");
@@ -298,8 +297,10 @@ class PlaidServiceLinkingTest {
         when(plaidClient.institutionsGetById(any())).thenThrow(new RuntimeException("institution lookup down"));
         when(plaidItemRepository.findByPlaidItemId("item-1")).thenReturn(Optional.empty());
         when(plaidItemRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(bankAccountRepository.existsByPlaidAccountId("acc-known")).thenReturn(true);
-        when(bankAccountRepository.existsByPlaidAccountId("acc-new")).thenReturn(false);
+        BankAccount alreadyLinked = new BankAccount();
+        alreadyLinked.setUserId(userId);
+        alreadyLinked.setIsActive(true);
+        when(bankAccountRepository.findByPlaidAccountId("acc-known")).thenReturn(Optional.of(alreadyLinked));
         when(bankAccountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         List<BankAccount> accounts = plaidService.exchangePublicToken(userId, "public-token");
@@ -307,6 +308,68 @@ class PlaidServiceLinkingTest {
         assertThat(accounts).extracting(BankAccount::getPlaidAccountId).containsExactly("acc-new");
         assertThat(accounts.get(0).getInstitutionName()).isEqualTo("Unknown");
         assertThat(accounts.get(0).getCurrentBalance()).isNull();
+    }
+
+    @Test
+    void exchangePublicToken_anAccountTheUserDisconnected_isReactivatedOnTheNewLogin_keepingItsHistory() throws Exception {
+        BankAccount disconnected = new BankAccount();
+        disconnected.setId(UUID.randomUUID());
+        disconnected.setUserId(userId);
+        disconnected.setPlaidAccountId("acc-back");
+        disconnected.setItemId(UUID.randomUUID());
+        disconnected.setPlaidAccessToken("access-old");
+        disconnected.setIsActive(false);
+        stubExchange("access-3", "item-3");
+        when(plaidClient.accountsGet(any())).thenReturn(ok(new AccountsGetResponse()
+                .item(new Item().institutionId("ins_1"))
+                .accounts(List.of(plaidAccount("acc-back", AccountType.DEPOSITORY, AccountSubtype.CHECKING, 820.00, 800.00)))));
+        when(plaidClient.institutionsGetById(any()))
+                .thenReturn(ok(new InstitutionsGetByIdResponse().institution(new Institution().name("Chase"))));
+        when(plaidItemRepository.findByPlaidItemId("item-3")).thenReturn(Optional.empty());
+        UUID newItemId = UUID.randomUUID();
+        when(plaidItemRepository.save(any())).thenAnswer(inv -> {
+            PlaidItem item = inv.getArgument(0);
+            item.setId(newItemId);
+            return item;
+        });
+        when(bankAccountRepository.findByPlaidAccountId("acc-back")).thenReturn(Optional.of(disconnected));
+        when(bankAccountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        List<BankAccount> accounts = plaidService.exchangePublicToken(userId, "public-token");
+
+        // The same row (and so its transactions), now on the new login
+        assertThat(accounts).containsExactly(disconnected);
+        assertThat(disconnected.getIsActive()).isTrue();
+        assertThat(disconnected.getItemId()).isEqualTo(newItemId);
+        assertThat(disconnected.getPlaidAccessToken()).isEqualTo("access-3");
+        assertThat(disconnected.getCurrentBalance()).isEqualByComparingTo("820.00");
+        verify(plaidClient, never()).itemRemove(any());
+    }
+
+    @Test
+    void exchangePublicToken_anAccountIdBelongingToAnotherUser_isNeverTakenOver() throws Exception {
+        BankAccount someoneElses = new BankAccount();
+        someoneElses.setUserId(UUID.randomUUID());
+        someoneElses.setPlaidAccountId("acc-theirs");
+        someoneElses.setIsActive(false);
+        stubExchange("access-4", "item-4");
+        when(plaidClient.accountsGet(any())).thenReturn(ok(new AccountsGetResponse()
+                .item(new Item().institutionId("ins_1"))
+                .accounts(List.of(
+                        plaidAccount("acc-theirs", AccountType.DEPOSITORY, null, null, null),
+                        plaidAccount("acc-mine", AccountType.DEPOSITORY, null, null, null)))));
+        when(plaidClient.institutionsGetById(any()))
+                .thenReturn(ok(new InstitutionsGetByIdResponse().institution(new Institution().name("Chase"))));
+        when(plaidItemRepository.findByPlaidItemId("item-4")).thenReturn(Optional.empty());
+        when(plaidItemRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(bankAccountRepository.findByPlaidAccountId("acc-theirs")).thenReturn(Optional.of(someoneElses));
+        when(bankAccountRepository.findByPlaidAccountId("acc-mine")).thenReturn(Optional.empty());
+        when(bankAccountRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        List<BankAccount> accounts = plaidService.exchangePublicToken(userId, "public-token");
+
+        assertThat(accounts).extracting(BankAccount::getPlaidAccountId).containsExactly("acc-mine");
+        assertThat(someoneElses.getIsActive()).isFalse();
     }
 
     @Test
