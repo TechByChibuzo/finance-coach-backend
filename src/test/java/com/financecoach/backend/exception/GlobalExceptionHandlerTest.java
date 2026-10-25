@@ -53,4 +53,20 @@ class GlobalExceptionHandlerTest {
                         new org.springframework.mock.http.MockHttpInputMessage(new byte[0])), request)
                 .getStatusCode().value()).isEqualTo(400);
     }
+
+    @Test
+    void aMissingResource_is404_andBillingTroubleIs503_eachWithItsMessage() {
+        MockHttpServletRequest request = new MockHttpServletRequest("PUT", "/api/networth/assets/1");
+
+        ResponseEntity<ErrorResponse> notFound = handler.handleResourceNotFound(
+                new ResourceNotFoundException("Asset"), request);
+        assertThat(notFound.getStatusCode().value()).isEqualTo(404);
+        assertThat(notFound.getBody().getMessage()).isEqualTo("Asset not found");
+
+        ResponseEntity<ErrorResponse> unavailable = handler.handleBillingUnavailable(
+                new BillingUnavailableException("Could not cancel your subscription. Please try again.",
+                        new RuntimeException("stripe down")), request);
+        assertThat(unavailable.getStatusCode().value()).isEqualTo(503);
+        assertThat(unavailable.getBody().getMessage()).isEqualTo("Could not cancel your subscription. Please try again.");
+    }
 }

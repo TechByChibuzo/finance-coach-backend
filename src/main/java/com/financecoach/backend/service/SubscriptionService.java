@@ -1,5 +1,8 @@
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.exception.BillingUnavailableException;
+import com.financecoach.backend.exception.ValidationException;
+import com.financecoach.backend.exception.ResourceNotFoundException;
 import com.financecoach.backend.exception.UsageLimitExceededException;
 import com.financecoach.backend.model.*;
 import com.financecoach.backend.repository.*;
@@ -262,7 +265,7 @@ public class SubscriptionService {
         SubscriptionPlan plan = planRepository.findById(planId)
                 .orElseThrow(() -> {
                     logger.error("Plan not found: {}", planId);
-                    return new RuntimeException("Plan not found");
+                    return new ResourceNotFoundException("Plan");
                 });
 
         // Get or create Stripe customer
@@ -431,7 +434,7 @@ public class SubscriptionService {
     public UserSubscription startTrial(UUID userId, String planName, int trialDays) {
         logger.info("Starting trial - User: {}, Plan: {}, Days: {}", userId, planName, trialDays);
         SubscriptionPlan plan = planRepository.findByName(planName)
-                .orElseThrow(() -> new RuntimeException("Plan not found"));
+                .orElseThrow(() -> new ResourceNotFoundException("Plan"));
 
         UserSubscription subscription = new UserSubscription();
         subscription.setUserId(userId);
@@ -458,7 +461,7 @@ public class SubscriptionService {
         UserSubscription subscription = getUserSubscription(userId)
                 .orElseThrow(() -> {
                     logger.warn("No active subscription found for user: {}", userId);
-                    return new RuntimeException("No active subscription");
+                    return new ValidationException("No active subscription");
                 });
 
         // Older rows never stored the Stripe subscription ID - look it up via the Stripe customer
@@ -473,7 +476,7 @@ public class SubscriptionService {
             }
         } catch (StripeException e) {
             logger.error("Failed to cancel Stripe subscription for user: {}", userId, e);
-            throw new RuntimeException("Could not cancel your subscription. Please try again.", e);
+            throw new BillingUnavailableException("Could not cancel your subscription. Please try again.", e);
         }
 
         if (stripeSubscriptionIds.isEmpty()) {
@@ -529,7 +532,7 @@ public class SubscriptionService {
             }
         } catch (StripeException e) {
             logger.error("Failed to cancel Stripe billing for user being deleted: {}", userId, e);
-            throw new RuntimeException("Could not cancel your subscription, so your account was not deleted. "
+            throw new BillingUnavailableException("Could not cancel your subscription, so your account was not deleted. "
                     + "Please try again.", e);
         }
     }
@@ -560,7 +563,7 @@ public class SubscriptionService {
                     .toList();
         } catch (StripeException e) {
             logger.error("Failed to list Stripe subscriptions for customer: {}", stripeCustomerId, e);
-            throw new RuntimeException("Could not cancel your subscription. Please try again.", e);
+            throw new BillingUnavailableException("Could not cancel your subscription. Please try again.", e);
         }
     }
 

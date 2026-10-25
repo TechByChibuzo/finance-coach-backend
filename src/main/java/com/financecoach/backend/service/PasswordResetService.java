@@ -1,5 +1,6 @@
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.exception.ValidationException;
 import com.financecoach.backend.model.PasswordResetToken;
 import com.financecoach.backend.model.User;
 import com.financecoach.backend.repository.PasswordResetTokenRepository;
@@ -105,7 +106,7 @@ public class PasswordResetService {
     public void resetPassword(String token, String newPassword) {
         // Validate password strength
         if (newPassword == null || newPassword.length() < 8) {
-            throw new RuntimeException("Password must be at least 8 characters long");
+            throw new ValidationException("Password must be at least 8 characters long");
         }
 
 //        if (!newPassword.matches("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$")) {
@@ -114,15 +115,15 @@ public class PasswordResetService {
 
         // Find and validate token
         PasswordResetToken resetToken = tokenRepository.findByToken(hash(token))
-                .orElseThrow(() -> new RuntimeException("Invalid or expired reset token"));
+                .orElseThrow(() -> new ValidationException("Invalid or expired reset token"));
 
         if (!resetToken.isValid()) {
-            throw new RuntimeException("Invalid or expired reset token");
+            throw new ValidationException("Invalid or expired reset token");
         }
 
         // Find user
         User user = userRepository.findById(resetToken.getUserId())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+                .orElseThrow(() -> new ValidationException("Invalid or expired reset token"));
 
         // Update password, and log out every existing session by invalidating issued tokens
         user.setPasswordHash(passwordEncoder.encode(newPassword));

@@ -1,5 +1,8 @@
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.exception.ResourceNotFoundException;
+import com.financecoach.backend.exception.ValidationException;
+import com.financecoach.backend.exception.BillingUnavailableException;
 import com.financecoach.backend.exception.UsageLimitExceededException;
 import com.financecoach.backend.model.BillingCycle;
 import com.financecoach.backend.model.FeatureFlag;
@@ -146,7 +149,7 @@ class SubscriptionServiceTest {
                 .thenThrow(new ApiConnectionException("network down"));
 
         assertThatThrownBy(() -> subscriptionService.cancelSubscription(userId))
-                .isInstanceOf(RuntimeException.class)
+                .isInstanceOf(BillingUnavailableException.class)
                 .hasMessageContaining("Could not cancel");
 
         verify(subscriptionRepository, never()).save(any());
@@ -158,6 +161,7 @@ class SubscriptionServiceTest {
         when(subscriptionRepository.findActiveByUserId(userId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> subscriptionService.cancelSubscription(userId))
+                .isInstanceOf(ValidationException.class)
                 .hasMessageContaining("No active subscription");
     }
 
@@ -644,6 +648,7 @@ class SubscriptionServiceTest {
         when(userRepository.findById(ghost)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> subscriptionService.createCheckoutSession(userId, unknownPlan, BillingCycle.MONTHLY))
+                .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("Plan not found");
         assertThatThrownBy(() -> subscriptionService.createCheckoutSession(userId, noPricePlan, BillingCycle.MONTHLY))
                 .hasMessageContaining("price ID not configured");
@@ -661,6 +666,7 @@ class SubscriptionServiceTest {
         assertThat(trial.getStatus()).isEqualTo(SubscriptionStatus.TRIAL);
         assertThat(trial.getTrialEndDate()).isAfter(LocalDateTime.now().plusDays(13));
         assertThatThrownBy(() -> subscriptionService.startTrial(userId, "UNKNOWN", 14))
+                .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("Plan not found");
     }
 
