@@ -38,14 +38,13 @@ public class EmbeddingService {
 
     public String buildTransactionText(Transaction transaction) {
         return String.format(
-                "Transaction: $%.2f at %s on %s. Category: %s. Account: %s. %s",
+                "Transaction: $%.2f at %s on %s. Category: %s. %s",
                 transaction.getAmount().doubleValue(),
                 transaction.getMerchantName() != null
                         ? transaction.getMerchantName()
                         : transaction.getName(),
                 transaction.getDate(),
                 transaction.getCategory() != null ? transaction.getCategory() : "Uncategorized",
-                transaction.getAccountId().toString(),
                 transaction.getAmount().doubleValue() > 0
                         ? "This was a purchase/debit."
                         : "This was a credit/refund."
