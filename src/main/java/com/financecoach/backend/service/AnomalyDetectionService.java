@@ -8,14 +8,18 @@ import com.financecoach.backend.repository.SpendingAnomalyRepository;
 import com.financecoach.backend.repository.TransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -40,11 +44,19 @@ public class AnomalyDetectionService {
 
     private final TransactionRepository transactionRepository;
     private final SpendingAnomalyRepository anomalyRepository;
+    private final Clock clock;
 
+    @Autowired
     public AnomalyDetectionService(TransactionRepository transactionRepository,
                                    SpendingAnomalyRepository anomalyRepository) {
+        this(transactionRepository, anomalyRepository, Clock.systemDefaultZone());
+    }
+
+    AnomalyDetectionService(TransactionRepository transactionRepository,
+                            SpendingAnomalyRepository anomalyRepository, Clock clock) {
         this.transactionRepository = transactionRepository;
         this.anomalyRepository = anomalyRepository;
+        this.clock = clock;
     }
 
     /**
@@ -74,7 +86,7 @@ public class AnomalyDetectionService {
      * updates it with the latest figures instead of creating another one.
      */
     public List<SpendingAnomaly> detectAnomalies(UUID userId) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = LocalDate.now(clock);
         LocalDate currentMonthStart = today.withDayOfMonth(1);
         LocalDate currentMonthEnd = currentMonthStart.withDayOfMonth(currentMonthStart.lengthOfMonth());
 
@@ -100,9 +112,11 @@ public class AnomalyDetectionService {
         // Group current spending by category
         Map<String, BigDecimal> currentSpendByCategory = groupByCategory(currentTransactions);
 
-        // Group historical spending by category and month
+        // Each past month's spending up to the same day of the month as today, so a partial
+        // month is compared with partial months
         Map<String, List<BigDecimal>> historicalSpendByCategory =
-                groupByCategoryAndMonth(historicalTransactions);
+                monthToDateSpendByCategory(historicalTransactions, today.getDayOfMonth(),
+                        YearMonth.from(historyEnd));
 
         List<SpendingAnomaly> anomalies = new ArrayList<>();
 
@@ -211,26 +225,43 @@ public class AnomalyDetectionService {
                 ));
     }
 
-    private Map<String, List<BigDecimal>> groupByCategoryAndMonth(
-            List<Transaction> transactions) {
+    /**
+     * For each category, the spend in each past month up to {@code dayOfMonth} (the whole month
+     * when it's shorter). Months run from the user's first month of data to {@code lastMonth}, and a
+     * month with no spending in a category counts as 0: leaving it out raised the average and
+     * shrank the spread, which flagged normal spending. Months before the user's data starts
+     * aren't counted at all.
+     */
+    private Map<String, List<BigDecimal>> monthToDateSpendByCategory(
+            List<Transaction> transactions, int dayOfMonth, YearMonth lastMonth) {
 
-        // Group by category, then sum per month
-        Map<String, Map<String, BigDecimal>> byCategoryAndMonth = transactions.stream()
+        YearMonth firstMonth = transactions.stream()
+                .map(t -> YearMonth.from(t.getDate()))
+                .min(Comparator.naturalOrder())
+                .orElse(lastMonth);
+        List<YearMonth> months = new ArrayList<>();
+        for (YearMonth m = firstMonth; !m.isAfter(lastMonth); m = m.plusMonths(1)) {
+            months.add(m);
+        }
+
+        Map<String, Map<YearMonth, BigDecimal>> byCategoryAndMonth = transactions.stream()
                 .filter(t -> t.getCategory() != null)
                 .filter(TransactionFilters::isSpending)
+                .filter(t -> t.getDate().getDayOfMonth() <= dayOfMonth)
                 .collect(Collectors.groupingBy(
                         Transaction::getCategory,
                         Collectors.groupingBy(
-                                t -> t.getDate().getYear() + "-" + t.getDate().getMonthValue(),
+                                t -> YearMonth.from(t.getDate()),
                                 Collectors.reducing(BigDecimal.ZERO, Transaction::getAmount, BigDecimal::add)
                         )
                 ));
 
-        // Convert to category -> list of monthly totals
         return byCategoryAndMonth.entrySet().stream()
                 .collect(Collectors.toMap(
                         Map.Entry::getKey,
-                        e -> new ArrayList<>(e.getValue().values())
+                        e -> months.stream()
+                                .map(m -> e.getValue().getOrDefault(m, BigDecimal.ZERO))
+                                .toList()
                 ));
     }
 
