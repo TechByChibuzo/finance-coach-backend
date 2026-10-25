@@ -398,10 +398,11 @@ public class InvestmentService {
     }
 
     /**
-     * Auto-sync holdings during market hours
-     * Runs every 30 minutes: 9:00 AM, 9:30 AM, 10:00 AM, ... 4:00 PM EST
+     * Auto-sync holdings once a day, after the US market closes. Plaid refreshes holdings about
+     * daily, so syncing more often was wasted work on the single scheduler thread. Runs before the
+     * nightly portfolio snapshot.
      */
-    @Scheduled(cron = "0 */30 9-16 ? * MON-FRI", zone = "America/New_York")
+    @Scheduled(cron = "0 0 18 * * MON-FRI", zone = "America/New_York")
     @Transactional
     public void autoSyncHoldings() {
         logger.info("Starting automatic holdings sync");

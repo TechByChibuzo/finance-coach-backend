@@ -119,7 +119,7 @@ HTTP ─► AuthRateLimitFilter ─► JwtAuthenticationFilter ─► Controller
 
 ### 3.4 Net worth & investments
 - **`NetWorthService`**: net worth = cash (depository balances) + holdings value + manual assets − credit-card balances − manual liabilities. A daily 01:00 UTC snapshot is taken for every user.
-- **`InvestmentService`**: calls Plaid `/investments/holdings/get` once per item and upserts on (account_id, security_id); positions no longer returned (sold) are deleted. A daily 02:00 UTC portfolio snapshot, plus an auto-sync every 30 minutes from 09:00 to 16:00 ET on weekdays.
+- **`InvestmentService`**: calls Plaid `/investments/holdings/get` once per item and upserts on (account_id, security_id); positions no longer returned (sold) are deleted. A daily 02:00 UTC portfolio snapshot, plus an auto-sync at 18:00 ET on weekdays (after the market closes; Plaid refreshes holdings about daily).
 
 ### 3.4a Savings goals
 - **`SavingsGoalService`** (`/api/goals`): up to 20 goals per user, each with a target amount and optional date. Progress is the balance of a linked depository or investment account, or, without one (or once that account is disconnected), an amount the user updates through `POST /api/goals/{id}/saved`. With a date, the response includes what to save per month from now on, and whether the date has passed.
@@ -456,7 +456,7 @@ All jobs run inside the API process on Spring's default **single-threaded** sche
 | `TransactionSyncScheduler.syncAllAccounts` | 06:00 and 18:00 (UTC) | `/transactions/sync` for every item with an active account |
 | `AnomalyDetectionService.detectForAllUsers` | 06:30 and 18:30 (UTC) | Unusual-spending detection for every user with transactions (feeds notifications) |
 | `WeeklySummaryService.sendWeeklySummaries` | Mondays 14:00 (UTC) | Weekly summary email; each user's week is claimed in the database, so it's sent once even with two tasks |
-| `InvestmentService.autoSyncHoldings` | Every 30 min, 09:00–16:00 ET, Mon–Fri | Holdings pull for every investing user |
+| `InvestmentService.autoSyncHoldings` | 18:00 ET, Mon–Fri | Holdings pull for every investing user |
 
 Implications: ECS runs one task (`desired_count = 1`); during a deploy two overlap for a few minutes. Running more would run every job once per task until ShedLock is added (the weekly email already guards itself with a per-user claim). A long job delays the others because the scheduler has one thread.
 
@@ -507,7 +507,6 @@ flowchart LR
 - **CI**: the test job runs `./mvnw verify` (service-layer coverage gate: ≥ 90% lines, ≥ 80% branches) and uploads the coverage report. The deploy job runs only on `main` in the `production` environment. It uses an OIDC role when `AWS_DEPLOY_ROLE_ARN` is set, otherwise an IAM user's access keys (the account blocks creating OIDC providers). Actions are pinned to commit SHAs, and Dependabot keeps them updated.
 - **Image**: multi-stage Dockerfile (Maven build → `eclipse-temurin:21-jre`), heap 256–512 MB, port 8090, `prod` profile by default.
 - **Profiles**: `prod` in ECS, `dev` locally with the gitignored `application-dev.yml`.
-- `render.yaml` is a leftover from an earlier Render deployment and is unused.
 
 ### Configuration reference
 | Env var | Used for |

@@ -59,10 +59,6 @@ public interface UserSubscriptionRepository extends JpaRepository<UserSubscripti
     @Query("SELECT COUNT(s) FROM UserSubscription s WHERE s.plan.id = :planId AND s.status = 'ACTIVE'")
     Long countActiveByPlanId(@Param("planId") UUID planId);
 
-    /**
-     * Find any subscription for user (active or not)
-     */
-    Optional<UserSubscription> findByUserId(UUID userId);
 
     // Account deletion: remove all of the user's rows in one statement
     @Modifying
