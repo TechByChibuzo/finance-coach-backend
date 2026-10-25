@@ -217,6 +217,59 @@ class InvestmentPortfolioTest {
         assertThat(saved.getAllValues().get(1).getCostBasis()).isNull();
     }
 
+    @Test
+    void sync_aHoldingWhoseSecurityPlaidDidntReturn_isStillSaved_withThePlaceholdersTheRequiredColumnsNeed() {
+        // name and type are NOT NULL; leaving them empty made the whole sync fail on insert
+        BankAccount account = account(userId, "investment");
+        account.setPlaidAccountId("plaid-acc");
+        PlaidItem item = new PlaidItem();
+        item.setId(UUID.randomUUID());
+        item.setAccessToken("token");
+        when(bankAccountRepository.findById(account.getId())).thenReturn(Optional.of(account));
+        when(plaidService.getItem(account)).thenReturn(item);
+        when(plaidService.getActiveAccountsByPlaidId(item)).thenReturn(Map.of("plaid-acc", account));
+        when(plaidService.getHoldings("token")).thenReturn(new InvestmentsHoldingsGetResponse()
+                .holdings(List.of(new com.plaid.client.model.Holding().accountId("plaid-acc").securityId("sec-missing")
+                        .quantity(2.0).institutionPrice(50.0).institutionValue(100.0)))
+                .securities(List.of()));
+        when(holdingRepository.findByAccountIdAndSecurityId(any(), any())).thenReturn(Optional.empty());
+        when(holdingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        investmentService.syncHoldingsForAccount(account.getId(), userId);
+
+        ArgumentCaptor<Holding> saved = ArgumentCaptor.forClass(Holding.class);
+        verify(holdingRepository).save(saved.capture());
+        assertThat(saved.getValue().getName()).isEqualTo("Unknown security");
+        assertThat(saved.getValue().getType()).isEqualTo("other");
+        assertThat(saved.getValue().getCurrentValue()).isEqualByComparingTo("100.0");
+    }
+
+    @Test
+    void sync_whenTheSecurityGoesMissingLater_keepsTheNameAndTypeAlreadyStored() {
+        BankAccount account = account(userId, "investment");
+        account.setPlaidAccountId("plaid-acc");
+        PlaidItem item = new PlaidItem();
+        item.setId(UUID.randomUUID());
+        item.setAccessToken("token");
+        Holding known = new Holding();
+        known.setName("Apple Inc.");
+        known.setType("stock");
+        when(bankAccountRepository.findById(account.getId())).thenReturn(Optional.of(account));
+        when(plaidService.getItem(account)).thenReturn(item);
+        when(plaidService.getActiveAccountsByPlaidId(item)).thenReturn(Map.of("plaid-acc", account));
+        when(plaidService.getHoldings("token")).thenReturn(new InvestmentsHoldingsGetResponse()
+                .holdings(List.of(new com.plaid.client.model.Holding().accountId("plaid-acc").securityId("sec-aapl")
+                        .quantity(1.0).institutionPrice(200.0).institutionValue(200.0)))
+                .securities(List.of()));
+        when(holdingRepository.findByAccountIdAndSecurityId(any(), any())).thenReturn(Optional.of(known));
+        when(holdingRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        investmentService.syncHoldingsForAccount(account.getId(), userId);
+
+        assertThat(known.getName()).isEqualTo("Apple Inc.");
+        assertThat(known.getType()).isEqualTo("stock");
+    }
+
     // --- snapshots and history ---
 
     @Test
