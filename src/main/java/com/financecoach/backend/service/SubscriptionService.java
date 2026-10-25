@@ -445,6 +445,24 @@ public class SubscriptionService {
     }
 
     /**
+     * A Stripe Customer Portal link for the user to manage billing (card, invoices, cancel).
+     * Changes made there reach us through the usual subscription webhooks.
+     */
+    public String createBillingPortalSession(UUID userId) {
+        String stripeCustomerId = userRepository.findById(userId)
+                .map(User::getStripeCustomerId)
+                .orElse(null);
+        if (stripeCustomerId == null) {
+            throw new ValidationException("You don't have a billing account yet. Choose a plan first.");
+        }
+        try {
+            return stripeService.createBillingPortalSession(stripeCustomerId, frontendUrl + "/settings/billing");
+        } catch (StripeException e) {
+            throw new BillingUnavailableException("Couldn't open billing. Please try again.", e);
+        }
+    }
+
+    /**
      * Start free trial
      */
     @Transactional

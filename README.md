@@ -288,7 +288,7 @@ java -jar target/*.jar
 | Goals | `/api/goals` | `GET /`, `POST /`, `PUT /{id}`, `DELETE /{id}`, `POST /{id}/saved` |
 | Recurring | `/api/recurring` | `GET /` |
 | Net Worth | `/api/net-worth` | `GET /current`, `GET /history`, CRUD `/assets`, CRUD `/liabilities` |
-| Subscriptions | `/api/subscriptions` | `GET /plans`, `POST /checkout`, `GET /current`, `POST /cancel`, `POST /webhook` |
+| Subscriptions | `/api/subscriptions` | `GET /plans`, `POST /checkout`, `GET /current`, `POST /cancel`, `POST /portal`, `POST /webhook` |
 | Export | `/api/export` | `GET /transactions` (paid plans) |
 
 All endpoints require a `Bearer` JWT token in the `Authorization` header, except `/api/auth/**`, `GET /api/subscriptions/plans`, the Stripe webhook (signature-verified), `/actuator/health` and Swagger.

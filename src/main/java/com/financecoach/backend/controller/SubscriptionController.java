@@ -124,6 +124,15 @@ public class SubscriptionController {
     }
 
     /**
+     * Open the Stripe Customer Portal (update card, invoices, cancel). Returns the URL to send the
+     * user to.
+     */
+    @PostMapping("/portal")
+    public ResponseEntity<Map<String, String>> openBillingPortal() {
+        return ResponseEntity.ok(Map.of("url", subscriptionService.createBillingPortalSession(CurrentUser.id())));
+    }
+
+    /**
      * Stripe webhook handler (PUBLIC - authenticated by Stripe signature)
      */
     @PostMapping("/webhook")

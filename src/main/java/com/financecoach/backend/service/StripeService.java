@@ -143,6 +143,19 @@ public class StripeService {
     /**
      * List a customer's subscriptions (all statuses)
      */
+    /**
+     * A Stripe Customer Portal session, where the customer updates their card, sees invoices and
+     * cancels. Returns the URL to send them to; Stripe brings them back to returnUrl.
+     */
+    public String createBillingPortalSession(String customerId, String returnUrl) throws StripeException {
+        com.stripe.param.billingportal.SessionCreateParams params =
+                com.stripe.param.billingportal.SessionCreateParams.builder()
+                        .setCustomer(customerId)
+                        .setReturnUrl(returnUrl)
+                        .build();
+        return com.stripe.model.billingportal.Session.create(params).getUrl();
+    }
+
     public List<Subscription> listSubscriptions(String customerId) throws StripeException {
         SubscriptionListParams params = SubscriptionListParams.builder()
                 .setCustomer(customerId)
