@@ -8,6 +8,7 @@ import com.financecoach.backend.dto.imports.TransactionImportRequest;
 import com.financecoach.backend.dto.imports.TransactionImportResponse;
 import com.financecoach.backend.dto.plaid.TransactionResponse;
 import com.financecoach.backend.model.Transaction;
+import com.financecoach.backend.security.CurrentUser;
 import com.financecoach.backend.service.CategoryRuleService;
 import com.financecoach.backend.service.TransactionEditService;
 import com.financecoach.backend.service.TransactionImportService;
@@ -16,8 +17,6 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -54,7 +53,7 @@ public class TransactionController {
     public ResponseEntity<TransactionResponse> updateTransaction(@PathVariable UUID id,
                                                                  @Valid @RequestBody TransactionUpdateRequest request) {
         return ResponseEntity.ok(convertToResponse(
-                transactionEditService.updateDetails(getCurrentUserId(), id, request.notes(), request.hidden())));
+                transactionEditService.updateDetails(CurrentUser.id(), id, request.notes(), request.hidden())));
     }
 
     /**
@@ -63,7 +62,7 @@ public class TransactionController {
      */
     @GetMapping("/{id}/split")
     public ResponseEntity<List<TransactionResponse>> getSplit(@PathVariable UUID id) {
-        return ResponseEntity.ok(transactionEditService.getParts(getCurrentUserId(), id).stream()
+        return ResponseEntity.ok(transactionEditService.getParts(CurrentUser.id(), id).stream()
                 .map(this::convertToResponse).toList());
     }
 
@@ -74,7 +73,7 @@ public class TransactionController {
     @PutMapping("/{id}/split")
     public ResponseEntity<List<TransactionResponse>> splitTransaction(@PathVariable UUID id,
                                                                       @Valid @RequestBody TransactionSplitRequest request) {
-        return ResponseEntity.ok(transactionEditService.split(getCurrentUserId(), id, request.parts()).stream()
+        return ResponseEntity.ok(transactionEditService.split(CurrentUser.id(), id, request.parts()).stream()
                 .map(this::convertToResponse).toList());
     }
 
@@ -84,7 +83,7 @@ public class TransactionController {
      */
     @DeleteMapping("/{id}/split")
     public ResponseEntity<TransactionResponse> unsplitTransaction(@PathVariable UUID id) {
-        return ResponseEntity.ok(convertToResponse(transactionEditService.unsplit(getCurrentUserId(), id)));
+        return ResponseEntity.ok(convertToResponse(transactionEditService.unsplit(CurrentUser.id(), id)));
     }
 
     /**
@@ -95,7 +94,7 @@ public class TransactionController {
     public ResponseEntity<TransactionResponse> updateCategory(@PathVariable UUID id,
                                                               @Valid @RequestBody CategoryUpdateRequest request) {
         return ResponseEntity.ok(convertToResponse(
-                categoryRuleService.updateCategory(getCurrentUserId(), id, request.category(), request.remember())));
+                categoryRuleService.updateCategory(CurrentUser.id(), id, request.category(), request.remember())));
     }
 
     /**
@@ -105,7 +104,7 @@ public class TransactionController {
     @PostMapping("/import")
     public ResponseEntity<TransactionImportResponse> importTransactions(
             @Valid @RequestBody TransactionImportRequest request) {
-        return ResponseEntity.ok(transactionImportService.importTransactions(getCurrentUserId(), request));
+        return ResponseEntity.ok(transactionImportService.importTransactions(CurrentUser.id(), request));
     }
 
     /**
@@ -114,7 +113,7 @@ public class TransactionController {
      */
     @DeleteMapping("/imports/{batchId}")
     public ResponseEntity<Map<String, Integer>> undoImport(@PathVariable UUID batchId) {
-        return ResponseEntity.ok(Map.of("deleted", transactionImportService.undoImport(getCurrentUserId(), batchId)));
+        return ResponseEntity.ok(Map.of("deleted", transactionImportService.undoImport(CurrentUser.id(), batchId)));
     }
 
     /**
@@ -123,7 +122,7 @@ public class TransactionController {
      */
     @PostMapping("/sync/{accountId}")
     public ResponseEntity<List<TransactionResponse>> syncAccountTransactions(@PathVariable UUID accountId) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         List<Transaction> transactions = transactionService.syncTransactions(accountId, userId);
 
         List<TransactionResponse> response = transactions.stream()
@@ -139,7 +138,7 @@ public class TransactionController {
      */
     @PostMapping("/sync")
     public ResponseEntity<List<TransactionResponse>> syncAllTransactions() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         List<Transaction> transactions = transactionService.syncAllTransactions(userId);
 
         List<TransactionResponse> response = transactions.stream()
@@ -158,7 +157,7 @@ public class TransactionController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
 
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         List<Transaction> transactions = transactionService.getTransactions(userId, startDate, endDate);
 
         List<TransactionResponse> response = transactions.stream()
@@ -174,7 +173,7 @@ public class TransactionController {
      */
     @GetMapping("/recent")
     public ResponseEntity<List<TransactionResponse>> getRecentTransactions(@RequestParam(defaultValue = "10") int limit) {
-        return ResponseEntity.ok(transactionService.getRecentTransactions(getCurrentUserId(), limit).stream()
+        return ResponseEntity.ok(transactionService.getRecentTransactions(CurrentUser.id(), limit).stream()
                 .map(this::convertToResponse).toList());
     }
 
@@ -185,7 +184,7 @@ public class TransactionController {
     @GetMapping("/search")
     public ResponseEntity<List<TransactionResponse>> searchTransactions(@RequestParam String q,
                                                                          @RequestParam(defaultValue = "200") int limit) {
-        return ResponseEntity.ok(transactionService.searchTransactions(getCurrentUserId(), q, limit).stream()
+        return ResponseEntity.ok(transactionService.searchTransactions(CurrentUser.id(), q, limit).stream()
                 .map(this::convertToResponse).toList());
     }
 
@@ -195,7 +194,7 @@ public class TransactionController {
      */
     @GetMapping("/category/{category}")
     public ResponseEntity<List<TransactionResponse>> getTransactionsByCategory(@PathVariable String category) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         List<Transaction> transactions = transactionService.getTransactionsByCategory(userId, category);
 
         List<TransactionResponse> response = transactions.stream()
@@ -203,12 +202,6 @@ public class TransactionController {
                 .collect(Collectors.toList());
 
         return ResponseEntity.ok(response);
-    }
-
-    // Helper methods
-    private UUID getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return (UUID) authentication.getPrincipal();
     }
 
     private TransactionResponse convertToResponse(Transaction transaction) {

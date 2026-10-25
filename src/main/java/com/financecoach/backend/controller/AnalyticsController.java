@@ -2,12 +2,11 @@
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.dto.MonthlyReport;
+import com.financecoach.backend.security.CurrentUser;
 import com.financecoach.backend.service.AnalyticsService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -36,7 +35,7 @@ public class AnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
 
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         Map<String, BigDecimal> spending = analyticsService.getSpendingByCategory(userId, startDate, endDate);
         return ResponseEntity.ok(spending);
     }
@@ -50,7 +49,7 @@ public class AnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
 
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         BigDecimal total = analyticsService.getTotalSpending(userId, startDate, endDate);
         return ResponseEntity.ok(Map.of("totalSpending", total));
     }
@@ -63,7 +62,7 @@ public class AnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
 
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         BigDecimal total = analyticsService.getTotalIncome(userId, startDate, endDate);
         return ResponseEntity.ok(Map.of("totalIncome", total));
     }
@@ -77,7 +76,7 @@ public class AnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam(defaultValue = "5") int limit) {
 
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         Map<String, BigDecimal> topMerchants = analyticsService.getTopMerchants(userId, startDate, endDate, limit);
         return ResponseEntity.ok(topMerchants);
     }
@@ -90,7 +89,7 @@ public class AnalyticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
 
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         Map<LocalDate, BigDecimal> trend = analyticsService.getSpendingTrend(userId, startDate, endDate);
         return ResponseEntity.ok(trend);
     }
@@ -103,7 +102,7 @@ public class AnalyticsController {
     public ResponseEntity<Map<String, Object>> getMonthlySummary(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month) {
 
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         LocalDate targetMonth = month != null ? month : LocalDate.now();
         Map<String, Object> summary = analyticsService.getMonthlySummary(userId, targetMonth);
         return ResponseEntity.ok(summary);
@@ -115,7 +114,7 @@ public class AnalyticsController {
      */
     @GetMapping("/monthly-report")
     public ResponseEntity<List<MonthlyReport>> getMonthlyReport(@RequestParam(defaultValue = "12") int months) {
-        return ResponseEntity.ok(analyticsService.getMonthlyReport(getCurrentUserId(), months, LocalDate.now()));
+        return ResponseEntity.ok(analyticsService.getMonthlyReport(CurrentUser.id(), months, LocalDate.now()));
     }
 
     /**
@@ -123,13 +122,9 @@ public class AnalyticsController {
      */
     @GetMapping("/compare-months")
     public ResponseEntity<Map<String, Object>> compareMonths() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         Map<String, Object> comparison = analyticsService.compareMonths(userId);
         return ResponseEntity.ok(comparison);
     }
 
-    private UUID getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return (UUID) authentication.getPrincipal();
-    }
 }

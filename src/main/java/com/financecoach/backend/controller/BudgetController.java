@@ -4,14 +4,13 @@ package com.financecoach.backend.controller;
 import com.financecoach.backend.dto.BudgetRequest;
 import com.financecoach.backend.dto.BudgetResponse;
 import com.financecoach.backend.dto.BudgetSummaryResponse;
+import com.financecoach.backend.security.CurrentUser;
 import com.financecoach.backend.service.BudgetService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -37,7 +36,7 @@ public class BudgetController {
      */
     @PostMapping
     public ResponseEntity<BudgetResponse> createOrUpdateBudget(@Valid @RequestBody BudgetRequest request) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         BudgetResponse budget = budgetService.createOrUpdateBudget(userId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(budget);
     }
@@ -48,7 +47,7 @@ public class BudgetController {
      */
     @GetMapping("/current")
     public ResponseEntity<BudgetSummaryResponse> getCurrentMonthBudgets() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         BudgetSummaryResponse summary = budgetService.getCurrentMonthBudgets(userId);
         return ResponseEntity.ok(summary);
     }
@@ -61,7 +60,7 @@ public class BudgetController {
     public ResponseEntity<BudgetSummaryResponse> getBudgetsForMonth(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month) {
 
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         LocalDate targetMonth = month != null ? month : LocalDate.now();
         BudgetSummaryResponse summary = budgetService.getBudgetsForMonth(userId, targetMonth);
         return ResponseEntity.ok(summary);
@@ -75,7 +74,7 @@ public class BudgetController {
     public ResponseEntity<Map<String, Object>> getBudgetProgress(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month) {
 
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         LocalDate targetMonth = month != null ? month : LocalDate.now();
         Map<String, Object> progress = budgetService.getBudgetProgress(userId, targetMonth);
         return ResponseEntity.ok(progress);
@@ -87,7 +86,7 @@ public class BudgetController {
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteBudget(@PathVariable UUID id) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         budgetService.deleteBudget(id, userId);
         return ResponseEntity.noContent().build();
     }
@@ -98,7 +97,7 @@ public class BudgetController {
      */
     @GetMapping("/recommendations")
     public ResponseEntity<Map<String, BigDecimal>> getBudgetRecommendations() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         Map<String, BigDecimal> recommendations = budgetService.getBudgetRecommendations(userId);
         return ResponseEntity.ok(recommendations);
     }
@@ -109,7 +108,7 @@ public class BudgetController {
      */
     @GetMapping("/exceeded")
     public ResponseEntity<List<BudgetResponse>> getExceededBudgets() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         List<BudgetResponse> exceededBudgets = budgetService.getExceededBudgets(userId);
         return ResponseEntity.ok(exceededBudgets);
     }
@@ -120,7 +119,7 @@ public class BudgetController {
      */
     @GetMapping("/alerts")
     public ResponseEntity<List<BudgetResponse>> getBudgetsNeedingAlert() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         List<BudgetResponse> alertBudgets = budgetService.getBudgetsNeedingAlert(userId);
         return ResponseEntity.ok(alertBudgets);
     }
@@ -133,7 +132,7 @@ public class BudgetController {
     public ResponseEntity<Map<String, String>> refreshBudgetSpending(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate month) {
 
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         LocalDate targetMonth = month != null ? month : LocalDate.now();
         budgetService.refreshAllBudgetSpending(userId, targetMonth);
         return ResponseEntity.ok(Map.of("message", "Budget spending refreshed successfully"));
@@ -145,7 +144,7 @@ public class BudgetController {
      */
     @PostMapping("/copy-previous")
     public ResponseEntity<Map<String, Object>> copyPreviousMonthBudgets() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         List<BudgetResponse> copiedBudgets = budgetService.copyPreviousMonthBudgets(userId);
         return ResponseEntity.ok(Map.of(
                 "message", "Budgets copied successfully",
@@ -154,9 +153,4 @@ public class BudgetController {
         ));
     }
 
-    // Helper method to get current authenticated user ID
-    private UUID getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return (UUID) authentication.getPrincipal();
-    }
 }

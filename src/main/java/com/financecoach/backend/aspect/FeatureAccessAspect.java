@@ -5,15 +5,13 @@ import com.financecoach.backend.annotation.RequiresPlan;
 import com.financecoach.backend.annotation.TrackUsage;
 import com.financecoach.backend.exception.FeatureNotAvailableException;
 import com.financecoach.backend.exception.UsageLimitExceededException;
+import com.financecoach.backend.security.CurrentUser;
 import com.financecoach.backend.service.SubscriptionService;
 import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
@@ -30,7 +28,7 @@ public class FeatureAccessAspect {
      */
     @Around("@annotation(requiresPlan)")
     public Object checkPlanAccess(ProceedingJoinPoint joinPoint, RequiresPlan requiresPlan) throws Throwable {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
 
         String userPlan = subscriptionService.getUserPlan(userId).getName();
         String requiredPlan = requiresPlan.value();
@@ -47,7 +45,7 @@ public class FeatureAccessAspect {
      */
     @Around("@annotation(requiresFeature)")
     public Object checkFeatureAccess(ProceedingJoinPoint joinPoint, RequiresFeature requiresFeature) throws Throwable {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         String featureName = requiresFeature.value();
 
         // When the method also counts usage of this feature, @TrackUsage reserves it atomically and
@@ -78,7 +76,7 @@ public class FeatureAccessAspect {
      */
     @Around("@annotation(trackUsage)")
     public Object trackFeatureUsage(ProceedingJoinPoint joinPoint, TrackUsage trackUsage) throws Throwable {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         String featureName = trackUsage.feature();
 
         // Reserve the use up front (atomic, enforces the plan limit), and give it back if the call
@@ -96,15 +94,6 @@ public class FeatureAccessAspect {
         TrackUsage trackUsage = ((MethodSignature) joinPoint.getSignature()).getMethod()
                 .getAnnotation(TrackUsage.class);
         return trackUsage != null && trackUsage.feature().equals(featureName);
-    }
-
-    private UUID getCurrentUserId() {
-        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (auth == null || !auth.isAuthenticated()) {
-            throw new AuthenticationCredentialsNotFoundException("User not authenticated");
-        }
-        // Assuming you store UUID in principal
-        return UUID.fromString(auth.getName());
     }
 
     private boolean hasRequiredPlan(String userPlan, String requiredPlan) {

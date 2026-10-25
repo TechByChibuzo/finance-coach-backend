@@ -6,12 +6,11 @@ import com.financecoach.backend.dto.plaid.ExchangeTokenRequest;
 import com.financecoach.backend.dto.plaid.LinkTokenResponse;
 import com.financecoach.backend.model.BankAccount;
 import com.financecoach.backend.model.PlaidItem;
+import com.financecoach.backend.security.CurrentUser;
 import com.financecoach.backend.service.PlaidService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -36,7 +35,7 @@ public class PlaidController {
      */
     @PostMapping("/create-link-token")
     public ResponseEntity<LinkTokenResponse> createLinkToken() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         String linkToken = plaidService.createLinkToken(userId, "user");
         LinkTokenResponse response = new LinkTokenResponse(linkToken, null);
         return ResponseEntity.ok(response);
@@ -50,7 +49,7 @@ public class PlaidController {
     public ResponseEntity<List<BankAccountResponse>> exchangeToken(
             @Valid @RequestBody ExchangeTokenRequest request) {
 
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         List<BankAccount> accounts = plaidService.exchangePublicToken(
                 userId,
                 request.getPublicToken()
@@ -69,7 +68,7 @@ public class PlaidController {
      */
     @GetMapping("/accounts")
     public ResponseEntity<List<BankAccountResponse>> getAccounts() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         List<BankAccount> accounts = plaidService.getUserBankAccounts(userId);
         Map<UUID, PlaidItem> items = plaidService.getItemsWithBranding(accounts);
 
@@ -86,7 +85,7 @@ public class PlaidController {
      */
     @DeleteMapping("/accounts/{accountId}")
     public ResponseEntity<Void> disconnectAccount(@PathVariable UUID accountId) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         plaidService.disconnectBankAccount(accountId, userId);
         return ResponseEntity.noContent().build();
     }
@@ -97,7 +96,7 @@ public class PlaidController {
      */
     @PostMapping("/items/{itemId}/update-link-token")
     public ResponseEntity<LinkTokenResponse> createUpdateLinkToken(@PathVariable UUID itemId) {
-        String linkToken = plaidService.createUpdateLinkToken(getCurrentUserId(), itemId);
+        String linkToken = plaidService.createUpdateLinkToken(CurrentUser.id(), itemId);
         return ResponseEntity.ok(new LinkTokenResponse(linkToken, null));
     }
 
@@ -107,14 +106,8 @@ public class PlaidController {
      */
     @PostMapping("/items/{itemId}/reconnected")
     public ResponseEntity<Void> markReconnected(@PathVariable UUID itemId) {
-        plaidService.markReconnected(getCurrentUserId(), itemId);
+        plaidService.markReconnected(CurrentUser.id(), itemId);
         return ResponseEntity.noContent().build();
-    }
-
-    // Helper methods
-    private UUID getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return (UUID) authentication.getPrincipal();
     }
 
     private BankAccountResponse convertToResponse(BankAccount account) {

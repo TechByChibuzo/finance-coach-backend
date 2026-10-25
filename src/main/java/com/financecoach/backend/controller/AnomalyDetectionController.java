@@ -1,11 +1,10 @@
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.model.SpendingAnomaly;
+import com.financecoach.backend.security.CurrentUser;
 import com.financecoach.backend.service.AnomalyDetectionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -29,7 +28,7 @@ public class AnomalyDetectionController {
      */
     @PostMapping("/detect")
     public ResponseEntity<List<SpendingAnomaly>> detectAnomalies() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         List<SpendingAnomaly> anomalies = anomalyDetectionService.detectAnomalies(userId);
         return ResponseEntity.ok(anomalies);
     }
@@ -40,7 +39,7 @@ public class AnomalyDetectionController {
      */
     @GetMapping("/unreviewed")
     public ResponseEntity<List<SpendingAnomaly>> getUnreviewedAnomalies() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         List<SpendingAnomaly> anomalies = anomalyDetectionService.getUnreviewedAnomalies(userId);
         return ResponseEntity.ok(anomalies);
     }
@@ -51,7 +50,7 @@ public class AnomalyDetectionController {
      */
     @GetMapping
     public ResponseEntity<List<SpendingAnomaly>> getAllAnomalies() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         List<SpendingAnomaly> anomalies = anomalyDetectionService.getAllAnomalies(userId);
         return ResponseEntity.ok(anomalies);
     }
@@ -62,7 +61,7 @@ public class AnomalyDetectionController {
      */
     @GetMapping("/count")
     public ResponseEntity<Map<String, Long>> getUnreviewedCount() {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         long count = anomalyDetectionService.getUnreviewedCount(userId);
         return ResponseEntity.ok(Map.of("unreviewedCount", count));
     }
@@ -73,13 +72,9 @@ public class AnomalyDetectionController {
      */
     @PutMapping("/{anomalyId}/review")
     public ResponseEntity<Void> markAsReviewed(@PathVariable UUID anomalyId) {
-        UUID userId = getCurrentUserId();
+        UUID userId = CurrentUser.id();
         anomalyDetectionService.markAsReviewed(anomalyId, userId);
         return ResponseEntity.noContent().build();
     }
 
-    private UUID getCurrentUserId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        return (UUID) authentication.getPrincipal();
-    }
 }
