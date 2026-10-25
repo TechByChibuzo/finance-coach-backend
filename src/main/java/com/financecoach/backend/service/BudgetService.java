@@ -369,7 +369,6 @@ public class BudgetService {
 
     /**
      * Refresh spent amounts for all budgets (useful for background jobs)
-     * ✅ UPDATED: Now uses BigDecimal
      */
     @Transactional
     public void refreshAllBudgetSpending(UUID userId, LocalDate month) {

@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/dto/BudgetRequest.java
 package com.financecoach.backend.dto;
 
 import jakarta.validation.constraints.NotBlank;

@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/dto/plaid/BankAccountResponse.java
 package com.financecoach.backend.dto.plaid;
 
 import lombok.Data;

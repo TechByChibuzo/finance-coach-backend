@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/userservice/service/UserService.java
 package com.financecoach.backend.service;
 
 import com.financecoach.backend.dto.UserRegistrationRequest;
@@ -70,7 +69,6 @@ public class UserService {
         logger.info("User registered successfully - ID: {}, Email: {}",
                 savedUser.getId(), savedUser.getEmail());
 
-        // TRACK METRIC
         metricsService.recordUserRegistration();
         return convertToResponse(savedUser);
     }

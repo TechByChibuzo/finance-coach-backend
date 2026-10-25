@@ -74,9 +74,6 @@ public class PasswordResetService {
         String token = UUID.randomUUID().toString();
         LocalDateTime expiryDate = LocalDateTime.now().plusHours(TOKEN_EXPIRATION_HOURS);
 
-//        // Invalidate any existing tokens for this user
-//        tokenRepository.deleteByUserId(user.getId());
-
         // Invalidate any existing active tokens instead of deleting
         tokenRepository.markActiveTokensAsUsed(user.getId(), LocalDateTime.now());
 
@@ -84,7 +81,6 @@ public class PasswordResetService {
         PasswordResetToken resetToken = new PasswordResetToken(hash(token), user.getId(), expiryDate);
         tokenRepository.save(resetToken);
 
-        // TRACK METRIC
         metricsService.recordPasswordReset();
 
         // Send email
@@ -108,10 +104,6 @@ public class PasswordResetService {
         if (newPassword == null || newPassword.length() < 8) {
             throw new ValidationException("Password must be at least 8 characters long");
         }
-
-//        if (!newPassword.matches("^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d).{8,}$")) {
-//            throw new WeakPasswordException("Password must contain upper, lower, number.");
-//        }
 
         // Find and validate token
         PasswordResetToken resetToken = tokenRepository.findByToken(hash(token))

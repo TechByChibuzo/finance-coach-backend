@@ -1,5 +1,4 @@
 // ============================================
-// UPDATED SubscriptionController
 // Uses your existing JWT authentication
 // ============================================
 

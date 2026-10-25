@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/exception/GlobalExceptionHandler.java
 package com.financecoach.backend.exception;
 
 import com.financecoach.backend.dto.ErrorResponse;

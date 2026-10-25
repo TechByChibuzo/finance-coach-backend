@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/userservice/repository/TransactionRepository.java
 package com.financecoach.backend.repository;
 
 import com.financecoach.backend.model.Transaction;

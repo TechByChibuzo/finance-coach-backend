@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/controller/UserController.java
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.dto.UserResponse;

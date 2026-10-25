@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/controller/AICoachController.java
 package com.financecoach.backend.controller;
 
 import com.financecoach.backend.annotation.RequiresFeature;
@@ -101,7 +100,6 @@ public class AICoachController {
     /**
      * Get savings recommendations
      * POST /api/ai-coach/savings-recommendations
-     * ✅ UPDATED: Now uses BigDecimal and proper DTO
      */
     @RequiresFeature(value = "ai_coach", message = "AI coach is not available on your plan")
     @TrackUsage(feature = "ai_coach")

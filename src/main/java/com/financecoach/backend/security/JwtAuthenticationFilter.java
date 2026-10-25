@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/userservice/security/JwtAuthenticationFilter.java
 package com.financecoach.backend.security;
 
 import jakarta.servlet.FilterChain;

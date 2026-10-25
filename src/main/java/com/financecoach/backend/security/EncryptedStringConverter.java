@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/security/EncryptedStringConverter.java
 package com.financecoach.backend.security;
 
 import jakarta.persistence.AttributeConverter;

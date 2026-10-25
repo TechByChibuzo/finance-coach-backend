@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/model/BankAccount.java
 package com.financecoach.backend.model;
 
 import com.financecoach.backend.security.EncryptedStringConverter;

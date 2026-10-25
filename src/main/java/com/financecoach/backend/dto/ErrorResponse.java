@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/dto/ErrorResponse.java
 package com.financecoach.backend.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;

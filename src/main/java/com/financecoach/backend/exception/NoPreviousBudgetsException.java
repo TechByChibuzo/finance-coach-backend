@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/exception/NoPreviousBudgetsException.java
 package com.financecoach.backend.exception;
 
 public class NoPreviousBudgetsException extends FinanceCoachException {

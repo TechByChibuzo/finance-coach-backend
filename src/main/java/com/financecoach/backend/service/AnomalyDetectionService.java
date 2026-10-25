@@ -145,7 +145,6 @@ public class AnomalyDetectionService {
 
             double zScoreDouble = zScore.doubleValue();
 
-            // ADD THIS DEBUG LOG
             // Spending figures stay at debug level: they are users' financial data
             logger.debug("Category: {} | Current: {} | Mean: {} | StdDev: {} | ZScore: {} | Months of history: {}",
                     category, currentSpend, mean, stdDev, zScore, monthlySpends.size());

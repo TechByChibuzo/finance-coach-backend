@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/dto/ForgotPasswordRequest.java
 package com.financecoach.backend.dto;
 
 import jakarta.validation.constraints.Email;

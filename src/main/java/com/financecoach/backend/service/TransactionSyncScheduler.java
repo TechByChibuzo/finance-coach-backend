@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/userservice/service/TransactionSyncScheduler.java
 package com.financecoach.backend.service;
 
 import com.financecoach.backend.model.BankAccount;
@@ -74,13 +73,4 @@ public class TransactionSyncScheduler {
 
         logger.info("Sync completed. Success: {}, Failed: {}", successCount, failureCount);
     }
-
-    /**
-     * Alternative: Sync every 12 hours (simple version)
-     * Runs every 12 hours starting from app startup
-     */
-    // @Scheduled(fixedRate = 43200000) // 12 hours in milliseconds
-    // public void syncAllAccountsFixedRate() {
-    //     syncAllAccounts();
-    // }
 }

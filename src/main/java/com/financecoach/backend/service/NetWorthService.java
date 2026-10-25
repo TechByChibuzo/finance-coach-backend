@@ -44,7 +44,6 @@ public class NetWorthService {
 
     /**
      * Calculate current net worth for a user
-     * ✅ UPDATED: Returns DTO instead of inner class
      */
     public NetWorthSummaryDTO calculateNetWorth(UUID userId) {
         logger.info("Calculating net worth for user: {}", userId);
@@ -82,7 +81,6 @@ public class NetWorthService {
 
     /**
      * Get net worth history
-     * ✅ UPDATED: Returns List<NetWorthSnapshotDTO>
      */
     public List<NetWorthSnapshotDTO> getNetWorthHistory(UUID userId, LocalDate startDate, LocalDate endDate) {
         logger.debug("Getting net worth history for user: {} from {} to {}", userId, startDate, endDate);
@@ -99,7 +97,6 @@ public class NetWorthService {
 
     /**
      * Get all manual assets for user
-     * ✅ UPDATED: Returns List<ManualAssetResponse>
      */
     public List<ManualAssetResponse> getAllAssets(UUID userId) {
         logger.debug("Getting manual assets for user: {}", userId);
@@ -113,7 +110,6 @@ public class NetWorthService {
 
     /**
      * Add manual asset
-     * ✅ UPDATED: Returns ManualAssetResponse
      */
     @Transactional
     public ManualAssetResponse addAsset(UUID userId, ManualAssetRequest request) {
@@ -133,7 +129,6 @@ public class NetWorthService {
 
     /**
      * Update manual asset
-     * ✅ UPDATED: Returns ManualAssetResponse
      */
     @Transactional
     public ManualAssetResponse updateAsset(UUID userId, UUID assetId, ManualAssetRequest request) {
@@ -176,7 +171,6 @@ public class NetWorthService {
 
     /**
      * Get all manual liabilities for user
-     * ✅ UPDATED: Returns List<ManualLiabilityResponse>
      */
     public List<ManualLiabilityResponse> getAllLiabilities(UUID userId) {
         logger.debug("Getting manual liabilities for user: {}", userId);
@@ -190,7 +184,6 @@ public class NetWorthService {
 
     /**
      * Add manual liability
-     * ✅ UPDATED: Returns ManualLiabilityResponse
      */
     @Transactional
     public ManualLiabilityResponse addLiability(UUID userId, ManualLiabilityRequest request) {
@@ -212,7 +205,6 @@ public class NetWorthService {
 
     /**
      * Update manual liability
-     * ✅ UPDATED: Returns ManualLiabilityResponse
      */
     @Transactional
     public ManualLiabilityResponse updateLiability(UUID userId, UUID liabilityId, ManualLiabilityRequest request) {

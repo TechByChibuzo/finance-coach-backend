@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/userservice/dto/LoginResponse.java
 package com.financecoach.backend.dto;
 
 public class LoginResponse {

@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/exception/UnauthorizedAccessException.java
 package com.financecoach.backend.exception;
 
 public class UnauthorizedAccessException extends FinanceCoachException {

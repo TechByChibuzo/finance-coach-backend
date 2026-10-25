@@ -277,7 +277,7 @@ public class AICoachService {
     /**
      * Get savings recommendations
      */
-    public String getSavingsRecommendations(UUID userId, BigDecimal savingsGoal) {  // ✅ Changed from Double
+    public String getSavingsRecommendations(UUID userId, BigDecimal savingsGoal) {
         LocalDate endDate = LocalDate.now();
         LocalDate startDate = endDate.minusDays(30);
 
@@ -379,7 +379,7 @@ public class AICoachService {
      */
     private String formatCategoryBreakdown(Map<String, BigDecimal> categories) {
         return categories.entrySet().stream()
-                .sorted(Map.Entry.<String, BigDecimal>comparingByValue().reversed())  // ✅ Fixed generic type
+                .sorted(Map.Entry.<String, BigDecimal>comparingByValue().reversed())
                 .map(e -> String.format("- %s: $%.2f", e.getKey(), e.getValue()))
                 .collect(Collectors.joining("\n"));
     }

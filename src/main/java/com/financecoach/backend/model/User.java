@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/userservice/model/User.java
 package com.financecoach.backend.model;
 
 import jakarta.persistence.*;

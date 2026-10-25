@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/dto/BudgetSummaryResponse.java
 package com.financecoach.backend.dto;
 
 import lombok.Data;

@@ -1,4 +1,3 @@
-// src/main/java/com/financecoach/backend/exception/BankAccountNotFoundException.java
 package com.financecoach.backend.exception;
 
 import java.util.UUID;
