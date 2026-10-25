@@ -62,18 +62,7 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 
 ---
 
-## 7. Code quality
-
-- **Duplicated `getCurrentUserId()`** in 11 controllers. Replace it with `@AuthenticationPrincipal UUID userId`, or a small `CurrentUser` helper.
-- **Mixed injection styles**: field `@Autowired` remains in places (`MetricsService` everywhere, `FeatureAccessAspect`). Standardize on constructor injection.
-- **Header comments say `userservice`** in 19 files. Delete them; the path is already known.
-- Leftover markers (`// UPDATED ...`) and commented-out code can go.
-- Lombok `@Data` on JPA entities generates `equals`/`hashCode` over all fields, which breaks with lazy proxies and collections. Use `@Getter @Setter`, with ID-based equality if needed.
-- Use a typed enum for plan names instead of the strings "FREE"/"PREMIUM"/"PRO". `getPlanLevel` is duplicated in the aspect and the service.
-
----
-
-## 8. Testing
+## 7. Testing
 
 Service-layer unit tests are at ~98% lines / ~88% branches, enforced by JaCoCo in CI, with `@WebMvcTest` security tests. The remaining gap:
 
@@ -81,7 +70,7 @@ Service-layer unit tests are at ~98% lines / ~88% branches, enforced by JaCoCo i
 
 ---
 
-## 9. Product & feature ideas
+## 8. Product & feature ideas
 
 Ideas that build on what's already here:
 
