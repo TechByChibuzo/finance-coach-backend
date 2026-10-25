@@ -53,7 +53,8 @@ class PlaidServiceTest {
     @BeforeEach
     void setUp() {
         plaidService = new PlaidService(plaidClient, bankAccountRepository, plaidItemRepository, subscriptionService,
-                userRepository, new TransactionTemplate(transactionManager));
+                userRepository, new TransactionTemplate(transactionManager),
+                mock(MetricsService.class), mock(InstitutionIconFetcher.class));
 
         item = new PlaidItem();
         item.setId(UUID.randomUUID());

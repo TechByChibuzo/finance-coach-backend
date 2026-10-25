@@ -10,7 +10,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.UUID;
@@ -27,12 +26,11 @@ import static org.mockito.Mockito.when;
 class SubscriptionControllerTest {
 
     private final SubscriptionService subscriptionService = mock(SubscriptionService.class);
-    private final SubscriptionController controller = new SubscriptionController();
+    private final SubscriptionController controller = new SubscriptionController(subscriptionService);
     private final UUID userId = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(controller, "subscriptionService", subscriptionService);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(userId, null, List.of()));
     }

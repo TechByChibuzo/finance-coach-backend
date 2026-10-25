@@ -4,7 +4,6 @@ import com.financecoach.backend.annotation.RequiresFeature;
 import com.financecoach.backend.security.CurrentUser;
 import com.financecoach.backend.service.ExportService;
 import com.financecoach.backend.service.UserService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -16,11 +15,14 @@ import java.util.UUID;
 @RequestMapping("/api/export")
 public class ExportController {
 
-    @Autowired
-    private ExportService exportService;
+    private final ExportService exportService;
 
-    @Autowired
-    private UserService userService;
+    private final UserService userService;
+
+    public ExportController(ExportService exportService, UserService userService) {
+        this.exportService = exportService;
+        this.userService = userService;
+    }
 
     @RequiresFeature(value = "export_reports", message = "Upgrade to Premium to export your transactions")
     @GetMapping("/transactions")

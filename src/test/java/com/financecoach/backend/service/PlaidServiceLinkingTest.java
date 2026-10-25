@@ -33,7 +33,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import retrofit2.Call;
@@ -78,9 +77,7 @@ class PlaidServiceLinkingTest {
     @BeforeEach
     void setUp() {
         plaidService = new PlaidService(plaidClient, bankAccountRepository, plaidItemRepository, subscriptionService,
-                userRepository, new TransactionTemplate(transactionManager));
-        ReflectionTestUtils.setField(plaidService, "metricsService", metricsService);
-        ReflectionTestUtils.setField(plaidService, "iconFetcher", iconFetcher);
+                userRepository, new TransactionTemplate(transactionManager), metricsService, iconFetcher);
         userId = UUID.randomUUID();
         // Unlimited bank connections unless a test says otherwise
         org.mockito.Mockito.lenient().when(subscriptionService.getLimit(any(), org.mockito.ArgumentMatchers.eq("bank_account")))

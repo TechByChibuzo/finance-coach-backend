@@ -27,13 +27,14 @@ public class UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private volatile String dummyPasswordHash;
-    @Autowired
-    private MetricsService metricsService;
+    private final MetricsService metricsService;
 
     @Autowired
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,
+                       MetricsService metricsService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.metricsService = metricsService;
     }
 
     public UserResponse registerUser(UserRegistrationRequest request) {

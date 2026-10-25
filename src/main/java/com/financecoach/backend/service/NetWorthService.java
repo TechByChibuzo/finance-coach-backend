@@ -7,7 +7,6 @@ import com.financecoach.backend.model.*;
 import com.financecoach.backend.repository.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,23 +23,31 @@ public class NetWorthService {
 
     private static final Logger logger = LoggerFactory.getLogger(NetWorthService.class);
 
-    @Autowired
-    private BankAccountRepository bankAccountRepository;
+    private final BankAccountRepository bankAccountRepository;
 
-    @Autowired
-    private HoldingRepository holdingRepository;
+    private final HoldingRepository holdingRepository;
 
-    @Autowired
-    private ManualAssetRepository manualAssetRepository;
+    private final ManualAssetRepository manualAssetRepository;
 
-    @Autowired
-    private ManualLiabilityRepository manualLiabilityRepository;
+    private final ManualLiabilityRepository manualLiabilityRepository;
 
-    @Autowired
-    private NetWorthSnapshotRepository snapshotRepository;
+    private final NetWorthSnapshotRepository snapshotRepository;
 
-    @Autowired
-    private UserRepository userRepository;
+    private final UserRepository userRepository;
+
+    public NetWorthService(BankAccountRepository bankAccountRepository,
+                           HoldingRepository holdingRepository,
+                           ManualAssetRepository manualAssetRepository,
+                           ManualLiabilityRepository manualLiabilityRepository,
+                           NetWorthSnapshotRepository snapshotRepository,
+                           UserRepository userRepository) {
+        this.bankAccountRepository = bankAccountRepository;
+        this.holdingRepository = holdingRepository;
+        this.manualAssetRepository = manualAssetRepository;
+        this.manualLiabilityRepository = manualLiabilityRepository;
+        this.snapshotRepository = snapshotRepository;
+        this.userRepository = userRepository;
+    }
 
     /**
      * Calculate current net worth for a user

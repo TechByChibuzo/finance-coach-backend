@@ -37,16 +37,17 @@ public class BudgetService {
     private final SubscriptionService subscriptionService;
     private final UserRepository userRepository;
 
-    @Autowired
-    private MetricsService metricsService;
+    private final MetricsService metricsService;
 
     @Autowired
     public BudgetService(BudgetRepository budgetRepository, AnalyticsService analyticsService,
-                         SubscriptionService subscriptionService, UserRepository userRepository) {
+                         SubscriptionService subscriptionService, UserRepository userRepository,
+                         MetricsService metricsService) {
         this.budgetRepository = budgetRepository;
         this.analyticsService = analyticsService;
         this.subscriptionService = subscriptionService;
         this.userRepository = userRepository;
+        this.metricsService = metricsService;
     }
 
     /**

@@ -12,7 +12,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -42,8 +41,8 @@ class PasswordResetServiceTest {
 
     @BeforeEach
     void setUp() {
-        passwordResetService = new PasswordResetService(tokenRepository, userRepository, emailService, passwordEncoder);
-        ReflectionTestUtils.setField(passwordResetService, "metricsService", metricsService);
+        passwordResetService = new PasswordResetService(tokenRepository, userRepository, emailService, passwordEncoder,
+                metricsService);
         user = new User();
         user.setId(UUID.randomUUID());
         user.setEmail("jane@example.com");

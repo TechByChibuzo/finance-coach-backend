@@ -4,7 +4,6 @@ import com.financecoach.backend.security.JwtAuthenticationFilter;
 import com.financecoach.backend.security.MetricsAccessManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,15 +29,19 @@ public class SecurityConfig {
 
     private static final Logger logger = LoggerFactory.getLogger(SecurityConfig.class);
 
-    @Autowired
-    private JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final JwtAuthenticationFilter jwtAuthenticationFilter;
 
-    @Autowired
-    private MetricsAccessManager metricsAccessManager;
+    private final MetricsAccessManager metricsAccessManager;
 
     // The deployed frontend(s), comma-separated. Not *.vercel.app: anyone can deploy there.
     @Value("${app.frontend-url}")
     private String frontendUrls;
+
+    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter,
+                          MetricsAccessManager metricsAccessManager) {
+        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.metricsAccessManager = metricsAccessManager;
+    }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
