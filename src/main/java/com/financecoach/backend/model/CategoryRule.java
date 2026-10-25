@@ -7,7 +7,8 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -19,7 +20,8 @@ import java.util.UUID;
 @Entity
 @Table(name = "category_rules",
         uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "match_key"}))
-@Data
+@Getter
+@Setter
 public class CategoryRule {
 
     @Id

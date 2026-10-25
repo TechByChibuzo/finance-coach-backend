@@ -2,13 +2,15 @@ package com.financecoach.backend.model;
 
 import com.financecoach.backend.security.EncryptedStringConverter;
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-@Data
+@Getter
+@Setter
 @Entity
 @Table(name = "bank_accounts")
 public class BankAccount {
