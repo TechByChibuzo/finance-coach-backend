@@ -8,7 +8,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -34,26 +33,9 @@ public interface UserSubscriptionRepository extends JpaRepository<UserSubscripti
     List<UserSubscription> findByStatus(SubscriptionStatus status);
 
     /**
-     * Find subscriptions expiring soon
-     */
-    @Query("SELECT s FROM UserSubscription s WHERE s.status = 'ACTIVE' " +
-            "AND s.endDate BETWEEN :now AND :endDate")
-    List<UserSubscription> findExpiringSoon(
-            @Param("now") LocalDateTime now,
-            @Param("endDate") LocalDateTime endDate
-    );
-
-    /**
      * Find by Stripe subscription ID
      */
     Optional<UserSubscription> findByStripeSubscriptionId(String stripeSubscriptionId);
-
-    /**
-     * Count active subscriptions by plan
-     */
-    @Query("SELECT COUNT(s) FROM UserSubscription s WHERE s.plan.id = :planId AND s.status = 'ACTIVE'")
-    Long countActiveByPlanId(@Param("planId") UUID planId);
-
 
     // Account deletion: remove all of the user's rows in one statement
     @Modifying

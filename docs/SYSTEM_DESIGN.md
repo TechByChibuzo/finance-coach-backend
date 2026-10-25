@@ -561,4 +561,3 @@ Open structural changes from [REVIEW.md](REVIEW.md):
 - **Tool use** for the AI coach (`get_spending_by_category`, `get_transactions`, …) on top of the summary and RAG.
 - An HNSW index on `transaction_embeddings`.
 - **ShedLock** before running more than one ECS task.
-- Repository tests on Testcontainers Postgres + pgvector.

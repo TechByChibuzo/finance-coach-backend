@@ -41,22 +41,13 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 ## 4. Reliability & operations
 
 - **Schedulers vs multiple tasks.** With ECS desired count > 1, every cron job runs N times. Add **ShedLock** (JDBC lock provider) and a thread-pool scheduler before scaling out.
-- **`contextLoads` (`FinanceCoachApplicationTests`) is skipped in CI** because it needs a real DB and secrets. Point it at the Testcontainers Postgres the repository tests use (`PostgresRepositoryTest`), with dummy values for the secrets.
 - **Retries:** Plaid calls have no retry with backoff (timeouts are set: Plaid 60s, Bedrock 2 min per call, OpenAI 5s/30s).
 - **Logging:** structured JSON logs with a request ID and user ID in MDC.
 - **Errors:** the remaining bare `RuntimeException`s are internal (Stripe webhook processing, a missing seeded plan or price ID, `EmailService`) and answer 500 on purpose; webhooks rely on it for Stripe's retries. Give them typed exceptions if they ever reach users.
 
 ---
 
-## 5. Testing
-
-Service-layer unit tests are at ~98% lines / ~88% branches, enforced by JaCoCo in CI, with `@WebMvcTest` security tests. The remaining gap:
-
-- **More repository tests.** `src/test/java/.../repository` runs against Postgres 16 + pgvector in Testcontainers and covers usage reservation, bank connection counts, the guarded embedding insert, `findWithoutEmbedding`, the active-subscription query and the user foreign keys. Not covered yet: `UserRepository.lockById`, the `BudgetRepository` totals, and the analytics and search queries.
-
----
-
-## 6. Product & feature ideas
+## 5. Product & feature ideas
 
 Ideas that build on what's already here:
 
