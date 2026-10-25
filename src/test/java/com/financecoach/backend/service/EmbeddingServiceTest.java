@@ -37,6 +37,15 @@ class EmbeddingServiceTest {
     }
 
     @Test
+    void buildTransactionText_leavesOutTheAccountId_whichIsRandomNoiseToSimilaritySearch() {
+        Transaction t = transaction("42.50", "Starbucks", "FOOD_AND_DRINK");
+
+        String text = embeddingService.buildTransactionText(t);
+
+        assertThat(text).doesNotContain(t.getAccountId().toString()).doesNotContain("Account:");
+    }
+
+    @Test
     void buildTransactionText_forRefundsWithoutMerchantOrCategory_usesFallbacks() {
         Transaction refund = transaction("-10.00", null, null);
         refund.setName("AMAZON REFUND");
