@@ -9,21 +9,7 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 
 ---
 
-## 1. Billing (Stripe)
-
-- `findPlanByStripePriceId` uses `findAll()` + filter. Minor, but add `findByStripePriceIdMonthlyOrStripePriceIdYearly`.
-- Idempotency relies on checking whether the Stripe subscription is already recorded. A `processed_stripe_events(event_id PK)` table, skipping events already seen, would cover every event type.
-- Offer the Stripe Billing **Customer Portal** for card updates and cancellation, so you don't build those screens.
-
----
-
-## 2. Feature gating & usage limits
-
-- Limits are hard-coded in `getFeatureLimit` while `subscription_plans.limits` (jsonb) sits unused. Parse the JSON so you can change limits without a deploy.
-
----
-
-## 3. AI coach & RAG (P2)
+## 1. AI coach & RAG (P2)
 
 - **Tool use.** The coach now gets exact monthly totals in its prompt. For questions beyond that ("what did I spend at Costco in March?"), give Claude tools such as `get_spending_by_category(start,end)`, `get_transactions(filter)` and `get_budget_status(month)` backed by the existing services. Bedrock's Anthropic Messages API supports `tools`.
 - **No ANN index.** Add `CREATE INDEX ON transaction_embeddings USING hnsw (embedding vector_cosine_ops);` and a `user_id` b-tree index as data grows.
@@ -33,7 +19,7 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 
 ---
 
-## 4. Analytics, budgets, anomalies: correctness
+## 2. Analytics, budgets, anomalies: correctness
 
 - **GET endpoints write to the DB:** `getBudgetsForMonth` saves `spent` and `carriedOver` during a read (only when they changed). It can't simply stop: rollover builds each month's carry-over from last month's *stored* `carriedOver`, which only stays current because reads save it. Refresh budgets from the sync pipeline (after each transaction sync), then make the read pure.
 - `BudgetService` validates things Bean Validation already checks. Harmless, but the duplicates can go.
@@ -42,7 +28,7 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 
 ---
 
-## 5. Data & persistence
+## 3. Data & persistence
 
 - **`ddl-auto: update` in production.** Hibernate never drops or renames columns and can't add constraints safely (hence `DatabaseConstraints`). Adopt **Flyway**: baseline the current schema, set `ddl-auto: validate`, and move seed data into migrations.
 - **Foreign keys:** `transaction_embeddings → transactions` and `spending_anomalies`, `transactions`, `bank_accounts`, `plaid_items → users` exist (added by `DatabaseConstraints`). Other user-owned tables have none; move them all into Flyway migrations.
@@ -52,7 +38,7 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 
 ---
 
-## 6. Reliability & operations
+## 4. Reliability & operations
 
 - **Schedulers vs multiple tasks.** With ECS desired count > 1, every cron job runs N times. Add **ShedLock** (JDBC lock provider) and a thread-pool scheduler before scaling out.
 - **`contextLoads` (`FinanceCoachApplicationTests`) is skipped in CI** because it needs a real DB and secrets. Point it at the Testcontainers Postgres the repository tests use (`PostgresRepositoryTest`), with dummy values for the secrets.
@@ -62,7 +48,7 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 
 ---
 
-## 7. Testing
+## 5. Testing
 
 Service-layer unit tests are at ~98% lines / ~88% branches, enforced by JaCoCo in CI, with `@WebMvcTest` security tests. The remaining gap:
 
@@ -70,7 +56,7 @@ Service-layer unit tests are at ~98% lines / ~88% branches, enforced by JaCoCo i
 
 ---
 
-## 8. Product & feature ideas
+## 6. Product & feature ideas
 
 Ideas that build on what's already here:
 

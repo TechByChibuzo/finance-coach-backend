@@ -744,6 +744,40 @@ class SubscriptionServiceTest {
     }
 
     @Test
+    void billingPortal_opensForTheUsersStripeCustomer_returningToBillingSettings() throws Exception {
+        ReflectionTestUtils.setField(subscriptionService, "frontendUrl", "https://app.test");
+        User user = new User();
+        user.setStripeCustomerId("cus_1");
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(stripeService.createBillingPortalSession("cus_1", "https://app.test/settings/billing"))
+                .thenReturn("https://billing.stripe.com/p/session_123");
+
+        assertThat(subscriptionService.createBillingPortalSession(userId))
+                .isEqualTo("https://billing.stripe.com/p/session_123");
+    }
+
+    @Test
+    void billingPortal_forSomeoneWhoNeverPaid_isAClearClientError() {
+        when(userRepository.findById(userId)).thenReturn(Optional.of(new User()));
+
+        assertThatThrownBy(() -> subscriptionService.createBillingPortalSession(userId))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("billing account");
+    }
+
+    @Test
+    void billingPortal_whenStripeFails_isABillingError() throws Exception {
+        User user = new User();
+        user.setStripeCustomerId("cus_1");
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(stripeService.createBillingPortalSession(anyString(), any()))
+                .thenThrow(new ApiConnectionException("down"));
+
+        assertThatThrownBy(() -> subscriptionService.createBillingPortalSession(userId))
+                .isInstanceOf(BillingUnavailableException.class);
+    }
+
+    @Test
     void startTrial_createsATrialEndingAfterTheGivenDays() {
         when(planRepository.findByName("PREMIUM")).thenReturn(Optional.of(plan("PREMIUM")));
         when(subscriptionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));

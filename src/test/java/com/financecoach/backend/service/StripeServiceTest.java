@@ -97,6 +97,26 @@ class StripeServiceTest {
     }
 
     @Test
+    void createBillingPortalSession_opensThePortalForTheCustomer_andReturnsToTheGivenPage() throws Exception {
+        com.stripe.model.billingportal.Session portal = new com.stripe.model.billingportal.Session();
+        portal.setUrl("https://billing.stripe.com/p/session_123");
+        try (MockedStatic<com.stripe.model.billingportal.Session> portals =
+                     mockStatic(com.stripe.model.billingportal.Session.class)) {
+            portals.when(() -> com.stripe.model.billingportal.Session.create(
+                    any(com.stripe.param.billingportal.SessionCreateParams.class))).thenReturn(portal);
+
+            assertThat(stripeService.createBillingPortalSession("cus_1", "https://app.test/settings/billing"))
+                    .isEqualTo("https://billing.stripe.com/p/session_123");
+
+            ArgumentCaptor<com.stripe.param.billingportal.SessionCreateParams> params =
+                    ArgumentCaptor.forClass(com.stripe.param.billingportal.SessionCreateParams.class);
+            portals.verify(() -> com.stripe.model.billingportal.Session.create(params.capture()));
+            assertThat(params.getValue().getCustomer()).isEqualTo("cus_1");
+            assertThat(params.getValue().getReturnUrl()).isEqualTo("https://app.test/settings/billing");
+        }
+    }
+
+    @Test
     void cancelSubscription_cancelsImmediately() throws Exception {
         Subscription subscription = mock(Subscription.class);
         Subscription cancelled = new Subscription();

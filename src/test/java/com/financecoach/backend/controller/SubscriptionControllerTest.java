@@ -14,6 +14,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import java.util.List;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -67,6 +68,13 @@ class SubscriptionControllerTest {
                 .thenThrow(new BillingUnavailableException("Could not cancel your subscription. Please try again.", null));
 
         assertThatThrownBy(controller::cancelSubscription).isInstanceOf(BillingUnavailableException.class);
+    }
+
+    @Test
+    void billingPortal_returnsTheUrlToOpen() {
+        when(subscriptionService.createBillingPortalSession(userId)).thenReturn("https://billing.stripe.com/p/s");
+
+        assertThat(controller.openBillingPortal().getBody()).isEqualTo(java.util.Map.of("url", "https://billing.stripe.com/p/s"));
     }
 
     @Test
