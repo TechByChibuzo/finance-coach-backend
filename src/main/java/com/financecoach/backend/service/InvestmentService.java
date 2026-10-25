@@ -14,7 +14,6 @@ import com.plaid.client.model.InvestmentsHoldingsGetResponse;
 import com.plaid.client.model.Security;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,17 +30,23 @@ public class InvestmentService {
 
     private static final Logger logger = LoggerFactory.getLogger(InvestmentService.class);
 
-    @Autowired
-    private HoldingRepository holdingRepository;
+    private final HoldingRepository holdingRepository;
 
-    @Autowired
-    private PortfolioSnapshotRepository snapshotRepository;
+    private final PortfolioSnapshotRepository snapshotRepository;
 
-    @Autowired
-    private BankAccountRepository bankAccountRepository;
+    private final BankAccountRepository bankAccountRepository;
 
-    @Autowired
-    private PlaidService plaidService;
+    private final PlaidService plaidService;
+
+    public InvestmentService(HoldingRepository holdingRepository,
+                             PortfolioSnapshotRepository snapshotRepository,
+                             BankAccountRepository bankAccountRepository,
+                             PlaidService plaidService) {
+        this.holdingRepository = holdingRepository;
+        this.snapshotRepository = snapshotRepository;
+        this.bankAccountRepository = bankAccountRepository;
+        this.plaidService = plaidService;
+    }
 
     /**
      * Sync holdings from Plaid for a specific account

@@ -20,7 +20,6 @@ import com.stripe.model.Customer;
 import com.stripe.net.Webhook;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,32 +39,41 @@ public class SubscriptionService {
 
     private static final Logger logger = LoggerFactory.getLogger(SubscriptionService.class);
 
-    @Autowired
-    private UserSubscriptionRepository subscriptionRepository;
+    private final UserSubscriptionRepository subscriptionRepository;
 
-    @Autowired
-    private SubscriptionPlanRepository planRepository;
+    private final SubscriptionPlanRepository planRepository;
 
-    @Autowired
-    private UsageTrackingRepository usageRepository;
+    private final UsageTrackingRepository usageRepository;
 
-    @Autowired
-    private FeatureFlagRepository featureFlagRepository;
+    private final FeatureFlagRepository featureFlagRepository;
 
-    @Autowired
-    private PaymentRepository paymentRepository;
+    private final PaymentRepository paymentRepository;
 
-    @Autowired
-    private UserRepository userRepository;
+    private final UserRepository userRepository;
 
-    @Autowired
-    private StripeService stripeService;
+    private final StripeService stripeService;
 
     @Value("${stripe.webhook-secret}")
     private String webhookSecret;
 
     @Value("${app.frontend-url}")
     private String frontendUrl;
+
+    public SubscriptionService(UserSubscriptionRepository subscriptionRepository,
+                               SubscriptionPlanRepository planRepository,
+                               UsageTrackingRepository usageRepository,
+                               FeatureFlagRepository featureFlagRepository,
+                               PaymentRepository paymentRepository,
+                               UserRepository userRepository,
+                               StripeService stripeService) {
+        this.subscriptionRepository = subscriptionRepository;
+        this.planRepository = planRepository;
+        this.usageRepository = usageRepository;
+        this.featureFlagRepository = featureFlagRepository;
+        this.paymentRepository = paymentRepository;
+        this.userRepository = userRepository;
+        this.stripeService = stripeService;
+    }
 
     // ============================================
     // PLAN MANAGEMENT

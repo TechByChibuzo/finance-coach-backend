@@ -26,20 +26,21 @@ public class AICoachService {
     private final ConversationService conversationService;
 
 
-    @Autowired
-    private MetricsService metricsService;
+    private final MetricsService metricsService;
 
     @Autowired
     public AICoachService(ClaudeService claudeService,
                           TransactionRepository transactionRepository,
                           AnalyticsService analyticsService,
                           VectorStoreService vectorStoreService,
-                          ConversationService conversationService) {
+                          ConversationService conversationService,
+                          MetricsService metricsService) {
         this.claudeService = claudeService;
         this.transactionRepository = transactionRepository;
         this.analyticsService = analyticsService;
         this.vectorStoreService = vectorStoreService;
         this.conversationService = conversationService;
+        this.metricsService = metricsService;
     }
 
     public String chat(UUID userId, String userMessage) {

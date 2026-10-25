@@ -9,7 +9,6 @@ import com.financecoach.backend.security.CurrentUser;
 import com.financecoach.backend.service.InvestmentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -25,8 +24,11 @@ public class InvestmentController {
 
     private static final Logger logger = LoggerFactory.getLogger(InvestmentController.class);
 
-    @Autowired
-    private InvestmentService investmentService;
+    private final InvestmentService investmentService;
+
+    public InvestmentController(InvestmentService investmentService) {
+        this.investmentService = investmentService;
+    }
 
     /**
      * Sync holdings from Plaid for all investment accounts

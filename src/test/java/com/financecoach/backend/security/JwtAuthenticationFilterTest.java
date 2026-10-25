@@ -36,9 +36,7 @@ class JwtAuthenticationFilterTest {
                 "test-secret-key-that-is-at-least-256-bits-long-for-hmac-sha");
         ReflectionTestUtils.setField(jwtTokenProvider, "jwtExpirationMs", 86400000L);
 
-        filter = new JwtAuthenticationFilter();
-        ReflectionTestUtils.setField(filter, "jwtTokenProvider", jwtTokenProvider);
-        ReflectionTestUtils.setField(filter, "userRepository", userRepository);
+        filter = new JwtAuthenticationFilter(jwtTokenProvider, userRepository);
 
         userId = UUID.randomUUID();
     }

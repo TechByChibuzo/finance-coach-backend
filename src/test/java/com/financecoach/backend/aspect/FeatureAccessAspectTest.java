@@ -18,7 +18,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.aop.aspectj.annotation.AspectJProxyFactory;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.UUID;
@@ -62,8 +61,8 @@ class FeatureAccessAspectTest {
 
         aiCoachController = proxy(new AICoachController(aiCoachService));
 
-        ExportController export = new ExportController();
-        ReflectionTestUtils.setField(export, "exportService", exportService);
+        ExportController export = new ExportController(exportService,
+                org.mockito.Mockito.mock(com.financecoach.backend.service.UserService.class));
         exportController = proxy(export);
     }
 

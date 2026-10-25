@@ -46,10 +46,8 @@ public class TransactionService {
     private final PlaidApi plaidClient;
     private final TransactionRepository transactionRepository;
     private final BankAccountRepository bankAccountRepository;
-    @Autowired
-    private MetricsService metricsService;
-    @Autowired
-    private CategoryRuleService categoryRuleService;
+    private final MetricsService metricsService;
+    private final CategoryRuleService categoryRuleService;
     private final VectorStoreService vectorStoreService;
     private final PlaidService plaidService;
     private final PlaidItemRepository plaidItemRepository;
@@ -60,13 +58,17 @@ public class TransactionService {
                               BankAccountRepository bankAccountRepository,
                               VectorStoreService vectorStoreService,
                               PlaidService plaidService,
-                              PlaidItemRepository plaidItemRepository) {
+                              PlaidItemRepository plaidItemRepository,
+                              MetricsService metricsService,
+                              CategoryRuleService categoryRuleService) {
         this.plaidClient = plaidClient;
         this.transactionRepository = transactionRepository;
         this.bankAccountRepository = bankAccountRepository;
         this.vectorStoreService = vectorStoreService;
         this.plaidService = plaidService;
         this.plaidItemRepository = plaidItemRepository;
+        this.metricsService = metricsService;
+        this.categoryRuleService = categoryRuleService;
     }
 
     /**

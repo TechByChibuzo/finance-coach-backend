@@ -12,7 +12,6 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.UUID;
@@ -21,8 +20,11 @@ import java.util.UUID;
 @Component
 public class FeatureAccessAspect {
 
-    @Autowired
-    private SubscriptionService subscriptionService;
+    private final SubscriptionService subscriptionService;
+
+    public FeatureAccessAspect(SubscriptionService subscriptionService) {
+        this.subscriptionService = subscriptionService;
+    }
 
     /**
      * Check if user has required plan before method execution

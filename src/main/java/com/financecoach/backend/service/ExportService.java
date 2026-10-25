@@ -2,7 +2,6 @@ package com.financecoach.backend.service;
 
 import com.financecoach.backend.model.Transaction;
 import com.financecoach.backend.repository.TransactionRepository;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -13,11 +12,14 @@ import java.util.UUID;
 @Service
 public class ExportService {
 
-    @Autowired
-    private TransactionRepository transactionRepository;
+    private final TransactionRepository transactionRepository;
 
-    @Autowired
-    private S3Service s3Service;
+    private final S3Service s3Service;
+
+    public ExportService(TransactionRepository transactionRepository, S3Service s3Service) {
+        this.transactionRepository = transactionRepository;
+        this.s3Service = s3Service;
+    }
 
     public String exportTransactionsCSV(UUID userId) {
         List<Transaction> transactions = transactionRepository.findByUserId(userId);

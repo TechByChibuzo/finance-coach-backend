@@ -19,7 +19,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
 import retrofit2.Call;
 import retrofit2.Response;
 
@@ -64,9 +63,7 @@ class TransactionServiceTest {
     void setUp() {
         transactionService = new TransactionService(
                 plaidClient, transactionRepository, bankAccountRepository, vectorStoreService, plaidService,
-                plaidItemRepository);
-        ReflectionTestUtils.setField(transactionService, "metricsService", metricsService);
-        ReflectionTestUtils.setField(transactionService, "categoryRuleService", categoryRuleService);
+                plaidItemRepository, metricsService, categoryRuleService);
 
         userId = UUID.randomUUID();
         item = new PlaidItem();

@@ -46,10 +46,8 @@ public class PlaidService {
     long brandingRetryAfterMillis = 60 * 60 * 1000L;
     private final UserRepository userRepository;
     private final TransactionTemplate transactionTemplate;
-    @Autowired
-    private MetricsService metricsService;
-    @Autowired
-    private InstitutionIconFetcher iconFetcher;
+    private final MetricsService metricsService;
+    private final InstitutionIconFetcher iconFetcher;
 
     @Autowired
     public PlaidService(PlaidApi plaidClient,
@@ -57,13 +55,17 @@ public class PlaidService {
                         PlaidItemRepository plaidItemRepository,
                         SubscriptionService subscriptionService,
                         UserRepository userRepository,
-                        TransactionTemplate transactionTemplate) {
+                        TransactionTemplate transactionTemplate,
+                        MetricsService metricsService,
+                        InstitutionIconFetcher iconFetcher) {
         this.plaidClient = plaidClient;
         this.bankAccountRepository = bankAccountRepository;
         this.plaidItemRepository = plaidItemRepository;
         this.subscriptionService = subscriptionService;
         this.userRepository = userRepository;
         this.transactionTemplate = transactionTemplate;
+        this.metricsService = metricsService;
+        this.iconFetcher = iconFetcher;
     }
 
     /**
