@@ -808,12 +808,7 @@ public class SubscriptionService {
     private SubscriptionPlan findPlanByStripePriceId(String stripePriceId) {
         logger.debug("Finding plan by Stripe price ID: {}", stripePriceId);
 
-        return planRepository.findAll().stream()
-                .filter(plan ->
-                        stripePriceId.equals(plan.getStripePriceIdMonthly()) ||
-                                stripePriceId.equals(plan.getStripePriceIdYearly())
-                )
-                .findFirst()
+        return planRepository.findByStripePriceId(stripePriceId)
                 .orElseThrow(() -> new RuntimeException("Plan not found for price: " + stripePriceId));
     }
 

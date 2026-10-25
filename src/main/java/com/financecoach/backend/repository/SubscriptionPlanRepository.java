@@ -1,5 +1,7 @@
 package com.financecoach.backend.repository;
 
+import org.springframework.data.repository.query.Param;
+import org.springframework.data.jpa.repository.Query;
 import com.financecoach.backend.model.SubscriptionPlan;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -25,4 +27,10 @@ public interface SubscriptionPlanRepository extends JpaRepository<SubscriptionPl
      * Check if plan exists by name
      */
     boolean existsByName(String name);
+
+    /**
+     * The plan a Stripe price belongs to, monthly or yearly
+     */
+    @Query("SELECT p FROM SubscriptionPlan p WHERE p.stripePriceIdMonthly = :priceId OR p.stripePriceIdYearly = :priceId")
+    Optional<SubscriptionPlan> findByStripePriceId(@Param("priceId") String priceId);
 }

@@ -794,7 +794,7 @@ class SubscriptionServiceTest {
     @Test
     void webhook_priceNotMatchingAnyPlan_failsSoStripeRetries() throws Exception {
         UserSubscription local = activeSubscription("sub_1");
-        when(planRepository.findAll()).thenReturn(List.of(plan("FREE")));
+        when(planRepository.findByStripePriceId(MONTHLY_PRICE)).thenReturn(Optional.empty());
         when(stripeService.retrieveSubscription("sub_1")).thenReturn(stripeSubscription("sub_1", "active", false));
         when(subscriptionRepository.findByStripeSubscriptionId("sub_1")).thenReturn(Optional.of(local));
 
@@ -841,7 +841,8 @@ class SubscriptionServiceTest {
     private void stubPlans() {
         SubscriptionPlan premium = plan("PREMIUM");
         premium.setStripePriceIdMonthly(MONTHLY_PRICE);
-        when(planRepository.findAll()).thenReturn(List.of(plan("FREE"), premium));
+        // Looked up by price ID in the database, not by loading every plan
+        when(planRepository.findByStripePriceId(MONTHLY_PRICE)).thenReturn(Optional.of(premium));
     }
 
     private void sendWebhook(String type, String objectJson) throws Exception {
