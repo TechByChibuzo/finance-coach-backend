@@ -1,5 +1,7 @@
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.exception.UnauthorizedAccessException;
+import com.financecoach.backend.exception.ResourceNotFoundException;
 import com.financecoach.backend.dto.networth.*;
 import com.financecoach.backend.model.*;
 import com.financecoach.backend.repository.*;
@@ -138,10 +140,10 @@ public class NetWorthService {
         logger.info("Updating manual asset: {} for user: {}", assetId, userId);
 
         ManualAsset asset = manualAssetRepository.findById(assetId)
-                .orElseThrow(() -> new RuntimeException("Asset not found: " + assetId));
+                .orElseThrow(() -> new ResourceNotFoundException("Asset"));
 
         if (!asset.getUserId().equals(userId)) {
-            throw new RuntimeException("Unauthorized access to asset");
+            throw new UnauthorizedAccessException("asset");
         }
 
         asset.setName(request.getName());
@@ -161,10 +163,10 @@ public class NetWorthService {
         logger.info("Deleting manual asset: {} for user: {}", assetId, userId);
 
         ManualAsset asset = manualAssetRepository.findById(assetId)
-                .orElseThrow(() -> new RuntimeException("Asset not found: " + assetId));
+                .orElseThrow(() -> new ResourceNotFoundException("Asset"));
 
         if (!asset.getUserId().equals(userId)) {
-            throw new RuntimeException("Unauthorized access to asset");
+            throw new UnauthorizedAccessException("asset");
         }
 
         manualAssetRepository.delete(asset);
@@ -217,10 +219,10 @@ public class NetWorthService {
         logger.info("Updating manual liability: {} for user: {}", liabilityId, userId);
 
         ManualLiability liability = manualLiabilityRepository.findById(liabilityId)
-                .orElseThrow(() -> new RuntimeException("Liability not found: " + liabilityId));
+                .orElseThrow(() -> new ResourceNotFoundException("Liability"));
 
         if (!liability.getUserId().equals(userId)) {
-            throw new RuntimeException("Unauthorized access to liability");
+            throw new UnauthorizedAccessException("liability");
         }
 
         liability.setName(request.getName());
@@ -242,10 +244,10 @@ public class NetWorthService {
         logger.info("Deleting manual liability: {} for user: {}", liabilityId, userId);
 
         ManualLiability liability = manualLiabilityRepository.findById(liabilityId)
-                .orElseThrow(() -> new RuntimeException("Liability not found: " + liabilityId));
+                .orElseThrow(() -> new ResourceNotFoundException("Liability"));
 
         if (!liability.getUserId().equals(userId)) {
-            throw new RuntimeException("Unauthorized access to liability");
+            throw new UnauthorizedAccessException("liability");
         }
 
         manualLiabilityRepository.delete(liability);

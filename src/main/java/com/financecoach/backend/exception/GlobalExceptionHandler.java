@@ -348,6 +348,42 @@ public class GlobalExceptionHandler {
     /**
      * Handle budget not found exceptions
      */
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleResourceNotFound(
+            ResourceNotFoundException ex,
+            HttpServletRequest request) {
+
+        logger.warn("Not found: {}", ex.getMessage());
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.NOT_FOUND.value(),
+                "Not Found",
+                ex.getMessage(),
+                ex.getErrorCode()
+        );
+        error.setPath(request.getRequestURI());
+
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(error);
+    }
+
+    @ExceptionHandler(BillingUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleBillingUnavailable(
+            BillingUnavailableException ex,
+            HttpServletRequest request) {
+
+        logger.error("Billing unavailable: {}", ex.getMessage(), ex.getCause());
+
+        ErrorResponse error = new ErrorResponse(
+                HttpStatus.SERVICE_UNAVAILABLE.value(),
+                "Service Unavailable",
+                ex.getMessage(),
+                ex.getErrorCode()
+        );
+        error.setPath(request.getRequestURI());
+
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(error);
+    }
+
     @ExceptionHandler(BudgetNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleBudgetNotFoundException(
             BudgetNotFoundException ex,

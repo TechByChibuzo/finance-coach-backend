@@ -1,5 +1,7 @@
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.exception.UnauthorizedAccessException;
+import com.financecoach.backend.exception.ResourceNotFoundException;
 import com.financecoach.backend.dto.networth.ManualAssetRequest;
 import com.financecoach.backend.dto.networth.ManualAssetResponse;
 import com.financecoach.backend.dto.networth.ManualLiabilityRequest;
@@ -181,7 +183,7 @@ class NetWorthServiceTest {
 
         assertThatThrownBy(() -> netWorthService.updateAsset(userId, existing.getId(),
                 assetRequest("Mine now", "vehicle", "1")))
-                .hasMessageContaining("Unauthorized");
+                .isInstanceOf(UnauthorizedAccessException.class).hasMessageContaining("Unauthorized");
         verify(manualAssetRepository, never()).save(any());
     }
 
@@ -191,7 +193,7 @@ class NetWorthServiceTest {
         when(manualAssetRepository.findById(assetId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> netWorthService.updateAsset(userId, assetId, assetRequest("x", "other", "1")))
-                .hasMessageContaining("not found");
+                .isInstanceOf(ResourceNotFoundException.class).hasMessageContaining("not found");
     }
 
     @Test
@@ -203,7 +205,7 @@ class NetWorthServiceTest {
 
         netWorthService.deleteAsset(userId, mine.getId());
         assertThatThrownBy(() -> netWorthService.deleteAsset(userId, theirs.getId()))
-                .hasMessageContaining("Unauthorized");
+                .isInstanceOf(UnauthorizedAccessException.class).hasMessageContaining("Unauthorized");
 
         verify(manualAssetRepository).delete(mine);
         verify(manualAssetRepository, never()).delete(theirs);
@@ -214,7 +216,7 @@ class NetWorthServiceTest {
         UUID assetId = UUID.randomUUID();
         when(manualAssetRepository.findById(assetId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> netWorthService.deleteAsset(userId, assetId)).hasMessageContaining("not found");
+        assertThatThrownBy(() -> netWorthService.deleteAsset(userId, assetId)).isInstanceOf(ResourceNotFoundException.class).hasMessageContaining("not found");
     }
 
     // --- manual liabilities ---
@@ -254,7 +256,7 @@ class NetWorthServiceTest {
                 liabilityRequest("Loan", "900", "4.0", "100"));
         assertThatThrownBy(() -> netWorthService.updateLiability(userId, theirs.getId(),
                 liabilityRequest("Loan", "0", "0", "0")))
-                .hasMessageContaining("Unauthorized");
+                .isInstanceOf(UnauthorizedAccessException.class).hasMessageContaining("Unauthorized");
 
         assertThat(updated.getBalance()).isEqualByComparingTo("900");
         verify(manualLiabilityRepository, times(1)).save(any());
@@ -266,7 +268,7 @@ class NetWorthServiceTest {
         when(manualLiabilityRepository.findById(id)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> netWorthService.updateLiability(userId, id, liabilityRequest("x", "1", "1", "1")))
-                .hasMessageContaining("not found");
+                .isInstanceOf(ResourceNotFoundException.class).hasMessageContaining("not found");
     }
 
     @Test
@@ -278,7 +280,7 @@ class NetWorthServiceTest {
 
         netWorthService.deleteLiability(userId, mine.getId());
         assertThatThrownBy(() -> netWorthService.deleteLiability(userId, theirs.getId()))
-                .hasMessageContaining("Unauthorized");
+                .isInstanceOf(UnauthorizedAccessException.class).hasMessageContaining("Unauthorized");
 
         verify(manualLiabilityRepository).delete(mine);
         verify(manualLiabilityRepository, never()).delete(theirs);
@@ -289,7 +291,7 @@ class NetWorthServiceTest {
         UUID id = UUID.randomUUID();
         when(manualLiabilityRepository.findById(id)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> netWorthService.deleteLiability(userId, id)).hasMessageContaining("not found");
+        assertThatThrownBy(() -> netWorthService.deleteLiability(userId, id)).isInstanceOf(ResourceNotFoundException.class).hasMessageContaining("not found");
     }
 
     // --- daily snapshots ---

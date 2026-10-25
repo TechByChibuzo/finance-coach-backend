@@ -1,5 +1,6 @@
 package com.financecoach.backend.service;
 
+import com.financecoach.backend.exception.ValidationException;
 import com.financecoach.backend.model.PasswordResetToken;
 import com.financecoach.backend.model.User;
 import com.financecoach.backend.repository.PasswordResetTokenRepository;
@@ -140,13 +141,13 @@ class PasswordResetServiceTest {
         when(tokenRepository.findByToken(sha256("used"))).thenReturn(Optional.of(used));
 
         assertThatThrownBy(() -> passwordResetService.resetPassword("any", "short"))
-                .hasMessageContaining("at least 8");
+                .isInstanceOf(ValidationException.class).hasMessageContaining("at least 8");
         assertThatThrownBy(() -> passwordResetService.resetPassword("any", null))
-                .hasMessageContaining("at least 8");
+                .isInstanceOf(ValidationException.class).hasMessageContaining("at least 8");
         assertThatThrownBy(() -> passwordResetService.resetPassword("unknown", "newPassword123"))
-                .hasMessageContaining("Invalid or expired");
+                .isInstanceOf(ValidationException.class).hasMessageContaining("Invalid or expired");
         assertThatThrownBy(() -> passwordResetService.resetPassword("used", "newPassword123"))
-                .hasMessageContaining("Invalid or expired");
+                .isInstanceOf(ValidationException.class).hasMessageContaining("Invalid or expired");
         verify(passwordEncoder, never()).encode(anyString());
     }
 
@@ -155,8 +156,10 @@ class PasswordResetServiceTest {
         when(tokenRepository.findByToken(sha256("reset-token"))).thenReturn(Optional.of(token(LocalDateTime.now().plusMinutes(30))));
         when(userRepository.findById(user.getId())).thenReturn(Optional.empty());
 
+        // The link no longer leads anywhere: treated like any invalid link (400), not a server error
         assertThatThrownBy(() -> passwordResetService.resetPassword("reset-token", "newPassword123"))
-                .hasMessageContaining("User not found");
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("Invalid or expired");
     }
 
     @Test

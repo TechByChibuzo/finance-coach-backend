@@ -5,6 +5,8 @@
 
 package com.financecoach.backend.controller;
 
+import com.financecoach.backend.exception.BillingUnavailableException;
+import com.stripe.exception.StripeException;
 import com.financecoach.backend.dto.*;
 import com.financecoach.backend.model.*;
 import com.financecoach.backend.service.SubscriptionService;
@@ -12,6 +14,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
@@ -38,7 +41,7 @@ public class SubscriptionController {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
 
         if (authentication == null || !authentication.isAuthenticated()) {
-            throw new RuntimeException("User not authenticated");
+            throw new AuthenticationCredentialsNotFoundException("User not authenticated");
         }
 
         // Your JwtAuthenticationFilter sets the UUID as the principal
@@ -104,17 +107,17 @@ public class SubscriptionController {
     public ResponseEntity<?> createCheckout(@RequestBody CheckoutRequest request) {
         UUID userId = getCurrentUserId();
 
+        // Errors go to GlobalExceptionHandler, which picks the status and a safe message;
+        // Stripe's own error text is only logged
         try {
             String checkoutUrl = subscriptionService.createCheckoutSession(
                     userId,
                     request.getPlanId(),
                     request.getBillingCycle()
             );
-
             return ResponseEntity.ok(Map.of("url", checkoutUrl));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", e.getMessage()));
+        } catch (StripeException e) {
+            throw new BillingUnavailableException("Couldn't start checkout. Please try again.", e);
         }
     }
 
@@ -125,20 +128,15 @@ public class SubscriptionController {
     public ResponseEntity<?> cancelSubscription() {
         UUID userId = getCurrentUserId();
 
-        try {
-            UserSubscription subscription = subscriptionService.cancelSubscription(userId);
+        UserSubscription subscription = subscriptionService.cancelSubscription(userId);
 
-            if (subscription.getStatus() == SubscriptionStatus.ACTIVE && subscription.getEndDate() != null) {
-                return ResponseEntity.ok(Map.of(
-                        "message", "Subscription cancelled. You'll keep access until the end of your billing period.",
-                        "accessUntil", subscription.getEndDate().toString()
-                ));
-            }
-            return ResponseEntity.ok(Map.of("message", "Subscription cancelled successfully"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("error", e.getMessage()));
+        if (subscription.getStatus() == SubscriptionStatus.ACTIVE && subscription.getEndDate() != null) {
+            return ResponseEntity.ok(Map.of(
+                    "message", "Subscription cancelled. You'll keep access until the end of your billing period.",
+                    "accessUntil", subscription.getEndDate().toString()
+            ));
         }
+        return ResponseEntity.ok(Map.of("message", "Subscription cancelled successfully"));
     }
 
     /**
