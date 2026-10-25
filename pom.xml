@@ -32,6 +32,15 @@
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
+			<!-- One version for every AWS SDK module: mixing versions breaks the clients at startup.
+			     2.56+ needs Apache HttpClient 5.4+, newer than Spring Boot 3.3 provides (AwsClientsTest). -->
+			<dependency>
+				<groupId>software.amazon.awssdk</groupId>
+				<artifactId>bom</artifactId>
+				<version>2.25.27</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
 		</dependencies>
 	</dependencyManagement>
 
@@ -208,13 +217,11 @@
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>
 			<artifactId>bedrockruntime</artifactId>
-			<version>2.56.0</version>
 		</dependency>
 
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>
 			<artifactId>s3</artifactId>
-			<version>2.25.27</version>
 		</dependency>
 	</dependencies>
 
