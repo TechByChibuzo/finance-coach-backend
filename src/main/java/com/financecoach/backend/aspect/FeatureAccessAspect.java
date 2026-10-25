@@ -5,6 +5,7 @@ import com.financecoach.backend.annotation.RequiresPlan;
 import com.financecoach.backend.annotation.TrackUsage;
 import com.financecoach.backend.exception.FeatureNotAvailableException;
 import com.financecoach.backend.exception.UsageLimitExceededException;
+import com.financecoach.backend.model.PlanTier;
 import com.financecoach.backend.security.CurrentUser;
 import com.financecoach.backend.service.SubscriptionService;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -31,9 +32,7 @@ public class FeatureAccessAspect {
         UUID userId = CurrentUser.id();
 
         String userPlan = subscriptionService.getUserPlan(userId).getName();
-        String requiredPlan = requiresPlan.value();
-
-        if (!hasRequiredPlan(userPlan, requiredPlan)) {
+        if (!PlanTier.meets(userPlan, requiresPlan.value().name())) {
             throw new FeatureNotAvailableException(requiresPlan.message());
         }
 
@@ -96,18 +95,5 @@ public class FeatureAccessAspect {
         return trackUsage != null && trackUsage.feature().equals(featureName);
     }
 
-    private boolean hasRequiredPlan(String userPlan, String requiredPlan) {
-        int userLevel = getPlanLevel(userPlan);
-        int requiredLevel = getPlanLevel(requiredPlan);
-        return userLevel >= requiredLevel;
-    }
 
-    private int getPlanLevel(String planName) {
-        return switch (planName.toUpperCase()) {
-            case "PRO" -> 3;
-            case "PREMIUM" -> 2;
-            case "FREE" -> 1;
-            default -> 0;
-        };
-    }
 }

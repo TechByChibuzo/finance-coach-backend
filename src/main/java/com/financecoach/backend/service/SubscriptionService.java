@@ -1,10 +1,11 @@
 package com.financecoach.backend.service;
 
 import com.financecoach.backend.exception.BillingUnavailableException;
-import com.financecoach.backend.exception.ValidationException;
 import com.financecoach.backend.exception.ResourceNotFoundException;
 import com.financecoach.backend.exception.UsageLimitExceededException;
+import com.financecoach.backend.exception.ValidationException;
 import com.financecoach.backend.model.*;
+import com.financecoach.backend.model.PlanTier;
 import com.financecoach.backend.repository.*;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.EventDataObjectDeserializationException;
@@ -146,8 +147,7 @@ public class SubscriptionService {
         // Get user's plan
         SubscriptionPlan userPlan = getUserPlan(userId);
 
-        // Check plan hierarchy: PRO > PREMIUM > FREE
-        return hasRequiredPlanLevel(userPlan.getName(), feature.getRequiredPlan());
+        return PlanTier.meets(userPlan.getName(), feature.getRequiredPlan());
     }
 
     /**
@@ -771,24 +771,11 @@ public class SubscriptionService {
     }
 
     private SubscriptionPlan getFreePlan() {
-        return planRepository.findByName("FREE")
+        return planRepository.findByName(PlanTier.FREE.name())
                 .orElseThrow(() -> new RuntimeException("FREE plan not found"));
     }
 
-    private boolean hasRequiredPlanLevel(String userPlan, String requiredPlan) {
-        int userLevel = getPlanLevel(userPlan);
-        int requiredLevel = getPlanLevel(requiredPlan);
-        return userLevel >= requiredLevel;
-    }
 
-    private int getPlanLevel(String planName) {
-        return switch (planName.toUpperCase()) {
-            case "PRO" -> 3;
-            case "PREMIUM" -> 2;
-            case "FREE" -> 1;
-            default -> 0;
-        };
-    }
 
     private Integer getFeatureLimit(SubscriptionPlan plan, String featureName) {
         // Parse limits JSON and get specific feature limit

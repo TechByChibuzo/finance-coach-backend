@@ -57,14 +57,14 @@ public class SubscriptionPlan {
 
     // Helper methods
     public boolean isFree() {
-        return "FREE".equalsIgnoreCase(name);
+        return PlanTier.FREE.name().equalsIgnoreCase(name);
     }
 
     public boolean isPremium() {
-        return "PREMIUM".equalsIgnoreCase(name);
+        return PlanTier.PREMIUM.name().equalsIgnoreCase(name);
     }
 
     public boolean isPro() {
-        return "PRO".equalsIgnoreCase(name);
+        return PlanTier.PRO.name().equalsIgnoreCase(name);
     }
 }
