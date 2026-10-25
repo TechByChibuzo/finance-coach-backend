@@ -54,7 +54,6 @@ plaid:
 
 # Claude API Configuration
 claude:
-  api-key: ${CLAUDE_API_KEY}
   # Bedrock model or inference-profile ID (needs model access enabled in the Bedrock console)
   model: ${CLAUDE_MODEL:us.anthropic.claude-sonnet-4-6}
   max-tokens: ${CLAUDE_MAX_TOKENS:16000}

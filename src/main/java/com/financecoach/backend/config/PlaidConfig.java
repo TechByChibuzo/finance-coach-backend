@@ -3,6 +3,8 @@ package com.financecoach.backend.config;
 
 import com.plaid.client.ApiClient;
 import com.plaid.client.request.PlaidApi;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -11,6 +13,8 @@ import java.util.HashMap;
 
 @Configuration
 public class PlaidConfig {
+
+    private static final Logger logger = LoggerFactory.getLogger(PlaidConfig.class);
 
     @Value("${plaid.client-id}")
     private String clientId;
@@ -34,6 +38,8 @@ public class PlaidConfig {
                 plaidEnv = ApiClient.Production;
                 break;
             default:
+                // A typo here would silently point production at the sandbox
+                logger.warn("Unknown plaid.environment '{}', using sandbox", environment);
                 plaidEnv = ApiClient.Sandbox;
         }
 
