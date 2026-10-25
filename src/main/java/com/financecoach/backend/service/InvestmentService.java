@@ -202,6 +202,14 @@ public class InvestmentService {
             holding.setName(security.getName());
             holding.setType(mapSecurityType(security.getType()));
         }
+        // name and type are required: Plaid sometimes omits a holding's security, so fill in
+        // placeholders rather than fail the sync, but keep what an earlier sync stored
+        if (holding.getName() == null) {
+            holding.setName("Unknown security");
+        }
+        if (holding.getType() == null) {
+            holding.setType(mapSecurityType(null));
+        }
 
         // Quantities and values
         holding.setQuantity(BigDecimal.valueOf(plaidHolding.getQuantity()));
