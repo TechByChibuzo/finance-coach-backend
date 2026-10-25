@@ -136,14 +136,16 @@ HTTP ─► AuthRateLimitFilter ─► JwtAuthenticationFilter ─► Controller
 - **`SubscriptionController`** (`/api/subscriptions/**`): list plans (public), current subscription, feature-access check, checkout, cancel, Stripe webhook (public, signature-verified).
 - **Stripe is the source of truth.** Checkout sessions carry `client_reference_id = userId`. The webhook handles `checkout.session.completed`, `customer.subscription.created/updated/deleted` and `invoice.payment_succeeded/failed`, copying status and period end into `user_subscriptions`. Handler errors propagate (5xx) so Stripe retries; already-recorded subscriptions are skipped.
 - **Upgrades** cancel the previous Stripe subscription; if that fails, the event fails and Stripe retries rather than leaving two subscriptions billing. **Cancel** uses `cancel_at_period_end`, so access lasts until the period ends.
-- **Usage limits**: `@TrackUsage` reserves a use atomically before the call (`INSERT … ON CONFLICT DO UPDATE … WHERE usage_count < limit` on `usage_tracking`) and releases it if the call fails. `@RequiresFeature` checks plan access. Limits live in `SubscriptionService#getFeatureLimit`:
+- **Usage limits**: `@TrackUsage` reserves a use atomically before the call (`INSERT … ON CONFLICT DO UPDATE … WHERE usage_count < limit` on `usage_tracking`) and releases it if the call fails. `@RequiresFeature` checks plan access. Limits are read from each plan's `subscription_plans.limits` JSON (`-1` = unlimited), so they can be changed in the database without a deploy. A missing key or unreadable JSON falls back to the built-in default below, never to unlimited:
 
-| Feature | FREE | PREMIUM | PRO |
-|---|---|---|---|
-| `ai_coach` (per month) | 5 | unlimited | unlimited |
-| `budget_create` (active per month) | 3 | unlimited | unlimited |
-| `bank_account` (connections) | 1 | 5 | unlimited |
-| `export_reports` | — | unlimited | unlimited |
+| Feature | JSON key | FREE | PREMIUM | PRO |
+|---|---|---|---|---|
+| `ai_coach` (per month) | `ai_messages_per_month` | 5 | unlimited | unlimited |
+| `budget_create` (active per month) | `max_budgets` | 3 | unlimited | unlimited |
+| `bank_account` (connections) | `bank_accounts` | 1 | 5 | unlimited |
+| `export_reports` | `exports_per_month` | — | unlimited | unlimited |
+
+For example, to give FREE five budgets: `UPDATE subscription_plans SET limits = jsonb_set(limits::jsonb, '{max_budgets}', '5') WHERE name = 'FREE';` The seeder only writes `limits` when it creates a plan, so a change like this survives deploys.
 
 ### 3.7 Export
 - **`ExportService`** + **`S3Service`**: builds a CSV of the user's transactions, uploads it to the private bucket in `S3_EXPORT_BUCKET` under `exports/{userId}/…`, and returns a 15-minute presigned URL; a lifecycle rule deletes exports after 7 days. Paid plans only. See §4.6.

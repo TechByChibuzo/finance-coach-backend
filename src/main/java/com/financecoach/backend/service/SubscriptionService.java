@@ -1,5 +1,8 @@
 package com.financecoach.backend.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import org.springframework.scheduling.annotation.Scheduled;
 import com.financecoach.backend.repository.ProcessedStripeEventRepository;
 import com.financecoach.backend.exception.BillingUnavailableException;
@@ -30,6 +33,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Map;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -809,16 +813,46 @@ public class SubscriptionService {
 
 
 
+    // Where each countable feature's limit lives in subscription_plans.limits (JSON; -1 = unlimited).
+    // Keys must match feature_flags.feature_name on the left, the stored JSON on the right
+    private static final Map<String, String> LIMIT_KEYS = Map.of(
+            "ai_coach", "ai_messages_per_month",
+            "budget_create", "max_budgets",
+            "bank_account", "bank_accounts",
+            "export_reports", "exports_per_month");
+
+    private static final ObjectMapper LIMITS_JSON = new ObjectMapper();
+
+    /**
+     * The plan's limit for a feature, from its limits JSON so it can be changed in the database
+     * without a deploy. A missing key or unreadable JSON falls back to the built-in limit, so a
+     * mistake there never makes a feature unlimited. -1 means unlimited.
+     */
     private Integer getFeatureLimit(SubscriptionPlan plan, String featureName) {
-        // Parse limits JSON and get specific feature limit
-        // This is simplified - in real app, parse the actual JSON
-        // Keys must match feature_flags.feature_name
+        String key = LIMIT_KEYS.get(featureName);
+        if (key == null) {
+            return -1; // Not a counted feature
+        }
+        if (plan.getLimits() != null) {
+            try {
+                JsonNode value = LIMITS_JSON.readTree(plan.getLimits()).get(key);
+                if (value != null && value.canConvertToInt()) {
+                    return value.asInt();
+                }
+            } catch (JsonProcessingException e) {
+                logger.warn("Unreadable limits JSON for plan {}, using built-in limits", plan.getName());
+            }
+        }
+        return builtInLimit(plan, featureName);
+    }
+
+    private static int builtInLimit(SubscriptionPlan plan, String featureName) {
         return switch (featureName) {
             case "ai_coach" -> plan.isFree() ? 5 : -1;
             case "budget_create" -> plan.isFree() ? 3 : -1;
             case "bank_account" -> plan.isFree() ? 1 : (plan.isPremium() ? 5 : -1);
             case "export_reports" -> plan.isFree() ? 0 : -1;
-            default -> -1; // Unlimited by default
+            default -> -1;
         };
     }
 

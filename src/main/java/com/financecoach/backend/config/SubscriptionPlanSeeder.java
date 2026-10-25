@@ -61,17 +61,17 @@ public class SubscriptionPlanSeeder implements ApplicationRunner {
                 new PlanSeed(PlanTier.FREE.name(), "Free Plan", "Perfect for getting started with basic budgeting",
                         "0.00", "0.00",
                         "{\"ai_coach\": true, \"budgets\": true, \"transactions\": true, \"reports\": false, \"export\": false, \"analytics\": false}",
-                        "{\"max_budgets\": 3, \"ai_messages_per_month\": 5, \"bank_accounts\": 1, \"transaction_history_days\": 30}",
+                        "{\"max_budgets\": 3, \"ai_messages_per_month\": 5, \"bank_accounts\": 1, \"exports_per_month\": 0, \"transaction_history_days\": 30}",
                         null, null),
                 new PlanSeed(PlanTier.PREMIUM.name(), "Premium Plan", "Unlimited budgets and AI coaching",
                         "9.99", "99.99",
                         "{\"ai_coach\": true, \"budgets\": true, \"transactions\": true, \"reports\": true, \"export\": true, \"analytics\": true, \"unlimited_history\": true}",
-                        "{\"max_budgets\": -1, \"ai_messages_per_month\": -1, \"bank_accounts\": 5, \"transaction_history_days\": -1}",
+                        "{\"max_budgets\": -1, \"ai_messages_per_month\": -1, \"bank_accounts\": 5, \"exports_per_month\": -1, \"transaction_history_days\": -1}",
                         premiumMonthly, premiumYearly),
                 new PlanSeed(PlanTier.PRO.name(), "Pro Plan", "Everything in Premium plus family sharing and API access",
                         "19.99", "199.99",
                         "{\"ai_coach\": true, \"budgets\": true, \"transactions\": true, \"reports\": true, \"export\": true, \"analytics\": true, \"unlimited_history\": true, \"family_sharing\": true, \"api_access\": true, \"priority_support\": true}",
-                        "{\"max_budgets\": -1, \"ai_messages_per_month\": -1, \"bank_accounts\": -1, \"transaction_history_days\": -1, \"family_members\": 5}",
+                        "{\"max_budgets\": -1, \"ai_messages_per_month\": -1, \"bank_accounts\": -1, \"exports_per_month\": -1, \"transaction_history_days\": -1, \"family_members\": 5}",
                         proMonthly, proYearly)
         );
     }
