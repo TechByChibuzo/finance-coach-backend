@@ -5,9 +5,9 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
-@EnableScheduling  // Add this annotation
-public class UserServiceApplication {
+@EnableScheduling
+public class FinanceCoachApplication {
     public static void main(String[] args) {
-        SpringApplication.run(UserServiceApplication.class, args);
+        SpringApplication.run(FinanceCoachApplication.class, args);
     }
 }

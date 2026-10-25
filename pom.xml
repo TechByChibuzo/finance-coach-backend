@@ -12,9 +12,9 @@
 	</parent>
 
 	<groupId>com.financecoach</groupId>
-	<artifactId>user-service</artifactId>
+	<artifactId>finance-coach-backend</artifactId>
 	<version>0.0.1-SNAPSHOT</version>
-	<name>user-service</name>
+	<name>finance-coach-backend</name>
 	<description>User Service</description>
 
 	<properties>
