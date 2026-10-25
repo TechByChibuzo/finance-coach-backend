@@ -7,6 +7,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -14,7 +16,6 @@ import java.util.UUID;
 public class ConversationService {
 
     private static final Logger logger = LoggerFactory.getLogger(ConversationService.class);
-    private static final int MAX_HISTORY_TURNS = 10;
 
     private final ConversationMessageRepository conversationRepository;
 
@@ -32,12 +33,11 @@ public class ConversationService {
     }
 
     public List<ClaudeService.ConversationTurn> getHistory(UUID userId, String sessionId) {
-        List<ConversationMessage> messages = conversationRepository
-                .findByUserIdAndSessionIdOrderByCreatedAtAsc(userId, sessionId);
-
-        // Keep only the last N turns to avoid exceeding Claude's context window
-        int fromIndex = Math.max(0, messages.size() - MAX_HISTORY_TURNS);
-        List<ConversationMessage> recentMessages = messages.subList(fromIndex, messages.size());
+        // Only the last 10 turns (to fit Claude's context window), fetched by the
+        // query instead of loading the whole session; reversed back to oldest first
+        List<ConversationMessage> recentMessages = new ArrayList<>(conversationRepository
+                .findTop10ByUserIdAndSessionIdOrderByCreatedAtDesc(userId, sessionId));
+        Collections.reverse(recentMessages);
 
         return recentMessages.stream()
                 .map(m -> new ClaudeService.ConversationTurn(

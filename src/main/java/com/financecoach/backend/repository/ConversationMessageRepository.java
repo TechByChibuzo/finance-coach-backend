@@ -17,6 +17,9 @@ public interface ConversationMessageRepository extends JpaRepository<Conversatio
             UUID userId, String sessionId
     );
 
+    // The newest turns of a session, newest first (the coach's context window)
+    List<ConversationMessage> findTop10ByUserIdAndSessionIdOrderByCreatedAtDesc(UUID userId, String sessionId);
+
     List<ConversationMessage> findByUserIdOrderByCreatedAtDesc(UUID userId);
 
     void deleteByUserIdAndSessionId(UUID userId, String sessionId);

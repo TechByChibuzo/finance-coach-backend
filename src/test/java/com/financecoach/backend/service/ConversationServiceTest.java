@@ -41,11 +41,12 @@ class ConversationServiceTest {
     }
 
     @Test
-    void getHistory_returnsOnlyTheLastTenTurns_inOrder() {
-        List<ConversationMessage> fifteen = IntStream.range(0, 15)
+    void getHistory_asksTheDatabaseForOnlyTheLastTenTurns_andReturnsThemOldestFirst() {
+        // The query returns the newest ten, newest first, instead of loading the whole session
+        List<ConversationMessage> newestFirst = IntStream.iterate(14, i -> i >= 5, i -> i - 1)
                 .mapToObj(i -> new ConversationMessage(userId, "s1", "q" + i, "a" + i))
                 .toList();
-        when(repository.findByUserIdAndSessionIdOrderByCreatedAtAsc(userId, "s1")).thenReturn(fifteen);
+        when(repository.findTop10ByUserIdAndSessionIdOrderByCreatedAtDesc(userId, "s1")).thenReturn(newestFirst);
 
         List<ClaudeService.ConversationTurn> history = conversationService.getHistory(userId, "s1");
 
@@ -56,7 +57,7 @@ class ConversationServiceTest {
 
     @Test
     void getHistory_withFewTurns_returnsThemAll() {
-        when(repository.findByUserIdAndSessionIdOrderByCreatedAtAsc(userId, "s1"))
+        when(repository.findTop10ByUserIdAndSessionIdOrderByCreatedAtDesc(userId, "s1"))
                 .thenReturn(List.of(new ConversationMessage(userId, "s1", "q", "a")));
 
         assertThat(conversationService.getHistory(userId, "s1")).hasSize(1);
