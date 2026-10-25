@@ -1,7 +1,12 @@
 package com.financecoach.backend.service;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
+import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 
+import java.time.Duration;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 /**
@@ -19,5 +24,16 @@ class AwsClientsTest {
     @Test
     void theBedrockClient_builds() {
         assertThatCode(() -> new ClaudeService("test-model", 1000, "", "us-east-2")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void theBedrockClient_capsEachCall_atTwoMinutes() {
+        // Bedrock sends nothing until the whole answer is written, so the SDK's default 30s
+        // socket timeout could cut off a long answer; each call gets an explicit overall limit instead
+        BedrockRuntimeClient client = (BedrockRuntimeClient) ReflectionTestUtils.getField(
+                new ClaudeService("test-model", 1000, "", "us-east-2"), "bedrockClient");
+
+        assertThat(client.serviceClientConfiguration().overrideConfiguration().apiCallTimeout())
+                .contains(Duration.ofMinutes(2));
     }
 }

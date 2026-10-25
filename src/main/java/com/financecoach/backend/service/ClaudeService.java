@@ -9,11 +9,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.core.SdkBytes;
+import software.amazon.awssdk.http.apache.ApacheHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelRequest;
 import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelResponse;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -42,6 +44,13 @@ public class ClaudeService {
         this(BedrockRuntimeClient.builder()
                         .region(Region.of(region))
                         .credentialsProvider(DefaultCredentialsProvider.create())
+                        // Bedrock sends nothing until the whole answer is written, so the SDK's
+                        // default 30s socket timeout could cut off a long answer: wait up to 110s
+                        // for data, and cap each call (retries included) at two minutes
+                        .httpClientBuilder(ApacheHttpClient.builder()
+                                .connectionTimeout(Duration.ofSeconds(5))
+                                .socketTimeout(Duration.ofSeconds(110)))
+                        .overrideConfiguration(config -> config.apiCallTimeout(Duration.ofMinutes(2)))
                         .build(),
                 model, maxTokens, effort);
     }
