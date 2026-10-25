@@ -35,7 +35,7 @@ jobs:
       # so it is excluded until it runs against Testcontainers.
       # verify also enforces the service-layer coverage gate (JaCoCo, see pom.xml).
       - name: Run tests and check coverage
-        run: ./mvnw -B verify -Dtest='!UserServiceApplicationTests'
+        run: ./mvnw -B verify -Dtest='!FinanceCoachApplicationTests'
 
       - name: Upload coverage report
         if: always()

@@ -361,7 +361,7 @@ Runs the unit tests and enforces a coverage gate on the service layer (≥ 90% l
 
 The repository tests (`src/test/java/.../repository`) run against Postgres 16 with pgvector in a Docker container (Testcontainers), so the SQL, encryption and constraints are exercised for real. Start Docker first; without it, those tests are skipped and the rest still run.
 
-`UserServiceApplicationTests` (the full Spring context) needs a real database and secrets, so CI skips it with `-Dtest='!UserServiceApplicationTests'`.
+`FinanceCoachApplicationTests` (the full Spring context) needs a real database and secrets, so CI skips it with `-Dtest='!FinanceCoachApplicationTests'`.
 
 ---
 

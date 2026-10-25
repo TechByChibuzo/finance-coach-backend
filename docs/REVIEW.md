@@ -55,7 +55,7 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 ## 6. Reliability & operations
 
 - **Schedulers vs multiple tasks.** With ECS desired count > 1, every cron job runs N times. Add **ShedLock** (JDBC lock provider) and a thread-pool scheduler before scaling out.
-- **`contextLoads` (`UserServiceApplicationTests`) is skipped in CI** because it needs a real DB and secrets. Point it at the Testcontainers Postgres the repository tests use (`PostgresRepositoryTest`), with dummy values for the secrets.
+- **`contextLoads` (`FinanceCoachApplicationTests`) is skipped in CI** because it needs a real DB and secrets. Point it at the Testcontainers Postgres the repository tests use (`PostgresRepositoryTest`), with dummy values for the secrets.
 - **Retries:** Plaid calls have no retry with backoff (timeouts are set: Plaid 60s, Bedrock 2 min per call, OpenAI 5s/30s).
 - **Logging:** structured JSON logs with a request ID and user ID in MDC.
 - **Errors:** the remaining bare `RuntimeException`s are internal (Stripe webhook processing, a missing seeded plan or price ID, `EmailService`) and answer 500 on purpose; webhooks rely on it for Stripe's retries. Give them typed exceptions if they ever reach users.
@@ -67,7 +67,6 @@ Severity scale: **P0** = security hole or loses money or data, fix now · **P1**
 - **Duplicated `getCurrentUserId()`** in 11 controllers. Replace it with `@AuthenticationPrincipal UUID userId`, or a small `CurrentUser` helper.
 - **Mixed injection styles**: field `@Autowired` remains in places (`MetricsService` everywhere, `FeatureAccessAspect`). Standardize on constructor injection.
 - **Header comments say `userservice`** in 19 files. Delete them; the path is already known.
-- Artifact is named `user-service` and the main class `UserServiceApplication`, but it's the whole backend. Consider renaming.
 - Leftover markers (`// UPDATED ...`) and commented-out code can go.
 - Lombok `@Data` on JPA entities generates `equals`/`hashCode` over all fields, which breaks with lazy proxies and collections. Use `@Getter @Setter`, with ID-based equality if needed.
 - Use a typed enum for plan names instead of the strings "FREE"/"PREMIUM"/"PRO". `getPlanLevel` is duplicated in the aspect and the service.
