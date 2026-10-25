@@ -12,6 +12,7 @@ import com.financecoach.backend.model.UsageTracking;
 import com.financecoach.backend.model.User;
 import com.financecoach.backend.model.UserSubscription;
 import com.financecoach.backend.repository.FeatureFlagRepository;
+import com.financecoach.backend.repository.ProcessedStripeEventRepository;
 import com.financecoach.backend.repository.SubscriptionPlanRepository;
 import com.financecoach.backend.repository.UsageTrackingRepository;
 import com.financecoach.backend.repository.UserRepository;
@@ -75,6 +76,9 @@ class SubscriptionServiceTest {
     @Mock
     private UsageTrackingRepository usageRepository;
 
+    @Mock
+    private ProcessedStripeEventRepository processedEventRepository;
+
     @InjectMocks
     private SubscriptionService subscriptionService;
 
@@ -87,6 +91,8 @@ class SubscriptionServiceTest {
     void setUp() {
         userId = UUID.randomUUID();
         ReflectionTestUtils.setField(subscriptionService, "webhookSecret", WEBHOOK_SECRET);
+        // Every event is new unless a test says otherwise
+        org.mockito.Mockito.lenient().when(processedEventRepository.markProcessed(anyString(), anyString())).thenReturn(1);
     }
 
     // --- cancelSubscription ---
@@ -353,6 +359,40 @@ class SubscriptionServiceTest {
         assertThat(local.getEndDate()).isEqualTo(
                 LocalDateTime.ofInstant(Instant.ofEpochSecond(newPeriodEnd), ZoneId.systemDefault()));
         assertThat(local.getStatus()).isEqualTo(SubscriptionStatus.ACTIVE);
+    }
+
+    @Test
+    void webhook_anEventAlreadyProcessed_isSkipped() throws Exception {
+        // Stripe delivers an event again (a retry, or two deliveries at once): handle it once
+        when(processedEventRepository.markProcessed("evt_1", "customer.subscription.deleted")).thenReturn(0);
+
+        sendWebhook("customer.subscription.deleted", "{\"id\": \"sub_1\", \"object\": \"subscription\"}");
+
+        verify(stripeService, never()).retrieveSubscription(anyString());
+        verify(subscriptionRepository, never()).save(any());
+    }
+
+    @Test
+    void webhook_recordsTheEvent_inTheSameTransactionAsItsChanges() throws Exception {
+        UserSubscription local = activeSubscription("sub_1");
+        stubPlans();
+        when(stripeService.retrieveSubscription("sub_1")).thenReturn(stripeSubscription("sub_1", "canceled", false));
+        when(subscriptionRepository.findByStripeSubscriptionId("sub_1")).thenReturn(Optional.of(local));
+
+        sendWebhook("customer.subscription.deleted", "{\"id\": \"sub_1\", \"object\": \"subscription\"}");
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(processedEventRepository, subscriptionRepository);
+        order.verify(processedEventRepository).markProcessed("evt_1", "customer.subscription.deleted");
+        order.verify(subscriptionRepository).save(local);
+    }
+
+    @Test
+    void processedEventsOlderThan30Days_areDeleted() {
+        subscriptionService.deleteOldProcessedEvents();
+
+        ArgumentCaptor<LocalDateTime> cutoff = ArgumentCaptor.forClass(LocalDateTime.class);
+        verify(processedEventRepository).deleteByProcessedAtBefore(cutoff.capture());
+        assertThat(cutoff.getValue()).isBetween(LocalDateTime.now().minusDays(31), LocalDateTime.now().minusDays(29));
     }
 
     @Test

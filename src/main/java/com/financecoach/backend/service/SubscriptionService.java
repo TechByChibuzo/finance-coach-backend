@@ -1,5 +1,7 @@
 package com.financecoach.backend.service;
 
+import org.springframework.scheduling.annotation.Scheduled;
+import com.financecoach.backend.repository.ProcessedStripeEventRepository;
 import com.financecoach.backend.exception.BillingUnavailableException;
 import com.financecoach.backend.exception.ResourceNotFoundException;
 import com.financecoach.backend.exception.UsageLimitExceededException;
@@ -52,6 +54,7 @@ public class SubscriptionService {
     private final UserRepository userRepository;
 
     private final StripeService stripeService;
+    private final ProcessedStripeEventRepository processedEventRepository;
 
     @Value("${stripe.webhook-secret}")
     private String webhookSecret;
@@ -65,7 +68,8 @@ public class SubscriptionService {
                                FeatureFlagRepository featureFlagRepository,
                                PaymentRepository paymentRepository,
                                UserRepository userRepository,
-                               StripeService stripeService) {
+                               StripeService stripeService,
+                               ProcessedStripeEventRepository processedEventRepository) {
         this.subscriptionRepository = subscriptionRepository;
         this.planRepository = planRepository;
         this.usageRepository = usageRepository;
@@ -73,6 +77,7 @@ public class SubscriptionService {
         this.paymentRepository = paymentRepository;
         this.userRepository = userRepository;
         this.stripeService = stripeService;
+        this.processedEventRepository = processedEventRepository;
     }
 
     // ============================================
@@ -580,6 +585,17 @@ public class SubscriptionService {
     // ============================================
 
     /**
+     * Forget processed webhook events after 30 days. Stripe stops retrying an event after 3 days.
+     */
+    @Scheduled(cron = "0 15 3 * * *")
+    public void deleteOldProcessedEvents() {
+        int deleted = processedEventRepository.deleteByProcessedAtBefore(LocalDateTime.now().minusDays(30));
+        if (deleted > 0) {
+            logger.info("Deleted {} processed Stripe events older than 30 days", deleted);
+        }
+    }
+
+    /**
      * Handle Stripe webhook events.
      *
      * Stripe is the source of truth for paid subscriptions: for every subscription-related event we
@@ -604,6 +620,14 @@ public class SubscriptionService {
         }
 
         logger.info("Handling Stripe webhook event: {} ({})", event.getType(), event.getId());
+
+        // Stripe can deliver an event more than once; handle each event ID once. This is part
+        // of this transaction, so if handling fails below, the event isn't marked and Stripe's
+        // retry is processed
+        if (processedEventRepository.markProcessed(event.getId(), event.getType()) == 0) {
+            logger.info("Stripe event {} already processed, skipping", event.getId());
+            return;
+        }
 
         try {
             switch (event.getType()) {
