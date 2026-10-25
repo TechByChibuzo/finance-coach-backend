@@ -1,6 +1,7 @@
 package com.financecoach.backend.config;
 
 import com.financecoach.backend.model.FeatureFlag;
+import com.financecoach.backend.model.PlanTier;
 import com.financecoach.backend.model.SubscriptionPlan;
 import com.financecoach.backend.repository.FeatureFlagRepository;
 import com.financecoach.backend.repository.SubscriptionPlanRepository;
@@ -36,12 +37,12 @@ public class SubscriptionPlanSeeder implements ApplicationRunner {
     private record FlagSeed(String featureName, String requiredPlan, String description) {}
 
     private static final List<FlagSeed> FLAGS = List.of(
-            new FlagSeed("ai_coach", "FREE", "AI-powered financial coaching"),
-            new FlagSeed("budget_create", "FREE", "Create budgets"),
-            new FlagSeed("export_reports", "PREMIUM", "Export financial reports"),
-            new FlagSeed("advanced_analytics", "PREMIUM", "Advanced analytics dashboard"),
-            new FlagSeed("family_sharing", "PRO", "Share with family members"),
-            new FlagSeed("api_access", "PRO", "API access for developers")
+            new FlagSeed("ai_coach", PlanTier.FREE.name(), "AI-powered financial coaching"),
+            new FlagSeed("budget_create", PlanTier.FREE.name(), "Create budgets"),
+            new FlagSeed("export_reports", PlanTier.PREMIUM.name(), "Export financial reports"),
+            new FlagSeed("advanced_analytics", PlanTier.PREMIUM.name(), "Advanced analytics dashboard"),
+            new FlagSeed("family_sharing", PlanTier.PRO.name(), "Share with family members"),
+            new FlagSeed("api_access", PlanTier.PRO.name(), "API access for developers")
     );
 
     private final SubscriptionPlanRepository planRepository;
@@ -57,17 +58,17 @@ public class SubscriptionPlanSeeder implements ApplicationRunner {
         this.planRepository = planRepository;
         this.featureFlagRepository = featureFlagRepository;
         this.plans = List.of(
-                new PlanSeed("FREE", "Free Plan", "Perfect for getting started with basic budgeting",
+                new PlanSeed(PlanTier.FREE.name(), "Free Plan", "Perfect for getting started with basic budgeting",
                         "0.00", "0.00",
                         "{\"ai_coach\": true, \"budgets\": true, \"transactions\": true, \"reports\": false, \"export\": false, \"analytics\": false}",
                         "{\"max_budgets\": 3, \"ai_messages_per_month\": 5, \"bank_accounts\": 1, \"transaction_history_days\": 30}",
                         null, null),
-                new PlanSeed("PREMIUM", "Premium Plan", "Unlimited budgets and AI coaching",
+                new PlanSeed(PlanTier.PREMIUM.name(), "Premium Plan", "Unlimited budgets and AI coaching",
                         "9.99", "99.99",
                         "{\"ai_coach\": true, \"budgets\": true, \"transactions\": true, \"reports\": true, \"export\": true, \"analytics\": true, \"unlimited_history\": true}",
                         "{\"max_budgets\": -1, \"ai_messages_per_month\": -1, \"bank_accounts\": 5, \"transaction_history_days\": -1}",
                         premiumMonthly, premiumYearly),
-                new PlanSeed("PRO", "Pro Plan", "Everything in Premium plus family sharing and API access",
+                new PlanSeed(PlanTier.PRO.name(), "Pro Plan", "Everything in Premium plus family sharing and API access",
                         "19.99", "199.99",
                         "{\"ai_coach\": true, \"budgets\": true, \"transactions\": true, \"reports\": true, \"export\": true, \"analytics\": true, \"unlimited_history\": true, \"family_sharing\": true, \"api_access\": true, \"priority_support\": true}",
                         "{\"max_budgets\": -1, \"ai_messages_per_month\": -1, \"bank_accounts\": -1, \"transaction_history_days\": -1, \"family_members\": 5}",
