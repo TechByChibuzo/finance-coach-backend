@@ -1,7 +1,8 @@
 package com.financecoach.backend.model;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -11,7 +12,8 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "subscription_plans")
-@Data
+@Getter
+@Setter
 public class SubscriptionPlan {
 
     @Id

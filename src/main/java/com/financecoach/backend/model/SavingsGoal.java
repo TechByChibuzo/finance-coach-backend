@@ -6,7 +6,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -19,7 +20,8 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "savings_goals")
-@Data
+@Getter
+@Setter
 public class SavingsGoal {
 
     @Id

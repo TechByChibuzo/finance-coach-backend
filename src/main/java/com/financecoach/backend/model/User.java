@@ -1,7 +1,8 @@
 package com.financecoach.backend.model;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.ToString;
 import org.hibernate.annotations.ColumnDefault;
 import java.time.LocalDateTime;
@@ -9,7 +10,9 @@ import java.util.UUID;
 
 @Entity
 @Table(name = "users")
-@Data
+@Getter
+@Setter
+@ToString
 public class User {
 
     public static final int INITIAL_TOKEN_VERSION = 0;

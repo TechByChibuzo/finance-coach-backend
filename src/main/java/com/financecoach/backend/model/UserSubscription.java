@@ -1,13 +1,15 @@
 package com.financecoach.backend.model;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
 @Table(name = "user_subscriptions")
-@Data
+@Getter
+@Setter
 public class UserSubscription {
 
     @Id

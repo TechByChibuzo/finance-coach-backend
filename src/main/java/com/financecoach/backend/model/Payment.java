@@ -1,14 +1,16 @@
 package com.financecoach.backend.model;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
 @Table(name = "payments")
-@Data
+@Getter
+@Setter
 public class Payment {
 
     @Id

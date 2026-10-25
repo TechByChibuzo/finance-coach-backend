@@ -1,7 +1,8 @@
 package com.financecoach.backend.model;
 
 import jakarta.persistence.*;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -13,7 +14,8 @@ import java.util.UUID;
         @Index(name = "idx_user_date", columnList = "user_id, date"),
         @Index(name = "idx_plaid_transaction", columnList = "plaid_transaction_id")
 })
-@Data
+@Getter
+@Setter
 public class Transaction {
 
     @Id
